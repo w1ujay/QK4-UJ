@@ -1,10 +1,12 @@
 #include "monoverlay.h"
 #include "k4styles.h"
 #include <QVBoxLayout>
+#include <QKeyEvent>
 #include <QWheelEvent>
 #include <QFont>
 
 MonOverlay::MonOverlay(QWidget *parent) : SideControlOverlay(Global, parent) {
+    setFocusPolicy(Qt::StrongFocus);
     setupUi();
 }
 
@@ -68,6 +70,24 @@ void MonOverlay::wheelEvent(QWheelEvent *event) {
         }
     }
     event->accept();
+}
+
+void MonOverlay::keyPressEvent(QKeyEvent *event) {
+    if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) {
+        int delta = (event->key() == Qt::Key_Up) ? 1 : -1;
+        int newValue = qBound(0, m_value + delta, 100);
+        if (newValue != m_value) {
+            m_value = newValue;
+            updateValueDisplay();
+            emit levelChangeRequested(m_mode, m_value);
+        }
+        event->accept();
+    } else if (event->key() == Qt::Key_Escape) {
+        hide();
+        event->accept();
+    } else {
+        SideControlOverlay::keyPressEvent(event);
+    }
 }
 
 void MonOverlay::mousePressEvent(QMouseEvent *event) {

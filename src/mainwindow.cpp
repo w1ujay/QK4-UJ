@@ -56,6 +56,7 @@
 #include <QFrame>
 #include <QEvent>
 #include <QResizeEvent>
+#include <QWindowStateChangeEvent>
 #include <QRegularExpression>
 #include <QMouseEvent>
 #include <QShowEvent>
@@ -2872,6 +2873,18 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         }
     });
 
+    // Up/Down arrow tuning in frequency edit mode — tune by cursor digit's place value
+    connect(m_vfoA, &VFOWidget::digitTuneRequested, this, [this](int stepHz) {
+        if (!m_tcpClient->isConnected())
+            return;
+        qint64 newFreq = static_cast<qint64>(m_radioState->vfoA()) + stepHz;
+        if (newFreq > 0) {
+            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq));
+            m_tcpClient->sendCAT(cmd);
+            m_radioState->parseCATCommand(cmd);
+        }
+    });
+
     // Set Mini-Pan A colors to cyan (matching VFO A theme)
     m_vfoA->setMiniPanSpectrumColor(QColor(K4Styles::Colors::VfoACyan));
     QColor vfoAPassband(K4Styles::Colors::VfoACyan);
@@ -3208,6 +3221,18 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         quint64 currentFreq = m_radioState->vfoB();
         int stepHz = tuningStepToHz(m_radioState->tuningStepB());
         qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
+        if (newFreq > 0) {
+            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
+            m_tcpClient->sendCAT(cmd);
+            m_radioState->parseCATCommand(cmd);
+        }
+    });
+
+    // Up/Down arrow tuning in frequency edit mode — tune by cursor digit's place value
+    connect(m_vfoB, &VFOWidget::digitTuneRequested, this, [this](int stepHz) {
+        if (!m_tcpClient->isConnected())
+            return;
+        qint64 newFreq = static_cast<qint64>(m_radioState->vfoB()) + stepHz;
         if (newFreq > 0) {
             QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq));
             m_tcpClient->sendCAT(cmd);
@@ -4673,6 +4698,33 @@ void MainWindow::keyPressEvent(QKeyEvent *event) {
         event->accept();
         return;
     }
+
+    // Escape aborts CW message in progress
+    if (event->key() == Qt::Key_Escape && m_tcpClient->isConnected()) {
+        m_tcpClient->sendCAT("KY0;");
+        event->accept();
+        return;
+    }
+
+    // Up/Down arrows tune the active VFO by the current tuning step
+    // Skip if a frequency display is in edit mode (it handles Up/Down for digit tuning)
+    if ((event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) && m_tcpClient->isConnected() &&
+        !m_vfoA->isFrequencyEntryActive() && !m_vfoB->isFrequencyEntryActive()) {
+        int direction = (event->key() == Qt::Key_Up) ? 1 : -1;
+        bool bSet = m_radioState->bSetEnabled();
+        quint64 currentFreq = bSet ? m_radioState->vfoB() : m_radioState->vfoA();
+        int stepHz = tuningStepToHz(bSet ? m_radioState->tuningStepB() : m_radioState->tuningStep());
+        qint64 newFreq = static_cast<qint64>(currentFreq) + direction * stepHz;
+        if (newFreq > 0) {
+            QString vfo = bSet ? "FB" : "FA";
+            QString cmd = QString("%1%2;").arg(vfo).arg(static_cast<quint64>(newFreq));
+            m_tcpClient->sendCAT(cmd);
+            m_radioState->parseCATCommand(cmd);
+        }
+        event->accept();
+        return;
+    }
+
     QMainWindow::keyPressEvent(event);
 }
 

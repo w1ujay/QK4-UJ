@@ -161,13 +161,15 @@ void SideControlPanel::setupUi() {
     m_balOverlay = new BalOverlay(this);
 
     // Connect MON button - toggles MON overlay
+    // Only send SW128 when SHOWING overlay to avoid double-toggling K4 monitor on/off
     connect(m_monBtn, &QPushButton::clicked, this, [this]() {
-        emit swCommandRequested("SW128;");
         if (m_monOverlay->isVisible()) {
             m_monOverlay->hide();
         } else {
+            emit swCommandRequested("SW128;");
             m_balOverlay->hide(); // Close other overlay
             m_monOverlay->showOverGroup(m_wpmBtn, m_pwrBtn);
+            m_monOverlay->setFocus(); // Allow keyboard control
         }
     });
 

@@ -80,6 +80,9 @@ private:
     // Resample 48kHz Float32 samples to 12kHz (4:1 decimation with averaging)
     QByteArray resample48kTo12k(const QByteArray &input48k);
 
+    // Upsample 12kHz stereo Float32 to 48kHz (4x linear interpolation)
+    QByteArray upsample12kTo48k(const QByteArray &input12k);
+
     // Apply MX routing + volume + balance to a raw [main, sub] interleaved packet
     void applyMixAndVolume(QByteArray &packet);
 

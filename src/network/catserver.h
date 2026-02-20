@@ -66,6 +66,7 @@ private:
     QList<QTcpSocket *> m_clients;
     QMap<QTcpSocket *, QByteArray> m_clientBuffers;
     quint16 m_port = 0;
+    int m_cwPending = 0; // Approximate chars pending in K4 CW keyer buffer
 };
 
 #endif // CATSERVER_H

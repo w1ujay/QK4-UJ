@@ -339,6 +339,12 @@ void FrequencyDisplayWidget::keyPressEvent(QKeyEvent *event) {
             m_cursorPosition++;
             update();
         }
+    } else if (key == Qt::Key_Up || key == Qt::Key_Down) {
+        // Tune by the place value of the cursor digit
+        // Position 7=1Hz, 6=10Hz, 5=100Hz, 4=1kHz, 3=10kHz, 2=100kHz, 1=1MHz, 0=10MHz
+        static const int placeValue[] = {10000000, 1000000, 100000, 10000, 1000, 100, 10, 1};
+        int hz = placeValue[m_cursorPosition];
+        emit digitTuneRequested(key == Qt::Key_Up ? hz : -hz);
     } else if (key == Qt::Key_Home) {
         m_cursorPosition = 0;
         update();

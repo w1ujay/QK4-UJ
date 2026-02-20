@@ -10,6 +10,7 @@ DualControlButton::DualControlButton(QWidget *parent) : QWidget(parent) {
     setFixedSize(K4Styles::Dimensions::MenuBarButtonWidth, K4Styles::Dimensions::ButtonHeightLarge);
     setCursor(Qt::PointingHandCursor);
     setMouseTracking(true);
+    setFocusPolicy(Qt::ClickFocus);
 }
 
 void DualControlButton::setPrimaryLabel(const QString &label) {
@@ -187,6 +188,18 @@ void DualControlButton::wheelEvent(QWheelEvent *event) {
         emit valueScrolled(steps);
     }
     event->accept();
+}
+
+void DualControlButton::keyPressEvent(QKeyEvent *event) {
+    if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) {
+        int delta = (event->key() == Qt::Key_Up) ? 1 : -1;
+        if (!m_showIndicator)
+            emit becameActive();
+        emit valueScrolled(delta);
+        event->accept();
+    } else {
+        QWidget::keyPressEvent(event);
+    }
 }
 
 void DualControlButton::enterEvent(QEnterEvent *event) {

@@ -64,6 +64,10 @@ signals:
     // Emitted when user scrolls mouse wheel over frequency (not in edit mode)
     void frequencyScrolled(int steps);
 
+    // Emitted when user presses Up/Down arrow in edit mode to tune by cursor digit
+    // stepHz is positive (up) or negative (down), magnitude is the cursor digit's place value
+    void digitTuneRequested(int stepHz);
+
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;

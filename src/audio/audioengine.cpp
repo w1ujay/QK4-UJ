@@ -8,8 +8,9 @@ AudioEngine::AudioEngine(QObject *parent)
     : QObject(parent), m_audioSink(nullptr), m_audioSinkDevice(nullptr), m_audioSource(nullptr),
       m_audioSourceDevice(nullptr), m_micPollTimer(nullptr) {
 
-    // Output format: K4 uses 12kHz stereo Float32 PCM (L=Main RX, R=Sub RX)
-    m_outputFormat.setSampleRate(12000);
+    // Output format: 48kHz stereo Float32 for maximum device compatibility
+    // K4 sends 12kHz audio; we upsample 4x at playback time
+    m_outputFormat.setSampleRate(48000);
     m_outputFormat.setChannelCount(2);
     m_outputFormat.setSampleFormat(QAudioFormat::Float);
 
@@ -110,7 +111,7 @@ bool AudioEngine::setupAudioOutput() {
     }
 
     if (!outputDevice.isFormatSupported(m_outputFormat)) {
-        qWarning() << "AudioEngine: 12kHz output format not supported by device";
+        qWarning() << "AudioEngine: 48kHz output format not supported by device";
         return false;
     }
 
@@ -378,6 +379,35 @@ QByteArray AudioEngine::resample48kTo12k(const QByteArray &input48k) {
     }
 
     return output12k;
+}
+
+QByteArray AudioEngine::upsample12kTo48k(const QByteArray &input12k) {
+    // 4x upsample (12kHz → 48kHz) with linear interpolation
+    // Input is stereo Float32 (interleaved L R L R ...)
+    const float *in = reinterpret_cast<const float *>(input12k.constData());
+    int inFrames = input12k.size() / (2 * sizeof(float)); // stereo frame count
+    int outFrames = inFrames * 4;
+
+    QByteArray output;
+    output.resize(outFrames * 2 * sizeof(float));
+    float *out = reinterpret_cast<float *>(output.data());
+
+    for (int i = 0; i < inFrames; i++) {
+        float l0 = in[i * 2];
+        float r0 = in[i * 2 + 1];
+        // Next sample (or repeat last for final frame)
+        float l1 = (i + 1 < inFrames) ? in[(i + 1) * 2] : l0;
+        float r1 = (i + 1 < inFrames) ? in[(i + 1) * 2 + 1] : r0;
+
+        for (int j = 0; j < 4; j++) {
+            float t = j * 0.25f;
+            int outIdx = (i * 4 + j) * 2;
+            out[outIdx] = l0 + (l1 - l0) * t;
+            out[outIdx + 1] = r0 + (r1 - r0) * t;
+        }
+    }
+
+    return output;
 }
 
 void AudioEngine::onMicDataReady() {

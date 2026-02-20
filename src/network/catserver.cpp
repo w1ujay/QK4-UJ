@@ -2,6 +2,7 @@
 #include "models/radiostate.h"
 #include "tcpclient.h"
 #include <QDebug>
+#include <QTimer>
 
 CatServer::CatServer(RadioState *state, QObject *parent)
     : QObject(parent), m_server(new QTcpServer(this)), m_radioState(state) {
@@ -89,6 +90,7 @@ void CatServer::onClientData() {
 
         if (!command.isEmpty()) {
             QString response = handleCommand(command);
+            qDebug() << "CatServer:" << command << "->" << (response.isEmpty() ? "(forwarded)" : response);
             if (!response.isEmpty()) {
                 client->write(response.toUtf8());
             }
@@ -156,12 +158,16 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
-    // Extract command prefix (2-3 uppercase letters)
+    // Extract command prefix (2-3 uppercase letters, plus optional '$' for Sub VFO commands)
+    // K4 uses '$' suffix for Sub VFO: MD$, BW$, FA$, FB$, etc.
     QString prefix;
     QString args;
     for (int i = 0; i < command.length(); i++) {
         if (command[i].isLetter()) {
             prefix += command[i].toUpper();
+        } else if (command[i] == '$' && prefix.length() >= 2) {
+            // '$' is part of the command prefix (Sub VFO suffix)
+            prefix += '$';
         } else {
             args = command.mid(i);
             break;
@@ -194,9 +200,9 @@ QString CatServer::handleCommand(const QString &cmd) {
         if (prefix == "FR") {
             return "FR0;"; // Always VFO A for RX
         }
-        // IF command - comprehensive status (K4 format, 38 chars total)
-        // Format:
-        // IF[freq:11][blanks:5][±offset:6][rit:1][xit:1][bank:1][ch:2][tx:1][mode:2][vfo:1][scan:1][split:1][data:2];
+        // IF command - comprehensive status (Kenwood format)
+        // Format: IF[freq:11][step:5][±offset:6][rit:1][xit:1][bank:1][ch:2][tx:1][mode:1][vfo:1][scan:1][split:1][data:2];
+        // Note: Must use string concatenation, NOT arg() with %10+ (Qt replaces %1 inside %10)
         if (prefix == "IF") {
             quint64 freq = m_radioState->frequency();
             int offset = m_radioState->ritXitOffset();
@@ -206,21 +212,26 @@ QString CatServer::handleCommand(const QString &cmd) {
             int tx = m_radioState->isTransmitting() ? 1 : 0;
             int split = m_radioState->splitEnabled() ? 1 : 0;
 
-            QString response = QString("IF%1     %2%3%4%5%6%7%8%9%10%11%12%13;")
-                                   .arg(freq, 11, 10, QChar('0')) // P1: freq (11)
-                                   // 5 blanks for step size (P2)
-                                   .arg(offset >= 0 ? "+" : "-")         // P3: offset sign
-                                   .arg(qAbs(offset), 5, 10, QChar('0')) // P3: offset value (5 digits)
-                                   .arg(ritOn)                           // P4: RIT on/off (1)
-                                   .arg(xitOn)                           // P5: XIT on/off (1)
-                                   .arg(0)                               // P6: Memory bank (1)
-                                   .arg("00")                            // P7: Memory channel (2)
-                                   .arg(tx)                              // P8: TX status (1)
-                                   .arg(mode, 2, 10, QChar('0'))         // P9: Mode (2 digits)
-                                   .arg(0)                               // P10: VFO/Mem (1)
-                                   .arg(0)                               // P11: Scan (1)
-                                   .arg(split)                           // P12: Split (1)
-                                   .arg("00");                           // P13: Data submode (2)
+            // K4 mode for IF: use the raw mode code (1=LSB,2=USB,3=CW,etc)
+            // If unknown, default to USB (2)
+            int k4Mode = (mode >= 1 && mode <= 9) ? mode : 2;
+
+            QString response = QStringLiteral("IF")
+                               + QString("%1").arg(freq, 11, 10, QChar('0'))     // P1: freq (11)
+                               + QStringLiteral("     ")                          // P2: step (5 blanks)
+                               + QString(offset >= 0 ? "+" : "-")                // P3: offset sign
+                               + QString("%1").arg(qAbs(offset), 5, 10, QChar('0')) // P3: offset (5)
+                               + QString::number(ritOn)                           // P4: RIT (1)
+                               + QString::number(xitOn)                           // P5: XIT (1)
+                               + QStringLiteral("0")                              // P6: bank (1)
+                               + QStringLiteral("00")                             // P7: chan (2)
+                               + QString::number(tx)                              // P8: TX (1)
+                               + QString::number(k4Mode)                          // P9: mode (1 digit!)
+                               + QStringLiteral("0")                              // P10: VFO (1)
+                               + QStringLiteral("0")                              // P11: scan (1)
+                               + QString::number(split)                           // P12: split (1)
+                               + QStringLiteral("00")                             // P13: data (2)
+                               + QStringLiteral(";");
             return response;
         }
         // RIT offset
@@ -290,9 +301,15 @@ QString CatServer::handleCommand(const QString &cmd) {
         if (prefix == "AI") {
             return "AI4;";
         }
-        // TB - Text buffer (CW message queue status)
+        // KY - Keyer buffer status read: KY0; = space available, KY1; = full
+        if (prefix == "KY") {
+            // K4 buffer holds ~60 chars; report full if we have 50+ pending
+            return QString("KY%1;").arg(m_cwPending >= 50 ? 1 : 0);
+        }
+        // TB - Text buffer status: TBtaabb; where t=pending(0-9), aa=rx chars, bb=rx text
         if (prefix == "TB") {
-            return "TB000;"; // No CW messages queued
+            int pending = qBound(0, m_cwPending, 9);
+            return QString("TB%100;").arg(pending);
         }
         // SB - Sub RX on/off
         if (prefix == "SB") {
@@ -336,6 +353,28 @@ QString CatServer::handleCommand(const QString &cmd) {
             // For now return a basic response
             return "TM0;";
         }
+        // MD$ - Sub VFO mode
+        if (prefix == "MD$") {
+            QString resp = buildModeResponse(m_radioState->modeB());
+            // Insert '$' → "MD3;" becomes "MD$3;"
+            resp.insert(2, '$');
+            return resp;
+        }
+        // DV - Diversity mode
+        if (prefix == "DV") {
+            return QString("DV%1;").arg(m_radioState->diversityEnabled() ? 1 : 0);
+        }
+        // BW$ - Sub filter bandwidth
+        if (prefix == "BW$") {
+            int bwB = m_radioState->filterBandwidthB();
+            return QString("BW$%1;").arg(bwB, 4, 10, QChar('0'));
+        }
+        // PB - Playback status
+        if (prefix == "PB") {
+            return "PB0;";
+        }
+        // Unrecognized GET command - don't forward, just return empty
+        return QString();
     }
 
     // AI SET commands - silently ignore, don't let external apps change our AI4 mode
@@ -351,12 +390,43 @@ QString CatServer::handleCommand(const QString &cmd) {
     }
     if (prefix == "RX") {
         emit pttRequested(false);
+        // Abort any CW message in progress on the K4 keyer
+        m_cwPending = 0;
+        if (m_tcpClient)
+            m_tcpClient->sendCAT("KY0;");
+        return QString();
+    }
+
+    // KY - Keyer CW text: track pending chars and forward to K4
+    if (prefix == "KY") {
+        if (args == "0") {
+            // KY0 = abort CW
+            m_cwPending = 0;
+        } else {
+            // KY <text> — text starts after space, strip trailing semicolon from cmd
+            QString text = args.trimmed();
+            m_cwPending = text.length();
+            // Start a timer to clear pending count (K4 sends at ~WPM rate)
+            // Approximate: at 29 WPM, ~5 chars/sec → clear after text.length()/5 seconds
+            int wpm = m_radioState->keyerSpeed();
+            int charsPerSec = qMax(1, wpm / 6);
+            int clearMs = qMax(500, (m_cwPending * 1000) / charsPerSec);
+            QTimer::singleShot(clearMs, this, [this]() { m_cwPending = 0; });
+        }
+        emit catCommandReceived(cmd);
         return QString();
     }
 
     // SET commands (have args) - forward to real K4
     // Commands like FA14074000;, MD1;, etc.
     emit catCommandReceived(cmd);
+
+    // Optimistically update RadioState for freq/mode so the next poll returns the new value
+    // (K4 echo may take 50-100ms, but N1MM polls immediately after SET)
+    // Only update freq/mode — other commands could trigger audio flushes or side effects
+    if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$") {
+        m_radioState->parseCATCommand(cmd);
+    }
 
     // Most SET commands echo the new value
     return QString();
@@ -368,33 +438,8 @@ QString CatServer::buildFrequencyResponse(quint64 freq, const QString &prefix) c
 }
 
 QString CatServer::buildModeResponse(int mode) const {
-    // K4 mode numbers: 1=LSB, 2=USB, 3=CW, 4=FM, 5=AM, 6=DATA, 7=CW-R, 9=DATA-R
-    int k4Mode = 2; // Default USB
-    switch (mode) {
-    case RadioState::LSB:
-        k4Mode = 1;
-        break;
-    case RadioState::USB:
-        k4Mode = 2;
-        break;
-    case RadioState::CW:
-        k4Mode = 3;
-        break;
-    case RadioState::FM:
-        k4Mode = 4;
-        break;
-    case RadioState::AM:
-        k4Mode = 5;
-        break;
-    case RadioState::DATA:
-        k4Mode = 6;
-        break;
-    case RadioState::CW_R:
-        k4Mode = 7;
-        break;
-    case RadioState::DATA_R:
-        k4Mode = 9;
-        break;
-    }
+    // RadioState::Mode enum values match K4 mode codes directly:
+    // 1=LSB, 2=USB, 3=CW, 4=FM, 5=AM, 6=DATA, 7=CW-R, 9=DATA-R, 0=Unknown
+    int k4Mode = (mode >= 1 && mode <= 9) ? mode : 2; // Default USB if unknown
     return QString("MD%1;").arg(k4Mode);
 }
