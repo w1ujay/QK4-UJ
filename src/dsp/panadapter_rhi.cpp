@@ -1,5 +1,6 @@
 #include "panadapter_rhi.h"
 #include "rhi_utils.h"
+#include "spotoverlaywidget.h"
 #include "ui/k4styles.h"
 #include <QFile>
 #include <QMouseEvent>
@@ -281,6 +282,10 @@ PanadapterRhiWidget::PanadapterRhiWidget(QWidget *parent) : QRhiWidget(parent) {
     m_freqScaleOverlay = new FrequencyScaleOverlay(this);
     m_freqScaleOverlay->setFrequencyRange(m_centerFreq, m_spanHz, m_cwPitch, m_mode);
     m_freqScaleOverlay->show();
+
+    // Create spot overlay (child widget for N1MM spot labels)
+    m_spotOverlay = new SpotOverlayWidget(this);
+    m_spotOverlay->show();
 }
 
 PanadapterRhiWidget::~PanadapterRhiWidget() {
@@ -291,6 +296,7 @@ void PanadapterRhiWidget::resizeEvent(QResizeEvent *event) {
     QRhiWidget::resizeEvent(event);
     updateDbmScaleOverlay();
     updateFreqScaleOverlay();
+    updateSpotOverlay();
 }
 
 void PanadapterRhiWidget::updateDbmScaleOverlay() {
@@ -323,6 +329,15 @@ void PanadapterRhiWidget::updateFreqScaleOverlay() {
     m_freqScaleOverlay->setGeometry(0, overlayY, w, overlayHeight);
     m_freqScaleOverlay->setFrequencyRange(m_centerFreq, m_spanHz, m_cwPitch, m_mode);
     m_freqScaleOverlay->raise(); // Ensure it renders on top
+}
+
+void PanadapterRhiWidget::updateSpotOverlay() {
+    if (!m_spotOverlay)
+        return;
+    // Cover the spectrum area (top portion)
+    int spectrumHeight = static_cast<int>(height() * m_spectrumRatio);
+    m_spotOverlay->setGeometry(0, 0, width(), spectrumHeight);
+    m_spotOverlay->setFrequencyRange(m_centerFreq, m_spanHz, m_cwPitch, m_mode);
 }
 
 void PanadapterRhiWidget::initColorLUT() {
@@ -1338,6 +1353,12 @@ void PanadapterRhiWidget::updateSpectrum(const QByteArray &bins, qint64 centerFr
 
     m_waterfallNeedsUpdate = true;
     updateFreqScaleOverlay(); // Update frequency labels when center freq changes
+
+    // Keep spot overlay in sync with frequency range
+    if (m_spotOverlay) {
+        m_spotOverlay->setFrequencyRange(m_centerFreq, m_spanHz, m_cwPitch, m_mode);
+    }
+
     update();
 }
 

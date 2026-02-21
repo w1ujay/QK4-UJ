@@ -13,6 +13,7 @@
 // Forward declarations for overlay widgets
 class DbmScaleOverlay;
 class FrequencyScaleOverlay;
+class SpotOverlayWidget;
 
 // Modern GPU-accelerated panadapter using Qt RHI
 // Supports Metal (macOS), DirectX (Windows), Vulkan (Linux)
@@ -68,6 +69,9 @@ public:
     void setNotchColor(const QColor &color);
     void setBackgroundGradient(const QColor &center, const QColor &edge);
 
+    // Spot overlay
+    SpotOverlayWidget *spotOverlay() const { return m_spotOverlay; }
+
 signals:
     void frequencyClicked(qint64 freq);
     void frequencyDragged(qint64 freq);
@@ -96,6 +100,8 @@ private:
     void updateDbmScaleOverlay();
     // Update frequency scale overlay position and values
     void updateFreqScaleOverlay();
+    // Update spot overlay position and frequency range
+    void updateSpotOverlay();
     // Update dB range based on current ref level and scale
     void updateDbRangeFromRefAndScale();
     // Initialization
@@ -256,6 +262,8 @@ private:
     DbmScaleOverlay *m_dbmScaleOverlay = nullptr;
     // Frequency scale overlay (child widget for frequency labels at boundary)
     FrequencyScaleOverlay *m_freqScaleOverlay = nullptr;
+    // N1MM spot overlay (child widget for spot labels)
+    SpotOverlayWidget *m_spotOverlay = nullptr;
 };
 
 #endif // PANADAPTER_RHI_H
