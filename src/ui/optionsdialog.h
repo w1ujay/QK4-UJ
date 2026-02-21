@@ -144,6 +144,7 @@ private:
     QLabel *m_rfkitStatusLabel = nullptr;
     QCheckBox *m_rfkitLowPowerCheckbox = nullptr;
     QDoubleSpinBox *m_rfkitMaxDriveSpin = nullptr;
+    QCheckBox *m_rfkitTempFahrenheitCheckbox = nullptr;
 
     // KPA1500 page elements
     QCheckBox *m_kpa1500EnableCheckbox = nullptr;

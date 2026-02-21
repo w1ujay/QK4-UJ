@@ -73,39 +73,56 @@ QString RFKitClient::buildUrl(const QString &endpoint) const {
     return QString("http://%1:%2%3").arg(m_host).arg(m_port).arg(endpoint);
 }
 
+QNetworkRequest RFKitClient::makeRequest(const QString &endpoint) const {
+    QNetworkRequest request(QUrl(buildUrl(endpoint)));
+    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    request.setRawHeader("Accept", "application/json");
+    return request;
+}
+
 // ============== Commands ==============
 
 void RFKitClient::setOperateMode(bool operate) {
-    QNetworkRequest request(QUrl(buildUrl("/operate-mode")));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkRequest request = makeRequest("/operate-mode");
 
     QJsonObject body;
     body["operate_mode"] = operate ? "OPERATE" : "STANDBY";
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
+    qDebug() << "RFKit: Sending PUT /operate-mode:" << data;
     QNetworkReply *reply = m_networkManager->put(request, data);
     connect(reply, &QNetworkReply::finished, reply, [reply, operate, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
+            qDebug() << "RFKit: operate-mode response:" << reply->readAll();
             OperatingState newState = operate ? StateOperate : StateStandby;
             if (m_operatingState != newState) {
                 m_operatingState = newState;
                 emit operatingStateChanged(newState);
             }
         } else {
-            qWarning() << "RFKit: Failed to set operate mode:" << reply->errorString();
+            qWarning() << "RFKit: Failed to set operate mode:" << reply->error() << reply->errorString();
         }
     });
 }
 
 void RFKitClient::setAntenna(int antennaNumber) {
-    QNetworkRequest request(QUrl(buildUrl("/antennas/active")));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkRequest request = makeRequest("/antennas/active");
 
+    // Build full antenna object matching the API's expected format
     QJsonObject body;
     body["number"] = antennaNumber;
+    // Include name if we have it from the antenna list
+    for (const auto &ant : m_antennas) {
+        if (ant.number == antennaNumber) {
+            body["id"] = ant.id;
+            body["name"] = ant.name;
+            break;
+        }
+    }
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
+    qDebug() << "RFKit: Sending PUT /antennas/active:" << data;
     QNetworkReply *reply = m_networkManager->put(request, data);
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
@@ -113,20 +130,20 @@ void RFKitClient::setAntenna(int antennaNumber) {
             // Refresh active antenna on next poll
             pollActiveAntenna();
         } else {
-            qWarning() << "RFKit: Failed to set antenna:" << reply->errorString();
+            qWarning() << "RFKit: Failed to set antenna:" << reply->error() << reply->errorString();
         }
     });
 }
 
 void RFKitClient::resetError() {
-    QNetworkRequest request(QUrl(buildUrl("/error/reset")));
-    request.setHeader(QNetworkRequest::ContentTypeHeader, "application/json");
+    QNetworkRequest request = makeRequest("/error/reset");
 
-    QNetworkReply *reply = m_networkManager->post(request, QByteArray("{}"));
+    qDebug() << "RFKit: Sending POST /error/reset";
+    QNetworkReply *reply = m_networkManager->post(request, QByteArray());
     connect(reply, &QNetworkReply::finished, reply, [reply]() {
         reply->deleteLater();
         if (reply->error() != QNetworkReply::NoError) {
-            qWarning() << "RFKit: Failed to reset error:" << reply->errorString();
+            qWarning() << "RFKit: Failed to reset error:" << reply->error() << reply->errorString();
         }
     });
 }
@@ -145,8 +162,7 @@ void RFKitClient::onPollTimer() {
 }
 
 void RFKitClient::pollPower() {
-    QNetworkRequest request(QUrl(buildUrl("/power")));
-    QNetworkReply *reply = m_networkManager->get(request);
+    QNetworkReply *reply = m_networkManager->get(makeRequest("/power"));
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
@@ -167,8 +183,7 @@ void RFKitClient::pollPower() {
 }
 
 void RFKitClient::pollOperateMode() {
-    QNetworkRequest request(QUrl(buildUrl("/operate-mode")));
-    QNetworkReply *reply = m_networkManager->get(request);
+    QNetworkReply *reply = m_networkManager->get(makeRequest("/operate-mode"));
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
@@ -178,8 +193,7 @@ void RFKitClient::pollOperateMode() {
 }
 
 void RFKitClient::pollData() {
-    QNetworkRequest request(QUrl(buildUrl("/data")));
-    QNetworkReply *reply = m_networkManager->get(request);
+    QNetworkReply *reply = m_networkManager->get(makeRequest("/data"));
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
@@ -189,8 +203,7 @@ void RFKitClient::pollData() {
 }
 
 void RFKitClient::pollAntennas() {
-    QNetworkRequest request(QUrl(buildUrl("/antennas")));
-    QNetworkReply *reply = m_networkManager->get(request);
+    QNetworkReply *reply = m_networkManager->get(makeRequest("/antennas"));
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
@@ -200,8 +213,7 @@ void RFKitClient::pollAntennas() {
 }
 
 void RFKitClient::pollActiveAntenna() {
-    QNetworkRequest request(QUrl(buildUrl("/antennas/active")));
-    QNetworkReply *reply = m_networkManager->get(request);
+    QNetworkReply *reply = m_networkManager->get(makeRequest("/antennas/active"));
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
@@ -211,8 +223,7 @@ void RFKitClient::pollActiveAntenna() {
 }
 
 void RFKitClient::pollInfo() {
-    QNetworkRequest request(QUrl(buildUrl("/info")));
-    QNetworkReply *reply = m_networkManager->get(request);
+    QNetworkReply *reply = m_networkManager->get(makeRequest("/info"));
     connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
         reply->deleteLater();
         if (reply->error() == QNetworkReply::NoError) {
@@ -314,8 +325,20 @@ void RFKitClient::handlePowerResponse(const QByteArray &data) {
 }
 
 void RFKitClient::handleOperateModeResponse(const QByteArray &data) {
-    // Response is a quoted string: "OPERATE" or "STANDBY"
-    QString mode = QString::fromUtf8(data).trimmed().remove('"');
+    // Response can be a quoted string "OPERATE" or JSON object {"operate_mode": "OPERATE"}
+    QString mode;
+    QJsonDocument doc = QJsonDocument::fromJson(data);
+    if (doc.isObject()) {
+        QJsonObject obj = doc.object();
+        if (obj.contains("operate_mode")) {
+            mode = obj["operate_mode"].toString();
+        }
+    }
+    if (mode.isEmpty()) {
+        // Fall back to plain string parsing
+        mode = QString::fromUtf8(data).trimmed().remove('"');
+    }
+
     OperatingState newState = StateUnknown;
     if (mode == "OPERATE") {
         newState = StateOperate;

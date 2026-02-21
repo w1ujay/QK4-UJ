@@ -143,6 +143,8 @@ public:
     void setRfkitLowPowerEnabled(bool enabled);
     double rfkitMaxDrivePower() const;
     void setRfkitMaxDrivePower(double watts);
+    bool rfkitTempFahrenheit() const;
+    void setRfkitTempFahrenheit(bool fahrenheit);
 
     // N1MM Spot settings (global)
     bool n1mmEnabled() const;
@@ -187,6 +189,7 @@ signals:
     void rfkitSettingsChanged();
     void rfkitPollIntervalChanged(int intervalMs);
     void rfkitLowPowerChanged();
+    void rfkitTempUnitChanged(bool fahrenheit);
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
@@ -220,6 +223,7 @@ private:
     int m_rfkitPollInterval = 1000; // Default: 1000ms for HTTP polling
     bool m_rfkitLowPowerEnabled = false;
     double m_rfkitMaxDrivePower = 1.5; // Default: 1.5W max K4 drive power
+    bool m_rfkitTempFahrenheit = false;
 
     // N1MM Spot settings (global)
     bool m_n1mmEnabled = false;

@@ -79,6 +79,7 @@ private slots:
 private:
     void setState(ConnectionState state);
     QString buildUrl(const QString &endpoint) const;
+    QNetworkRequest makeRequest(const QString &endpoint) const;
 
     // Poll endpoint handlers
     void pollPower();

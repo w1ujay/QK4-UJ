@@ -2111,6 +2111,30 @@ QWidget *OptionsDialog::createRfkitPage() {
     line5->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
     layout->addWidget(line5);
 
+    // Display section
+    auto *displayLabel = new QLabel("Display", page);
+    displayLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                    .arg(K4Styles::Colors::TextWhite)
+                                    .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(displayLabel);
+
+    m_rfkitTempFahrenheitCheckbox = new QCheckBox("Show temperature in Fahrenheit", page);
+    m_rfkitTempFahrenheitCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                                         "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                                     .arg(K4Styles::Colors::TextWhite)
+                                                     .arg(K4Styles::Dimensions::FontSizePopup)
+                                                     .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                                     .arg(K4Styles::Dimensions::CheckboxSize));
+    m_rfkitTempFahrenheitCheckbox->setChecked(RadioSettings::instance()->rfkitTempFahrenheit());
+    layout->addWidget(m_rfkitTempFahrenheitCheckbox);
+
+    // Separator
+    auto *line6 = new QFrame(page);
+    line6->setFrameShape(QFrame::HLine);
+    line6->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line6->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line6);
+
     // Help text
     auto *helpLabel = new QLabel("Enter the RFKit amplifier IP address and port. The amplifier panel shows power, "
                                  "SWR, temperature, and allows operate/standby control.",
@@ -2138,6 +2162,9 @@ QWidget *OptionsDialog::createRfkitPage() {
 
     connect(m_rfkitMaxDriveSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
             [](double value) { RadioSettings::instance()->setRfkitMaxDrivePower(value); });
+
+    connect(m_rfkitTempFahrenheitCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setRfkitTempFahrenheit(checked); });
 
     // Listen for status changes
     connect(RadioSettings::instance(), &RadioSettings::rfkitEnabledChanged, this, [this]() { updateRfkitStatus(); });

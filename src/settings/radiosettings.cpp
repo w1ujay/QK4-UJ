@@ -232,6 +232,18 @@ void RadioSettings::setRfkitMaxDrivePower(double watts) {
     }
 }
 
+bool RadioSettings::rfkitTempFahrenheit() const {
+    return m_rfkitTempFahrenheit;
+}
+
+void RadioSettings::setRfkitTempFahrenheit(bool fahrenheit) {
+    if (m_rfkitTempFahrenheit != fahrenheit) {
+        m_rfkitTempFahrenheit = fahrenheit;
+        save();
+        emit rfkitTempUnitChanged(fahrenheit);
+    }
+}
+
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }
@@ -580,6 +592,7 @@ void RadioSettings::load() {
     m_rfkitPollInterval = m_settings.value("rfkit/pollInterval", 1000).toInt();
     m_rfkitLowPowerEnabled = m_settings.value("rfkit/lowPowerEnabled", false).toBool();
     m_rfkitMaxDrivePower = m_settings.value("rfkit/maxDrivePower", 1.5).toDouble();
+    m_rfkitTempFahrenheit = m_settings.value("rfkit/tempFahrenheit", false).toBool();
 
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
@@ -688,6 +701,7 @@ void RadioSettings::save() {
     m_settings.setValue("rfkit/pollInterval", m_rfkitPollInterval);
     m_settings.setValue("rfkit/lowPowerEnabled", m_rfkitLowPowerEnabled);
     m_settings.setValue("rfkit/maxDrivePower", m_rfkitMaxDrivePower);
+    m_settings.setValue("rfkit/tempFahrenheit", m_rfkitTempFahrenheit);
 
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);

@@ -154,6 +154,13 @@ void RFKitPanel::setConnected(bool connected) {
     }
 }
 
+void RFKitPanel::setTempFahrenheit(bool fahrenheit) {
+    if (m_tempFahrenheit != fahrenheit) {
+        m_tempFahrenheit = fahrenheit;
+        update();
+    }
+}
+
 void RFKitPanel::setOperateLocked(bool locked) {
     if (m_operateLocked != locked) {
         m_operateLocked = locked;
@@ -335,10 +342,17 @@ void RFKitPanel::paintEvent(QPaintEvent *event) {
     drawMeter(painter, meterY, "REF", refValue, refRatio, refPeakRatio, {"0", "25", "50", "75", "100"});
     meterY += meterSpacing;
 
-    // TMP meter (0-100°C)
-    float tmpRatio = m_displayTemperature / 100.0f;
-    QString tmpValue = QString("%1\u00B0C").arg(qRound(m_displayTemperature));
-    drawMeter(painter, meterY, "TMP", tmpValue, tmpRatio, tmpRatio, {"0", "25", "50", "75", "100"}, false);
+    // TMP meter — C or F based on setting
+    if (m_tempFahrenheit) {
+        float tempF = m_displayTemperature * 9.0f / 5.0f + 32.0f;
+        float tmpRatio = tempF / 212.0f;
+        QString tmpValue = QString("%1\u00B0F").arg(qRound(tempF));
+        drawMeter(painter, meterY, "TMP", tmpValue, tmpRatio, tmpRatio, {"32", "77", "122", "167", "212"}, false);
+    } else {
+        float tmpRatio = m_displayTemperature / 100.0f;
+        QString tmpValue = QString("%1\u00B0C").arg(qRound(m_displayTemperature));
+        drawMeter(painter, meterY, "TMP", tmpValue, tmpRatio, tmpRatio, {"0", "25", "50", "75", "100"}, false);
+    }
     meterY += 38;
 
     // Info row: Voltage + Current

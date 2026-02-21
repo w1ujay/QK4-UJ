@@ -1850,6 +1850,11 @@ MainWindow::MainWindow(QWidget *parent)
     // Monitor K4 power setting for drive power protection
     connect(m_radioState, &RadioState::rfPowerChanged, this, [this](double, bool) { checkRfkitDrivePower(); });
 
+    // Temperature unit setting
+    connect(RadioSettings::instance(), &RadioSettings::rfkitTempUnitChanged, this,
+            [this](bool fahrenheit) { m_rfkitWindow->panel()->setTempFahrenheit(fahrenheit); });
+    m_rfkitWindow->panel()->setTempFahrenheit(RadioSettings::instance()->rfkitTempFahrenheit());
+
     // Initialize RFKit status display
     updateRfkitStatus();
 

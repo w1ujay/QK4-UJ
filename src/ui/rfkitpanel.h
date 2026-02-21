@@ -33,6 +33,7 @@ public:
     void setFault(bool fault);
     void setConnected(bool connected);
     void setOperateLocked(bool locked);
+    void setTempFahrenheit(bool fahrenheit);
     void setDeviceName(const QString &name);
     void setStatus(const QString &status);
     void setAntennaCount(int count);
@@ -77,6 +78,7 @@ private:
     float m_current = 0.0f;
     bool m_fault = false;
     bool m_connected = false;
+    bool m_tempFahrenheit = false;
     QString m_deviceName = "RFKit";
     QString m_status;
 
