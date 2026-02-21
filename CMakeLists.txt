@@ -75,6 +75,7 @@ set(SOURCES
     src/network/protocol.cpp
     src/network/kpa1500client.cpp
     src/network/catserver.cpp
+    src/network/n1mmlistener.cpp
     src/audio/audioengine.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
@@ -136,6 +137,7 @@ set(HEADERS
     src/network/protocol.h
     src/network/kpa1500client.h
     src/network/catserver.h
+    src/network/n1mmlistener.h
     src/audio/audioengine.h
     src/audio/opusdecoder.h
     src/audio/opusencoder.h
