@@ -196,10 +196,10 @@ constexpr const char *OverlayDivider = "#28282D";          // Divider lines betw
 constexpr const char *OverlayDividerLight = "#3C3C41";     // Lighter divider (demarcation)
 
 // N1MM Spot Overlay Colors
-constexpr const char *SpotMult = "#FFD700";    // Gold - new multiplier
-constexpr const char *SpotNewQso = "#FFFFFF";  // White - new QSO (not dupe, not mult)
+constexpr const char *SpotMult = "#FF0000";    // Bright red - new multiplier
+constexpr const char *SpotNewQso = "#4DA6FF";  // Blue - unworked non-mult
 constexpr const char *SpotDupe = "#555555";    // Dim gray - already worked
-constexpr const char *SpotDefault = "#87CEEB"; // Light sky blue - default/unknown
+constexpr const char *SpotDefault = "#4DA6FF"; // Blue - default/unknown
 
 // Selection Highlighting (K4-style dual panel for menu items)
 constexpr const char *SelectionLight = "#DCDCDC"; // Light panel (selected zone)

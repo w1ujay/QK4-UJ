@@ -122,16 +122,24 @@ void SpotOverlayWidget::paintEvent(QPaintEvent * /*event*/) {
 
     for (const VisibleSpot &vs : visible) {
         QColor color = colorForStatus(vs.spot.status);
+        bool isMult = vs.spot.status.contains("mult");
+
+        // Set font weight based on status
+        QFont spotFont = font;
+        spotFont.setBold(isMult);
+        spotFont.setPixelSize(isMult ? 12 : 10);
+        painter.setFont(spotFont);
+        QFontMetrics spotFm(spotFont);
 
         // Draw tick mark
-        QPen tickPen(color, 1.0);
+        QPen tickPen(color, isMult ? 2.0 : 1.0);
         painter.setPen(tickPen);
         int tickBottom = h - 2;
         int tickTop = tickBottom - tickHeight;
         painter.drawLine(QPointF(vs.x, tickTop), QPointF(vs.x, tickBottom));
 
         // Find best row (lowest row where label doesn't overlap)
-        int textWidth = fm.horizontalAdvance(vs.spot.callsign);
+        int textWidth = spotFm.horizontalAdvance(vs.spot.callsign);
         float labelLeft = vs.x - textWidth / 2.0f;
         float labelRight = vs.x + textWidth / 2.0f + 4.0f;
         int row = 0;
@@ -148,7 +156,7 @@ void SpotOverlayWidget::paintEvent(QPaintEvent * /*event*/) {
 
         // Draw label
         float labelY = tickTop - 2 - (row * rowHeight);
-        QRectF textRect(labelLeft, labelY - fm.height(), textWidth + 4, fm.height() + 2);
+        QRectF textRect(labelLeft, labelY - spotFm.height(), textWidth + 4, spotFm.height() + 2);
 
         // Background for readability
         painter.setPen(Qt::NoPen);
