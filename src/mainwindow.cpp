@@ -1836,6 +1836,8 @@ MainWindow::MainWindow(QWidget *parent)
     // Connect panel signals to send RFKit commands
     connect(m_rfkitWindow->panel(), &RFKitPanel::modeToggled, this,
             [this](bool operate) { m_rfkitClient->setOperateMode(operate); });
+    connect(m_rfkitWindow->panel(), &RFKitPanel::wakeUpRequested, this,
+            [this]() { m_rfkitClient->setOperateMode(false); });
     connect(m_rfkitWindow->panel(), &RFKitPanel::antennaChanged, this,
             [this](int number) { m_rfkitClient->setAntenna(number); });
     connect(m_rfkitWindow->panel(), &RFKitPanel::errorResetRequested, this, [this]() { m_rfkitClient->resetError(); });

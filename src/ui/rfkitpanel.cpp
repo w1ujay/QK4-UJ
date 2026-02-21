@@ -22,7 +22,13 @@ void RFKitPanel::setupUi() {
     m_modeBtn = new QPushButton("STANDBY", this);
     m_modeBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
     m_modeBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
-    connect(m_modeBtn, &QPushButton::clicked, this, [this]() { emit modeToggled(!m_operate); });
+    connect(m_modeBtn, &QPushButton::clicked, this, [this]() {
+        if (m_sleeping) {
+            emit wakeUpRequested();
+        } else {
+            emit modeToggled(!m_operate);
+        }
+    });
 
     m_antBtn = new QPushButton("ANT", this);
     m_antBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
@@ -32,6 +38,12 @@ void RFKitPanel::setupUi() {
         emit antennaChanged(nextAnt);
     });
 
+    m_tuneBtn = new QPushButton("TUNE", this);
+    m_tuneBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
+    m_tuneBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
+    m_tuneBtn->setEnabled(false);
+    m_tuneBtn->setToolTip("Waiting for RF-Kit to implement this endpoint \xF0\x9F\x99\x84");
+
     m_clrBtn = new QPushButton("CLR", this);
     m_clrBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
     m_clrBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
@@ -39,6 +51,7 @@ void RFKitPanel::setupUi() {
 
     buttonLayout->addWidget(m_modeBtn);
     buttonLayout->addWidget(m_antBtn);
+    buttonLayout->addWidget(m_tuneBtn);
     buttonLayout->addWidget(m_clrBtn);
 
     auto *mainLayout = new QVBoxLayout(this);
@@ -104,6 +117,11 @@ void RFKitPanel::setTemperature(float celsius) {
 void RFKitPanel::setVoltage(float volts) {
     if (m_voltage != volts) {
         m_voltage = volts;
+        bool wasSleeping = m_sleeping;
+        m_sleeping = (volts < SLEEP_VOLTAGE_THRESHOLD && m_connected);
+        if (m_sleeping != wasSleeping) {
+            updateButtonStates();
+        }
         update();
     }
 }
@@ -125,9 +143,13 @@ void RFKitPanel::setFault(bool fault) {
 void RFKitPanel::setConnected(bool connected) {
     if (m_connected != connected) {
         m_connected = connected;
+        if (!connected) {
+            m_sleeping = false;
+        }
         m_modeBtn->setEnabled(connected);
         m_antBtn->setEnabled(connected);
         m_clrBtn->setEnabled(connected);
+        updateButtonStates();
         update();
     }
 }
@@ -226,7 +248,11 @@ void RFKitPanel::onDecayTimer() {
 }
 
 void RFKitPanel::updateButtonStates() {
-    m_modeBtn->setText(m_operate ? "OPERATE" : "STANDBY");
+    if (m_sleeping) {
+        m_modeBtn->setText("WAKE UP!");
+    } else {
+        m_modeBtn->setText(m_operate ? "OPERATE" : "STANDBY");
+    }
     if (!m_antennaName.isEmpty()) {
         m_antBtn->setText(m_antennaName);
     } else if (m_antennaNumber > 0) {
@@ -314,9 +340,11 @@ void RFKitPanel::drawStatusLabels(QPainter &painter, int y, int height) {
     labelFont.setBold(true);
     painter.setFont(labelFont);
 
-    // OPERATE/STANDBY
-    QString modeText = m_operate ? "OPERATE" : "STANDBY";
-    QColor modeColor = m_operate ? QColor(K4Styles::Colors::StatusGreen) : QColor(K4Styles::Colors::InactiveGray);
+    // OPERATE/STANDBY/SLEEPING
+    QString modeText = m_sleeping ? "SLEEPING" : (m_operate ? "OPERATE" : "STANDBY");
+    QColor modeColor = m_sleeping  ? QColor(K4Styles::Colors::AccentAmber)
+                       : m_operate ? QColor(K4Styles::Colors::StatusGreen)
+                                   : QColor(K4Styles::Colors::InactiveGray);
     painter.setPen(modeColor);
     painter.drawText(100, y, 60, height, Qt::AlignLeft | Qt::AlignVCenter, modeText);
 

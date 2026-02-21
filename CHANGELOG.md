@@ -4,6 +4,54 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.4.0-UJ.1] - 2026-02-21
+
+### Added
+
+- **Keyboard Controls**: VFO tuning and UI navigation via keyboard
+  - Up/Down arrow keys for VFO frequency tuning
+  - Cursor-position-aware digit tuning on frequency display (click a digit, arrow to change that place value)
+  - DualControlButton keyboard support (WPM, BW, etc.)
+  - MON overlay Up/Down arrow and Escape key support
+- **Audio Upsampling**: 12kHz to 48kHz upsampling for WSLg PulseAudio RDP Sink compatibility
+- **CAT Server Improvements**: Extended command support for N1MM Logger+ integration
+  - Optimistic RadioState updates for FA/FB/MD/MD$ SET commands
+  - Added handlers for MD$, DV, BW$, PB, SB, SM, AG, SQ, FW, TM, PCX, DT, OM
+  - Fixed IF response format and mode field per Kenwood IF spec
+  - Added KY; read query and TB; buffer status responses
+- **N1MM Spot Overlay**: Display DX spots from N1MM Logger+ directly on the panadapter
+  - UDP listener receives spot broadcasts and renders callsign labels at correct frequencies
+  - Color-coded by status: multipliers (red/bold), unworked (blue), worked/dupes (gray)
+  - Click a spot label to tune to that frequency
+  - Up to 3 staggered rows to avoid label overlap, capped at 30 visible spots
+  - Configurable spot expiry timer (1-60 minutes)
+  - Configurable spot font size (8-24px)
+  - Customizable spot colors via color picker
+- **N1MM Settings Page**: Moved N1MM configuration to Tools > Settings with live toggle
+  - Enable/disable spots without reconnecting to the radio
+  - UDP port, expiry, font size, and color settings all apply immediately
+- **Panadapter ON/OFF Toggle**: Added PAN ON/OFF button in the DISP popup
+  - Disables spectrum rendering when not needed, persisted per radio
+- **RFKit Amplifier Integration**: Monitor and control RFKit amplifiers via REST API
+  - Floating panel with animated meters: forward power, SWR, reflected, temperature
+  - Voltage and current readouts
+  - Operate/Standby toggle, antenna cycling, error reset buttons
+  - HTTP polling with automatic connection detection
+  - Settings page in Tools > Settings (host, port, enable)
+- **KPA1500 Settings Page**: Added KPA1500 configuration to Tools > Settings
+  - Host, port, and enable checkbox now accessible from the settings UI
+  - Connection status indicator
+
+### Fixed
+
+- **Audio Latency**: Added latency guard to prevent audio delay accumulation
+  - Drops stale packets when queue exceeds 8 packets (~160ms) to keep audio in sync
+- **Audio Queue Flush**: Flush audio queue on mode/filter changes to prevent stale audio
+- **Panadapter Frequency Alignment**: Fixed spectrum data, VFO marker, passband, spots, and frequency labels all aligning correctly
+  - Removed CW pitch offset from frequency coordinate mapping — the K4's centerFreq is the true spectrum center in all modes
+  - Passband centered on tuned frequency for all modes (USB, LSB, CW, AM)
+  - VFO marker positioned at dial frequency matching the VFO display
+
 ## [0.4.0-beta.3] - 2026-02-12
 
 ### Added

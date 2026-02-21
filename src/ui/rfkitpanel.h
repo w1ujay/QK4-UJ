@@ -38,6 +38,7 @@ public:
 
 signals:
     void modeToggled(bool operate);
+    void wakeUpRequested();
     void antennaChanged(int number);
     void errorResetRequested();
 
@@ -60,6 +61,7 @@ private:
     void onDecayTimer();
 
     // State
+    bool m_sleeping = false;
     bool m_operate = false;
     int m_antennaNumber = 0;
     QString m_antennaName;
@@ -94,9 +96,12 @@ private:
     static constexpr float DECAY_RATE = 0.06f;
     static constexpr float PEAK_DECAY_RATE = 0.04f;
 
+    static constexpr float SLEEP_VOLTAGE_THRESHOLD = 10.0f;
+
     // Buttons
     QPushButton *m_modeBtn = nullptr;
     QPushButton *m_antBtn = nullptr;
+    QPushButton *m_tuneBtn = nullptr;
     QPushButton *m_clrBtn = nullptr;
 };
 
