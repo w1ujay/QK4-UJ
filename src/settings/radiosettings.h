@@ -139,6 +139,10 @@ public:
     void setRfkitPollInterval(int intervalMs);
     QPoint rfkitWindowPosition() const;
     void setRfkitWindowPosition(const QPoint &pos);
+    bool rfkitLowPowerEnabled() const;
+    void setRfkitLowPowerEnabled(bool enabled);
+    double rfkitMaxDrivePower() const;
+    void setRfkitMaxDrivePower(double watts);
 
     // N1MM Spot settings (global)
     bool n1mmEnabled() const;
@@ -182,6 +186,7 @@ signals:
     void rfkitEnabledChanged(bool enabled);
     void rfkitSettingsChanged();
     void rfkitPollIntervalChanged(int intervalMs);
+    void rfkitLowPowerChanged();
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
@@ -213,6 +218,8 @@ private:
     quint16 m_rfkitPort = 8080;
     bool m_rfkitEnabled = false;
     int m_rfkitPollInterval = 1000; // Default: 1000ms for HTTP polling
+    bool m_rfkitLowPowerEnabled = false;
+    double m_rfkitMaxDrivePower = 1.5; // Default: 1.5W max K4 drive power
 
     // N1MM Spot settings (global)
     bool m_n1mmEnabled = false;

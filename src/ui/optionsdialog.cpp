@@ -2053,6 +2053,64 @@ QWidget *OptionsDialog::createRfkitPage() {
     m_rfkitEnableCheckbox->setChecked(RadioSettings::instance()->rfkitEnabled());
     layout->addWidget(m_rfkitEnableCheckbox);
 
+    // Separator
+    auto *line4 = new QFrame(page);
+    line4->setFrameShape(QFrame::HLine);
+    line4->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line4->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line4);
+
+    // Drive Power Protection section
+    auto *driveLabel = new QLabel("Drive Power Protection", page);
+    driveLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                  .arg(K4Styles::Colors::TextWhite)
+                                  .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(driveLabel);
+
+    m_rfkitLowPowerCheckbox = new QCheckBox("Low Power Mode", page);
+    m_rfkitLowPowerCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                                   "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                               .arg(K4Styles::Colors::TextWhite)
+                                               .arg(K4Styles::Dimensions::FontSizePopup)
+                                               .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                               .arg(K4Styles::Dimensions::CheckboxSize));
+    m_rfkitLowPowerCheckbox->setChecked(RadioSettings::instance()->rfkitLowPowerEnabled());
+    layout->addWidget(m_rfkitLowPowerCheckbox);
+
+    auto *maxDriveLayout = new QHBoxLayout();
+    auto *maxDriveLabel = new QLabel("Max Drive:", page);
+    maxDriveLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                     .arg(K4Styles::Colors::TextGray)
+                                     .arg(K4Styles::Dimensions::FontSizePopup));
+    maxDriveLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_rfkitMaxDriveSpin = new QDoubleSpinBox(page);
+    m_rfkitMaxDriveSpin->setRange(0.1, 110.0);
+    m_rfkitMaxDriveSpin->setSingleStep(0.1);
+    m_rfkitMaxDriveSpin->setDecimals(1);
+    m_rfkitMaxDriveSpin->setSuffix(" W");
+    m_rfkitMaxDriveSpin->setValue(RadioSettings::instance()->rfkitMaxDrivePower());
+    m_rfkitMaxDriveSpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
+    m_rfkitMaxDriveSpin->setStyleSheet(spinBoxStyle);
+
+    auto *driveHint = new QLabel("If K4 power exceeds this, amp goes to standby", page);
+    driveHint->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+
+    maxDriveLayout->addWidget(maxDriveLabel);
+    maxDriveLayout->addWidget(m_rfkitMaxDriveSpin);
+    maxDriveLayout->addWidget(driveHint);
+    maxDriveLayout->addStretch();
+    layout->addLayout(maxDriveLayout);
+
+    // Separator
+    auto *line5 = new QFrame(page);
+    line5->setFrameShape(QFrame::HLine);
+    line5->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line5->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line5);
+
     // Help text
     auto *helpLabel = new QLabel("Enter the RFKit amplifier IP address and port. The amplifier panel shows power, "
                                  "SWR, temperature, and allows operate/standby control.",
@@ -2074,6 +2132,12 @@ QWidget *OptionsDialog::createRfkitPage() {
 
     connect(m_rfkitEnableCheckbox, &QCheckBox::toggled, this,
             [](bool checked) { RadioSettings::instance()->setRfkitEnabled(checked); });
+
+    connect(m_rfkitLowPowerCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setRfkitLowPowerEnabled(checked); });
+
+    connect(m_rfkitMaxDriveSpin, QOverload<double>::of(&QDoubleSpinBox::valueChanged), this,
+            [](double value) { RadioSettings::instance()->setRfkitMaxDrivePower(value); });
 
     // Listen for status changes
     connect(RadioSettings::instance(), &RadioSettings::rfkitEnabledChanged, this, [this]() { updateRfkitStatus(); });

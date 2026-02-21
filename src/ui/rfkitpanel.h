@@ -32,6 +32,7 @@ public:
     void setCurrent(float amps);
     void setFault(bool fault);
     void setConnected(bool connected);
+    void setOperateLocked(bool locked);
     void setDeviceName(const QString &name);
     void setStatus(const QString &status);
     void setAntennaCount(int count);
@@ -63,6 +64,7 @@ private:
     // State
     bool m_sleeping = false;
     bool m_operate = false;
+    bool m_operateLocked = false;
     int m_antennaNumber = 0;
     QString m_antennaName;
     int m_antennaCount = 1;

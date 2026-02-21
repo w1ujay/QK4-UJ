@@ -207,6 +207,31 @@ void RadioSettings::setRfkitWindowPosition(const QPoint &pos) {
     m_settings.sync();
 }
 
+bool RadioSettings::rfkitLowPowerEnabled() const {
+    return m_rfkitLowPowerEnabled;
+}
+
+void RadioSettings::setRfkitLowPowerEnabled(bool enabled) {
+    if (m_rfkitLowPowerEnabled != enabled) {
+        m_rfkitLowPowerEnabled = enabled;
+        save();
+        emit rfkitLowPowerChanged();
+    }
+}
+
+double RadioSettings::rfkitMaxDrivePower() const {
+    return m_rfkitMaxDrivePower;
+}
+
+void RadioSettings::setRfkitMaxDrivePower(double watts) {
+    watts = qBound(0.1, watts, 110.0);
+    if (m_rfkitMaxDrivePower != watts) {
+        m_rfkitMaxDrivePower = watts;
+        save();
+        emit rfkitLowPowerChanged();
+    }
+}
+
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }
@@ -553,6 +578,8 @@ void RadioSettings::load() {
     m_rfkitPort = m_settings.value("rfkit/port", 8080).toUInt();
     m_rfkitEnabled = m_settings.value("rfkit/enabled", false).toBool();
     m_rfkitPollInterval = m_settings.value("rfkit/pollInterval", 1000).toInt();
+    m_rfkitLowPowerEnabled = m_settings.value("rfkit/lowPowerEnabled", false).toBool();
+    m_rfkitMaxDrivePower = m_settings.value("rfkit/maxDrivePower", 1.5).toDouble();
 
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
@@ -659,6 +686,8 @@ void RadioSettings::save() {
     m_settings.setValue("rfkit/port", m_rfkitPort);
     m_settings.setValue("rfkit/enabled", m_rfkitEnabled);
     m_settings.setValue("rfkit/pollInterval", m_rfkitPollInterval);
+    m_settings.setValue("rfkit/lowPowerEnabled", m_rfkitLowPowerEnabled);
+    m_settings.setValue("rfkit/maxDrivePower", m_rfkitMaxDrivePower);
 
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);

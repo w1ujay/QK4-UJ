@@ -13,6 +13,7 @@
 #include <QShowEvent>
 #include <QHideEvent>
 #include <QSpinBox>
+#include <QDoubleSpinBox>
 
 class RadioState;
 class AudioEngine;
@@ -141,6 +142,8 @@ private:
     QLineEdit *m_rfkitHostEdit = nullptr;
     QSpinBox *m_rfkitPortSpin = nullptr;
     QLabel *m_rfkitStatusLabel = nullptr;
+    QCheckBox *m_rfkitLowPowerCheckbox = nullptr;
+    QDoubleSpinBox *m_rfkitMaxDriveSpin = nullptr;
 
     // KPA1500 page elements
     QCheckBox *m_kpa1500EnableCheckbox = nullptr;

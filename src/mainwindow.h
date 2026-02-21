@@ -145,6 +145,7 @@ private slots:
     void onRfkitError(const QString &error);
     void onRfkitEnabledChanged(bool enabled);
     void onRfkitSettingsChanged();
+    void checkRfkitDrivePower();
     void updateRfkitStatus();
 
     // Error/notification from K4 (ERxx: messages)

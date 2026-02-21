@@ -1845,6 +1845,10 @@ MainWindow::MainWindow(QWidget *parent)
     // Connect to settings for RFKit enable/disable and settings changes
     connect(RadioSettings::instance(), &RadioSettings::rfkitEnabledChanged, this, &MainWindow::onRfkitEnabledChanged);
     connect(RadioSettings::instance(), &RadioSettings::rfkitSettingsChanged, this, &MainWindow::onRfkitSettingsChanged);
+    connect(RadioSettings::instance(), &RadioSettings::rfkitLowPowerChanged, this, &MainWindow::checkRfkitDrivePower);
+
+    // Monitor K4 power setting for drive power protection
+    connect(m_radioState, &RadioState::rfPowerChanged, this, [this](double, bool) { checkRfkitDrivePower(); });
 
     // Initialize RFKit status display
     updateRfkitStatus();
@@ -5437,6 +5441,26 @@ void MainWindow::updateRfkitStatus() {
     // Show RFKit window only when enabled AND connected
     m_rfkitWindow->setVisible(enabled && connected);
     m_rfkitWindow->panel()->setConnected(connected);
+}
+
+void MainWindow::checkRfkitDrivePower() {
+    auto *settings = RadioSettings::instance();
+    if (!settings->rfkitEnabled() || !settings->rfkitLowPowerEnabled()) {
+        m_rfkitWindow->panel()->setOperateLocked(false);
+        return;
+    }
+
+    double maxDrive = settings->rfkitMaxDrivePower();
+    double currentPower = m_radioState->rfPower();
+    bool overLimit = (currentPower > maxDrive);
+
+    m_rfkitWindow->panel()->setOperateLocked(overLimit);
+
+    // If over limit and amp is in operate, force it to standby
+    if (overLimit && m_rfkitClient->isConnected() && m_rfkitClient->operatingState() == RFKitClient::StateOperate) {
+        qWarning() << "RFKit: K4 drive power" << currentPower << "W exceeds limit" << maxDrive << "W - forcing standby";
+        m_rfkitClient->setOperateMode(false);
+    }
 }
 
 // ============== Fn Popup / Macro Slots ==============

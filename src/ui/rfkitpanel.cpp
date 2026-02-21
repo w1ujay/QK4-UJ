@@ -145,10 +145,18 @@ void RFKitPanel::setConnected(bool connected) {
         m_connected = connected;
         if (!connected) {
             m_sleeping = false;
+            m_operateLocked = false;
         }
-        m_modeBtn->setEnabled(connected);
         m_antBtn->setEnabled(connected);
         m_clrBtn->setEnabled(connected);
+        updateButtonStates();
+        update();
+    }
+}
+
+void RFKitPanel::setOperateLocked(bool locked) {
+    if (m_operateLocked != locked) {
+        m_operateLocked = locked;
         updateButtonStates();
         update();
     }
@@ -250,8 +258,13 @@ void RFKitPanel::onDecayTimer() {
 void RFKitPanel::updateButtonStates() {
     if (m_sleeping) {
         m_modeBtn->setText("WAKE UP!");
+        m_modeBtn->setEnabled(m_connected);
+    } else if (m_operateLocked) {
+        m_modeBtn->setText("STANDBY");
+        m_modeBtn->setEnabled(false);
     } else {
         m_modeBtn->setText(m_operate ? "OPERATE" : "STANDBY");
+        m_modeBtn->setEnabled(m_connected);
     }
     if (!m_antennaName.isEmpty()) {
         m_antBtn->setText(m_antennaName);
@@ -340,11 +353,12 @@ void RFKitPanel::drawStatusLabels(QPainter &painter, int y, int height) {
     labelFont.setBold(true);
     painter.setFont(labelFont);
 
-    // OPERATE/STANDBY/SLEEPING
-    QString modeText = m_sleeping ? "SLEEPING" : (m_operate ? "OPERATE" : "STANDBY");
-    QColor modeColor = m_sleeping  ? QColor(K4Styles::Colors::AccentAmber)
-                       : m_operate ? QColor(K4Styles::Colors::StatusGreen)
-                                   : QColor(K4Styles::Colors::InactiveGray);
+    // OPERATE/STANDBY/SLEEPING/OVER PWR
+    QString modeText = m_sleeping ? "SLEEPING" : m_operateLocked ? "OVER PWR" : m_operate ? "OPERATE" : "STANDBY";
+    QColor modeColor = m_sleeping        ? QColor(K4Styles::Colors::AccentAmber)
+                       : m_operateLocked ? QColor(K4Styles::Colors::MeterRed)
+                       : m_operate       ? QColor(K4Styles::Colors::StatusGreen)
+                                         : QColor(K4Styles::Colors::InactiveGray);
     painter.setPen(modeColor);
     painter.drawText(100, y, 60, height, Qt::AlignLeft | Qt::AlignVCenter, modeText);
 
