@@ -50,6 +50,8 @@ class KPA1500Window;
 class CatServer;
 class OptionsDialog;
 class N1mmListener;
+class RFKitClient;
+class RFKitWindow;
 class NotificationWidget;
 class VfoRowWidget;
 class SidetoneGenerator;
@@ -136,6 +138,14 @@ private slots:
     void onKpa1500EnabledChanged(bool enabled);
     void onKpa1500SettingsChanged();
     void updateKpa1500Status();
+
+    // RFKit slots
+    void onRfkitConnected();
+    void onRfkitDisconnected();
+    void onRfkitError(const QString &error);
+    void onRfkitEnabledChanged(bool enabled);
+    void onRfkitSettingsChanged();
+    void updateRfkitStatus();
 
     // Error/notification from K4 (ERxx: messages)
     void onErrorNotification(int errorCode, const QString &message);
@@ -326,6 +336,11 @@ private:
 
     // KPA1500 amplifier client
     KPA1500Client *m_kpa1500Client;
+
+    // RFKit amplifier client
+    RFKitClient *m_rfkitClient;
+    RFKitWindow *m_rfkitWindow;
+    QLabel *m_rfkitStatusLabel;
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
     CatServer *m_catServer;

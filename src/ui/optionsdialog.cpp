@@ -21,19 +21,21 @@
 #include <QSpinBox>
 #include <QColorDialog>
 #include "../network/n1mmlistener.h"
+#include "../network/rfkitclient.h"
+#include "../network/kpa1500client.h"
 
 // Use K4Styles::Colors::DialogBorder for dialog-specific borders
 
 OptionsDialog::OptionsDialog(RadioState *radioState, AudioEngine *audioEngine, KpodDevice *kpodDevice,
                              CatServer *catServer, HalikeyDevice *halikeyDevice, N1mmListener *n1mmListener,
-                             QWidget *parent)
+                             RFKitClient *rfkitClient, KPA1500Client *kpa1500Client, QWidget *parent)
     : QDialog(parent), m_radioState(radioState), m_audioEngine(audioEngine), m_kpodDevice(kpodDevice),
-      m_catServer(catServer), m_halikeyDevice(halikeyDevice), m_n1mmListener(n1mmListener), m_micDeviceCombo(nullptr),
-      m_micGainSlider(nullptr), m_micGainValueLabel(nullptr), m_micTestBtn(nullptr), m_micMeter(nullptr),
-      m_speakerDeviceCombo(nullptr), m_catServerEnableCheckbox(nullptr), m_catServerPortEdit(nullptr),
-      m_catServerStatusLabel(nullptr), m_catServerClientsLabel(nullptr), m_cwKeyerDeviceTypeCombo(nullptr),
-      m_cwKeyerDescLabel(nullptr), m_cwKeyerPortCombo(nullptr), m_cwKeyerRefreshBtn(nullptr),
-      m_cwKeyerConnectBtn(nullptr), m_cwKeyerStatusLabel(nullptr) {
+      m_catServer(catServer), m_halikeyDevice(halikeyDevice), m_n1mmListener(n1mmListener), m_rfkitClient(rfkitClient),
+      m_kpa1500Client(kpa1500Client), m_micDeviceCombo(nullptr), m_micGainSlider(nullptr), m_micGainValueLabel(nullptr),
+      m_micTestBtn(nullptr), m_micMeter(nullptr), m_speakerDeviceCombo(nullptr), m_catServerEnableCheckbox(nullptr),
+      m_catServerPortEdit(nullptr), m_catServerStatusLabel(nullptr), m_catServerClientsLabel(nullptr),
+      m_cwKeyerDeviceTypeCombo(nullptr), m_cwKeyerDescLabel(nullptr), m_cwKeyerPortCombo(nullptr),
+      m_cwKeyerRefreshBtn(nullptr), m_cwKeyerConnectBtn(nullptr), m_cwKeyerStatusLabel(nullptr) {
     setWindowModality(Qt::ApplicationModal);
     setupUi();
 
@@ -97,6 +99,8 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("CW Keyer");
     m_tabList->addItem("K-Pod");
     m_tabList->addItem("N1MM Spots");
+    m_tabList->addItem("KPA1500");
+    m_tabList->addItem("RFKit Amp");
     m_tabList->setCurrentRow(0);
 
     // Right side: stacked pages (lazy — only About is created eagerly)
@@ -139,6 +143,12 @@ void OptionsDialog::ensurePageCreated(int index) {
         break;
     case PageN1mm:
         page = createN1mmPage();
+        break;
+    case PageKpa1500:
+        page = createKpa1500Page();
+        break;
+    case PageRfkit:
+        page = createRfkitPage();
         break;
     default:
         return;
@@ -1541,6 +1551,26 @@ QWidget *OptionsDialog::createN1mmPage() {
     expiryLayout->addStretch();
     layout->addLayout(expiryLayout);
 
+    // Font size
+    auto *fontSizeLayout = new QHBoxLayout();
+    auto *fontSizeLabel = new QLabel("Font Size:", page);
+    fontSizeLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                     .arg(K4Styles::Colors::TextGray)
+                                     .arg(K4Styles::Dimensions::FontSizePopup));
+    fontSizeLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_n1mmFontSizeSpin = new QSpinBox(page);
+    m_n1mmFontSizeSpin->setRange(8, 24);
+    m_n1mmFontSizeSpin->setValue(RadioSettings::instance()->spotFontSize());
+    m_n1mmFontSizeSpin->setSuffix(" px");
+    m_n1mmFontSizeSpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
+    m_n1mmFontSizeSpin->setStyleSheet(spinBoxStyle);
+
+    fontSizeLayout->addWidget(fontSizeLabel);
+    fontSizeLayout->addWidget(m_n1mmFontSizeSpin);
+    fontSizeLayout->addStretch();
+    layout->addLayout(fontSizeLayout);
+
     // Separator
     auto *line3 = new QFrame(page);
     line3->setFrameShape(QFrame::HLine);
@@ -1629,6 +1659,9 @@ QWidget *OptionsDialog::createN1mmPage() {
     connect(m_n1mmExpirySpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
             [](int value) { RadioSettings::instance()->setSpotExpiryMinutes(value); });
 
+    connect(m_n1mmFontSizeSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int value) { RadioSettings::instance()->setSpotFontSize(value); });
+
     connect(m_n1mmMultColorBtn, &QPushButton::clicked, this, [this]() {
         QColor color =
             QColorDialog::getColor(QColor(RadioSettings::instance()->spotMultColor()), this, "Multiplier Color");
@@ -1680,5 +1713,400 @@ void OptionsDialog::updateN1mmStatus() {
         m_n1mmStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
                                              .arg(K4Styles::Colors::ErrorRed)
                                              .arg(K4Styles::Dimensions::FontSizePopup));
+    }
+}
+
+QWidget *OptionsDialog::createKpa1500Page() {
+    auto *page = new QWidget(this);
+    page->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
+                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
+    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
+
+    // Title
+    auto *titleLabel = new QLabel("KPA1500 Amplifier", page);
+    titleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                  .arg(K4Styles::Colors::AccentAmber)
+                                  .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(titleLabel);
+
+    // Description
+    auto *descLabel = new QLabel("Connect to an Elecraft KPA1500 amplifier for monitoring and control. "
+                                 "The amplifier panel will appear as a floating window when connected.",
+                                 page);
+    descLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeButton));
+    descLabel->setWordWrap(true);
+    layout->addWidget(descLabel);
+
+    // Separator
+    auto *line = new QFrame(page);
+    line->setFrameShape(QFrame::HLine);
+    line->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line);
+
+    // Status indicator
+    auto *statusLayout = new QHBoxLayout();
+    auto *statusTitleLabel = new QLabel("Status:", page);
+    statusTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                        .arg(K4Styles::Colors::TextGray)
+                                        .arg(K4Styles::Dimensions::FontSizePopup));
+    statusTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_kpa1500SettingsStatusLabel = new QLabel("Not connected", page);
+    statusLayout->addWidget(statusTitleLabel);
+    statusLayout->addWidget(m_kpa1500SettingsStatusLabel);
+    statusLayout->addStretch();
+    layout->addLayout(statusLayout);
+
+    // Separator
+    auto *line2 = new QFrame(page);
+    line2->setFrameShape(QFrame::HLine);
+    line2->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line2);
+
+    // Settings section
+    auto *sectionLabel = new QLabel("Connection", page);
+    sectionLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                    .arg(K4Styles::Colors::TextWhite)
+                                    .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(sectionLabel);
+
+    QString lineEditStyle = QString("QLineEdit { background-color: %1; color: %2; border: 1px solid %3; "
+                                    "           padding: %6px; font-size: %5px; border-radius: %7px; }"
+                                    "QLineEdit:focus { border-color: %4; }")
+                                .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite,
+                                     K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber)
+                                .arg(K4Styles::Dimensions::FontSizePopup)
+                                .arg(K4Styles::Dimensions::PaddingSmall)
+                                .arg(K4Styles::Dimensions::SliderBorderRadius);
+
+    QString spinBoxStyle =
+        QString("QSpinBox { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: %4px; "
+                "font-size: %5px; }"
+                "QSpinBox::up-button, QSpinBox::down-button { width: 16px; border: none; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Dimensions::PaddingSmall)
+            .arg(K4Styles::Dimensions::FontSizePopup);
+
+    // Host input
+    auto *hostLayout = new QHBoxLayout();
+    auto *hostLabel = new QLabel("Host:", page);
+    hostLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+    hostLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_kpa1500HostEdit = new QLineEdit(page);
+    m_kpa1500HostEdit->setPlaceholderText("192.168.1.100");
+    m_kpa1500HostEdit->setFixedWidth(160);
+    m_kpa1500HostEdit->setStyleSheet(lineEditStyle);
+    m_kpa1500HostEdit->setText(RadioSettings::instance()->kpa1500Host());
+
+    hostLayout->addWidget(hostLabel);
+    hostLayout->addWidget(m_kpa1500HostEdit);
+    hostLayout->addStretch();
+    layout->addLayout(hostLayout);
+
+    // Port input
+    auto *portLayout = new QHBoxLayout();
+    auto *portLabel = new QLabel("Port:", page);
+    portLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+    portLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_kpa1500PortSpin = new QSpinBox(page);
+    m_kpa1500PortSpin->setRange(1, 65535);
+    m_kpa1500PortSpin->setValue(RadioSettings::instance()->kpa1500Port());
+    m_kpa1500PortSpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
+    m_kpa1500PortSpin->setStyleSheet(spinBoxStyle);
+
+    auto *portHint = new QLabel("(default: 1500)", page);
+    portHint->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                .arg(K4Styles::Colors::TextGray)
+                                .arg(K4Styles::Dimensions::FontSizeLarge));
+
+    portLayout->addWidget(portLabel);
+    portLayout->addWidget(m_kpa1500PortSpin);
+    portLayout->addWidget(portHint);
+    portLayout->addStretch();
+    layout->addLayout(portLayout);
+
+    // Separator
+    auto *line3 = new QFrame(page);
+    line3->setFrameShape(QFrame::HLine);
+    line3->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line3->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line3);
+
+    // Enable checkbox
+    m_kpa1500EnableCheckbox = new QCheckBox("Enable KPA1500 Amplifier", page);
+    m_kpa1500EnableCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                                   "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                               .arg(K4Styles::Colors::TextWhite)
+                                               .arg(K4Styles::Dimensions::FontSizePopup)
+                                               .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                               .arg(K4Styles::Dimensions::CheckboxSize));
+    m_kpa1500EnableCheckbox->setChecked(RadioSettings::instance()->kpa1500Enabled());
+    layout->addWidget(m_kpa1500EnableCheckbox);
+
+    // Help text
+    auto *helpLabel = new QLabel("Enter the KPA1500 IP address and port. The amplifier connects automatically "
+                                 "when the K4 connects and shows a floating panel with power, SWR, and controls.",
+                                 page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+
+    layout->addStretch();
+
+    // Connect signals
+    connect(m_kpa1500HostEdit, &QLineEdit::editingFinished, this,
+            [this]() { RadioSettings::instance()->setKpa1500Host(m_kpa1500HostEdit->text().trimmed()); });
+
+    connect(m_kpa1500PortSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int value) { RadioSettings::instance()->setKpa1500Port(static_cast<quint16>(value)); });
+
+    connect(m_kpa1500EnableCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setKpa1500Enabled(checked); });
+
+    // Listen for status changes
+    connect(RadioSettings::instance(), &RadioSettings::kpa1500EnabledChanged, this,
+            [this]() { updateKpa1500SettingsStatus(); });
+
+    // Initialize status
+    updateKpa1500SettingsStatus();
+
+    return page;
+}
+
+void OptionsDialog::updateKpa1500SettingsStatus() {
+    if (!m_kpa1500SettingsStatusLabel)
+        return;
+
+    bool enabled = RadioSettings::instance()->kpa1500Enabled();
+    bool connected = m_kpa1500Client && m_kpa1500Client->isConnected();
+
+    if (!enabled) {
+        m_kpa1500SettingsStatusLabel->setText("Disabled");
+        m_kpa1500SettingsStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                                        .arg(K4Styles::Colors::InactiveGray)
+                                                        .arg(K4Styles::Dimensions::FontSizePopup));
+    } else if (connected) {
+        m_kpa1500SettingsStatusLabel->setText("Connected");
+        m_kpa1500SettingsStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                                        .arg(K4Styles::Colors::StatusGreen)
+                                                        .arg(K4Styles::Dimensions::FontSizePopup));
+    } else {
+        m_kpa1500SettingsStatusLabel->setText("Not connected");
+        m_kpa1500SettingsStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                                        .arg(K4Styles::Colors::ErrorRed)
+                                                        .arg(K4Styles::Dimensions::FontSizePopup));
+    }
+}
+
+QWidget *OptionsDialog::createRfkitPage() {
+    auto *page = new QWidget(this);
+    page->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
+                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
+    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
+
+    // Title
+    auto *titleLabel = new QLabel("RFKit Amplifier", page);
+    titleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                  .arg(K4Styles::Colors::AccentAmber)
+                                  .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(titleLabel);
+
+    // Description
+    auto *descLabel = new QLabel("Connect to an RFKit amplifier for monitoring and control. "
+                                 "The amplifier panel will appear as a floating window when connected.",
+                                 page);
+    descLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeButton));
+    descLabel->setWordWrap(true);
+    layout->addWidget(descLabel);
+
+    // Separator
+    auto *line = new QFrame(page);
+    line->setFrameShape(QFrame::HLine);
+    line->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line);
+
+    // Status indicator
+    auto *statusLayout = new QHBoxLayout();
+    auto *statusTitleLabel = new QLabel("Status:", page);
+    statusTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                        .arg(K4Styles::Colors::TextGray)
+                                        .arg(K4Styles::Dimensions::FontSizePopup));
+    statusTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_rfkitStatusLabel = new QLabel("Not connected", page);
+    statusLayout->addWidget(statusTitleLabel);
+    statusLayout->addWidget(m_rfkitStatusLabel);
+    statusLayout->addStretch();
+    layout->addLayout(statusLayout);
+
+    // Separator
+    auto *line2 = new QFrame(page);
+    line2->setFrameShape(QFrame::HLine);
+    line2->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line2);
+
+    // Settings section
+    auto *sectionLabel = new QLabel("Connection", page);
+    sectionLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                    .arg(K4Styles::Colors::TextWhite)
+                                    .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(sectionLabel);
+
+    QString lineEditStyle = QString("QLineEdit { background-color: %1; color: %2; border: 1px solid %3; "
+                                    "           padding: %6px; font-size: %5px; border-radius: %7px; }"
+                                    "QLineEdit:focus { border-color: %4; }")
+                                .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite,
+                                     K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber)
+                                .arg(K4Styles::Dimensions::FontSizePopup)
+                                .arg(K4Styles::Dimensions::PaddingSmall)
+                                .arg(K4Styles::Dimensions::SliderBorderRadius);
+
+    QString spinBoxStyle =
+        QString("QSpinBox { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: %4px; "
+                "font-size: %5px; }"
+                "QSpinBox::up-button, QSpinBox::down-button { width: 16px; border: none; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Dimensions::PaddingSmall)
+            .arg(K4Styles::Dimensions::FontSizePopup);
+
+    // Host input
+    auto *hostLayout = new QHBoxLayout();
+    auto *hostLabel = new QLabel("Host:", page);
+    hostLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+    hostLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_rfkitHostEdit = new QLineEdit(page);
+    m_rfkitHostEdit->setPlaceholderText("192.168.1.100");
+    m_rfkitHostEdit->setFixedWidth(160);
+    m_rfkitHostEdit->setStyleSheet(lineEditStyle);
+    m_rfkitHostEdit->setText(RadioSettings::instance()->rfkitHost());
+
+    hostLayout->addWidget(hostLabel);
+    hostLayout->addWidget(m_rfkitHostEdit);
+    hostLayout->addStretch();
+    layout->addLayout(hostLayout);
+
+    // Port input
+    auto *portLayout = new QHBoxLayout();
+    auto *portLabel = new QLabel("Port:", page);
+    portLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+    portLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_rfkitPortSpin = new QSpinBox(page);
+    m_rfkitPortSpin->setRange(1, 65535);
+    m_rfkitPortSpin->setValue(RadioSettings::instance()->rfkitPort());
+    m_rfkitPortSpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
+    m_rfkitPortSpin->setStyleSheet(spinBoxStyle);
+
+    auto *portHint = new QLabel("(default: 8080)", page);
+    portHint->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                .arg(K4Styles::Colors::TextGray)
+                                .arg(K4Styles::Dimensions::FontSizeLarge));
+
+    portLayout->addWidget(portLabel);
+    portLayout->addWidget(m_rfkitPortSpin);
+    portLayout->addWidget(portHint);
+    portLayout->addStretch();
+    layout->addLayout(portLayout);
+
+    // Separator
+    auto *line3 = new QFrame(page);
+    line3->setFrameShape(QFrame::HLine);
+    line3->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line3->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line3);
+
+    // Enable checkbox
+    m_rfkitEnableCheckbox = new QCheckBox("Enable RFKit Amplifier", page);
+    m_rfkitEnableCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                                 "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                             .arg(K4Styles::Colors::TextWhite)
+                                             .arg(K4Styles::Dimensions::FontSizePopup)
+                                             .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                             .arg(K4Styles::Dimensions::CheckboxSize));
+    m_rfkitEnableCheckbox->setChecked(RadioSettings::instance()->rfkitEnabled());
+    layout->addWidget(m_rfkitEnableCheckbox);
+
+    // Help text
+    auto *helpLabel = new QLabel("Enter the RFKit amplifier IP address and port. The amplifier panel shows power, "
+                                 "SWR, temperature, and allows operate/standby control.",
+                                 page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+
+    layout->addStretch();
+
+    // Connect signals
+    connect(m_rfkitHostEdit, &QLineEdit::editingFinished, this,
+            [this]() { RadioSettings::instance()->setRfkitHost(m_rfkitHostEdit->text().trimmed()); });
+
+    connect(m_rfkitPortSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int value) { RadioSettings::instance()->setRfkitPort(static_cast<quint16>(value)); });
+
+    connect(m_rfkitEnableCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setRfkitEnabled(checked); });
+
+    // Listen for status changes
+    connect(RadioSettings::instance(), &RadioSettings::rfkitEnabledChanged, this, [this]() { updateRfkitStatus(); });
+
+    // Initialize status
+    updateRfkitStatus();
+
+    return page;
+}
+
+void OptionsDialog::updateRfkitStatus() {
+    if (!m_rfkitStatusLabel)
+        return;
+
+    bool enabled = RadioSettings::instance()->rfkitEnabled();
+    bool connected = m_rfkitClient && m_rfkitClient->isConnected();
+
+    if (!enabled) {
+        m_rfkitStatusLabel->setText("Disabled");
+        m_rfkitStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                              .arg(K4Styles::Colors::InactiveGray)
+                                              .arg(K4Styles::Dimensions::FontSizePopup));
+    } else if (connected) {
+        QString name = m_rfkitClient->deviceName();
+        QString text = name.isEmpty() ? "Connected" : QString("Connected: %1").arg(name);
+        m_rfkitStatusLabel->setText(text);
+        m_rfkitStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                              .arg(K4Styles::Colors::StatusGreen)
+                                              .arg(K4Styles::Dimensions::FontSizePopup));
+    } else {
+        m_rfkitStatusLabel->setText("Not connected");
+        m_rfkitStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                              .arg(K4Styles::Colors::ErrorRed)
+                                              .arg(K4Styles::Dimensions::FontSizePopup));
     }
 }

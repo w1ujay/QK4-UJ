@@ -41,6 +41,9 @@
 #include "ui/kpa1500panel.h"
 #include "network/catserver.h"
 #include "network/n1mmlistener.h"
+#include "network/rfkitclient.h"
+#include "ui/rfkitwindow.h"
+#include "ui/rfkitpanel.h"
 #include "dsp/spotoverlaywidget.h"
 #include "settings/radiosettings.h"
 #include <QVBoxLayout>
@@ -1797,6 +1800,53 @@ MainWindow::MainWindow(QWidget *parent)
     // Initialize KPA1500 status display
     updateKpa1500Status();
 
+    // RFKit amplifier client (HTTP REST)
+    m_rfkitClient = new RFKitClient(this);
+
+    // Connect RFKit signals
+    connect(m_rfkitClient, &RFKitClient::connected, this, &MainWindow::onRfkitConnected);
+    connect(m_rfkitClient, &RFKitClient::disconnected, this, &MainWindow::onRfkitDisconnected);
+    connect(m_rfkitClient, &RFKitClient::errorOccurred, this, &MainWindow::onRfkitError);
+
+    // Connect RFKit data signals to panel
+    connect(m_rfkitClient, &RFKitClient::powerChanged, this, [this](double fwd, double ref, double swr) {
+        m_rfkitWindow->panel()->setForwardPower(static_cast<float>(fwd),
+                                                static_cast<float>(m_rfkitClient->maxForwardPower()));
+        m_rfkitWindow->panel()->setReflectedPower(static_cast<float>(ref));
+        m_rfkitWindow->panel()->setSWR(static_cast<float>(swr));
+    });
+    connect(m_rfkitClient, &RFKitClient::temperatureChanged, this,
+            [this](double tempC) { m_rfkitWindow->panel()->setTemperature(static_cast<float>(tempC)); });
+    connect(m_rfkitClient, &RFKitClient::voltageChanged, this,
+            [this](double v) { m_rfkitWindow->panel()->setVoltage(static_cast<float>(v)); });
+    connect(m_rfkitClient, &RFKitClient::currentChanged, this,
+            [this](double a) { m_rfkitWindow->panel()->setCurrent(static_cast<float>(a)); });
+    connect(m_rfkitClient, &RFKitClient::operatingStateChanged, this, [this](RFKitClient::OperatingState state) {
+        m_rfkitWindow->panel()->setMode(state == RFKitClient::StateOperate);
+    });
+    connect(m_rfkitClient, &RFKitClient::antennaChanged, this,
+            [this](int number, const QString &name) { m_rfkitWindow->panel()->setAntenna(number, name); });
+    connect(m_rfkitClient, &RFKitClient::antennasUpdated, this,
+            [this]() { m_rfkitWindow->panel()->setAntennaCount(m_rfkitClient->antennas().size()); });
+    connect(m_rfkitClient, &RFKitClient::deviceInfoChanged, this,
+            [this](const QString &name, const QString &) { m_rfkitWindow->panel()->setDeviceName(name); });
+    connect(m_rfkitClient, &RFKitClient::statusChanged, this,
+            [this](const QString &status) { m_rfkitWindow->panel()->setStatus(status); });
+
+    // Connect panel signals to send RFKit commands
+    connect(m_rfkitWindow->panel(), &RFKitPanel::modeToggled, this,
+            [this](bool operate) { m_rfkitClient->setOperateMode(operate); });
+    connect(m_rfkitWindow->panel(), &RFKitPanel::antennaChanged, this,
+            [this](int number) { m_rfkitClient->setAntenna(number); });
+    connect(m_rfkitWindow->panel(), &RFKitPanel::errorResetRequested, this, [this]() { m_rfkitClient->resetError(); });
+
+    // Connect to settings for RFKit enable/disable and settings changes
+    connect(RadioSettings::instance(), &RadioSettings::rfkitEnabledChanged, this, &MainWindow::onRfkitEnabledChanged);
+    connect(RadioSettings::instance(), &RadioSettings::rfkitSettingsChanged, this, &MainWindow::onRfkitSettingsChanged);
+
+    // Initialize RFKit status display
+    updateRfkitStatus();
+
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
     // Apps connect using their built-in K4 support - no protocol translation needed
     m_catServer = new CatServer(m_radioState, this);
@@ -1901,6 +1951,12 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_panadapterB && m_panadapterB->spotOverlay())
             m_panadapterB->spotOverlay()->setSpotColors(mult, newQso, dupe);
     });
+    connect(RadioSettings::instance(), &RadioSettings::spotFontSizeChanged, this, [this](int size) {
+        if (m_panadapterA && m_panadapterA->spotOverlay())
+            m_panadapterA->spotOverlay()->setFontSize(size);
+        if (m_panadapterB && m_panadapterB->spotOverlay())
+            m_panadapterB->spotOverlay()->setFontSize(size);
+    });
 
     // Start N1MM listener if enabled in global settings
     if (RadioSettings::instance()->n1mmEnabled()) {
@@ -1908,15 +1964,20 @@ MainWindow::MainWindow(QWidget *parent)
         m_n1mmListener->start(RadioSettings::instance()->n1mmPort());
     }
 
-    // Apply saved spot colors
+    // Apply saved spot colors and font size
     {
         QColor mult(RadioSettings::instance()->spotMultColor());
         QColor newQso(RadioSettings::instance()->spotNewQsoColor());
         QColor dupe(RadioSettings::instance()->spotDupeColor());
-        if (m_panadapterA && m_panadapterA->spotOverlay())
+        int fontSize = RadioSettings::instance()->spotFontSize();
+        if (m_panadapterA && m_panadapterA->spotOverlay()) {
             m_panadapterA->spotOverlay()->setSpotColors(mult, newQso, dupe);
-        if (m_panadapterB && m_panadapterB->spotOverlay())
+            m_panadapterA->spotOverlay()->setFontSize(fontSize);
+        }
+        if (m_panadapterB && m_panadapterB->spotOverlay()) {
             m_panadapterB->spotOverlay()->setSpotColors(mult, newQso, dupe);
+            m_panadapterB->spotOverlay()->setFontSize(fontSize);
+        }
     }
 
     // resize directly instead of deferring - testing if deferred resize affects QRhi
@@ -1963,6 +2024,11 @@ MainWindow::~MainWindow() {
         disconnect(m_kpa1500Client, nullptr, this, nullptr);
         m_kpa1500Client->disconnectFromHost();
     }
+
+    if (m_rfkitClient) {
+        disconnect(m_rfkitClient, nullptr, this, nullptr);
+        m_rfkitClient->disconnectFromHost();
+    }
 }
 
 void MainWindow::setupMenuBar() {
@@ -1987,7 +2053,7 @@ void MainWindow::setupMenuBar() {
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
             m_optionsDialog = new OptionsDialog(m_radioState, m_audioEngine, m_kpodDevice, m_catServer,
-                                                m_halikeyDevice, m_n1mmListener, this);
+                                                m_halikeyDevice, m_n1mmListener, m_rfkitClient, m_kpa1500Client, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();
@@ -2902,6 +2968,12 @@ void MainWindow::setupTopStatusBar(QWidget *parent) {
 
     layout->addStretch();
 
+    // RFKit status
+    m_rfkitStatusLabel = new QLabel("", statusBar);
+    m_rfkitStatusLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
+    m_rfkitStatusLabel->hide();
+    layout->addWidget(m_rfkitStatusLabel);
+
     // KPA1500 status (to left of K4 status)
     m_kpa1500StatusLabel = new QLabel("", statusBar);
     m_kpa1500StatusLabel->setStyleSheet(QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
@@ -3333,6 +3405,10 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // Created as a separate floating window, not in the VFO row layout
     m_kpa1500Window = new KPA1500Window(this);
     m_kpa1500Window->hide(); // Hidden by default, shown when enabled + connected
+
+    // ===== RFKit Floating Window =====
+    m_rfkitWindow = new RFKitWindow(this);
+    m_rfkitWindow->hide();
 
     // Add the VFO row to main layout
     mainVLayout->addWidget(vfoRowWidget);
@@ -3984,6 +4060,11 @@ void MainWindow::onAuthenticated() {
         m_kpa1500Client->connectToHost(RadioSettings::instance()->kpa1500Host(),
                                        RadioSettings::instance()->kpa1500Port());
     }
+
+    // Connect RFKit if enabled and configured
+    if (RadioSettings::instance()->rfkitEnabled() && !RadioSettings::instance()->rfkitHost().isEmpty()) {
+        m_rfkitClient->connectToHost(RadioSettings::instance()->rfkitHost(), RadioSettings::instance()->rfkitPort());
+    }
 }
 
 void MainWindow::onAuthenticationFailed() {
@@ -4260,6 +4341,11 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         // Disconnect KPA1500 when K4 disconnects
         if (m_kpa1500Client->isConnected()) {
             m_kpa1500Client->disconnectFromHost();
+        }
+
+        // Disconnect RFKit when K4 disconnects
+        if (m_rfkitClient->isConnected()) {
+            m_rfkitClient->disconnectFromHost();
         }
 
         break;
@@ -5282,6 +5368,73 @@ void MainWindow::updateKpa1500Status() {
     // Show KPA1500 window only when enabled AND connected
     m_kpa1500Window->setVisible(enabled && connected);
     m_kpa1500Window->panel()->setConnected(connected);
+}
+
+// ============== RFKit Amplifier Slots ==============
+
+void MainWindow::onRfkitConnected() {
+    qDebug() << "RFKit: Connected to amplifier";
+
+    int pollInterval = RadioSettings::instance()->rfkitPollInterval();
+    m_rfkitClient->startPolling(pollInterval);
+    updateRfkitStatus();
+}
+
+void MainWindow::onRfkitDisconnected() {
+    qDebug() << "RFKit: Disconnected from amplifier";
+    updateRfkitStatus();
+}
+
+void MainWindow::onRfkitError(const QString &error) {
+    qWarning() << "RFKit: Error -" << error;
+    updateRfkitStatus();
+}
+
+void MainWindow::onRfkitEnabledChanged(bool enabled) {
+    if (enabled) {
+        QString host = RadioSettings::instance()->rfkitHost();
+        if (!host.isEmpty()) {
+            m_rfkitClient->connectToHost(host, RadioSettings::instance()->rfkitPort());
+        }
+    } else {
+        m_rfkitClient->disconnectFromHost();
+    }
+    updateRfkitStatus();
+}
+
+void MainWindow::onRfkitSettingsChanged() {
+    if (RadioSettings::instance()->rfkitEnabled()) {
+        m_rfkitClient->disconnectFromHost();
+        QString host = RadioSettings::instance()->rfkitHost();
+        if (!host.isEmpty()) {
+            m_rfkitClient->connectToHost(host, RadioSettings::instance()->rfkitPort());
+        }
+    }
+}
+
+void MainWindow::updateRfkitStatus() {
+    bool enabled = RadioSettings::instance()->rfkitEnabled();
+    bool connected = m_rfkitClient && m_rfkitClient->isConnected();
+
+    if (!enabled) {
+        m_rfkitStatusLabel->hide();
+    } else {
+        m_rfkitStatusLabel->show();
+        if (connected) {
+            QString name = m_rfkitClient->deviceName();
+            m_rfkitStatusLabel->setText(name.isEmpty() ? "RFKit" : name);
+            m_rfkitStatusLabel->setStyleSheet(
+                QString("color: %1; font-size: 12px; font-weight: bold;").arg(K4Styles::Colors::StatusGreen));
+        } else {
+            m_rfkitStatusLabel->setText("RFKit");
+            m_rfkitStatusLabel->setStyleSheet(
+                QString("color: %1; font-size: 12px;").arg(K4Styles::Colors::InactiveGray));
+        }
+    }
+
+    // Show RFKit window only when enabled AND connected
+    m_rfkitWindow->setVisible(enabled && connected);
+    m_rfkitWindow->panel()->setConnected(connected);
 }
 
 // ============== Fn Popup / Macro Slots ==============

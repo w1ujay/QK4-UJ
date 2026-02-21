@@ -21,6 +21,9 @@ public:
     // Dynamic spot colors (overrides K4Styles defaults)
     void setSpotColors(const QColor &mult, const QColor &newQso, const QColor &dupe);
 
+    // Font size for spot labels (pixels)
+    void setFontSize(int pixelSize);
+
 signals:
     void spotClicked(qint64 frequencyHz);
 
@@ -49,6 +52,8 @@ private:
     QColor m_multColor;
     QColor m_newQsoColor;
     QColor m_dupeColor;
+
+    int m_fontSize = 10;
 };
 
 #endif // SPOTOVERLAYWIDGET_H

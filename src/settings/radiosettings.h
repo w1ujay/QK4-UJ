@@ -128,6 +128,18 @@ public:
     void setTxEqPreset(int index, const EqPreset &preset); // Set preset 0-3
     void clearTxEqPreset(int index);                       // Clear preset 0-3
 
+    // RFKit Amplifier settings
+    QString rfkitHost() const;
+    void setRfkitHost(const QString &host);
+    quint16 rfkitPort() const;
+    void setRfkitPort(quint16 port);
+    bool rfkitEnabled() const;
+    void setRfkitEnabled(bool enabled);
+    int rfkitPollInterval() const;
+    void setRfkitPollInterval(int intervalMs);
+    QPoint rfkitWindowPosition() const;
+    void setRfkitWindowPosition(const QPoint &pos);
+
     // N1MM Spot settings (global)
     bool n1mmEnabled() const;
     void setN1mmEnabled(bool enabled);
@@ -141,6 +153,8 @@ public:
     void setSpotNewQsoColor(const QString &color);
     QString spotDupeColor() const;
     void setSpotDupeColor(const QString &color);
+    int spotFontSize() const;
+    void setSpotFontSize(int size);
 
 signals:
     void radiosChanged();
@@ -164,6 +178,10 @@ signals:
     void n1mmPortChanged(quint16 port);
     void spotExpiryMinutesChanged(int minutes);
     void spotColorsChanged();
+    void spotFontSizeChanged(int size);
+    void rfkitEnabledChanged(bool enabled);
+    void rfkitSettingsChanged();
+    void rfkitPollIntervalChanged(int intervalMs);
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
@@ -190,6 +208,12 @@ private:
     int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
     int m_sidetoneVolume = 30;   // Default 30%
 
+    // RFKit Amplifier settings
+    QString m_rfkitHost;
+    quint16 m_rfkitPort = 8080;
+    bool m_rfkitEnabled = false;
+    int m_rfkitPollInterval = 1000; // Default: 1000ms for HTTP polling
+
     // N1MM Spot settings (global)
     bool m_n1mmEnabled = false;
     quint16 m_n1mmPort = 12060;
@@ -197,6 +221,7 @@ private:
     QString m_spotMultColor = "#FF0000";
     QString m_spotNewQsoColor = "#4DA6FF";
     QString m_spotDupeColor = "#555555";
+    int m_spotFontSize = 10;
 
     // Macro settings
     QMap<QString, MacroEntry> m_macros;

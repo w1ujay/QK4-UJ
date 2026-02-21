@@ -144,6 +144,69 @@ void RadioSettings::setKpa1500WindowPosition(const QPoint &pos) {
     m_settings.sync();
 }
 
+// ============== RFKit Amplifier Settings ==============
+
+QString RadioSettings::rfkitHost() const {
+    return m_rfkitHost;
+}
+
+void RadioSettings::setRfkitHost(const QString &host) {
+    if (m_rfkitHost != host) {
+        m_rfkitHost = host;
+        save();
+        emit rfkitSettingsChanged();
+    }
+}
+
+quint16 RadioSettings::rfkitPort() const {
+    return m_rfkitPort;
+}
+
+void RadioSettings::setRfkitPort(quint16 port) {
+    if (m_rfkitPort != port) {
+        m_rfkitPort = port;
+        save();
+        emit rfkitSettingsChanged();
+    }
+}
+
+bool RadioSettings::rfkitEnabled() const {
+    return m_rfkitEnabled;
+}
+
+void RadioSettings::setRfkitEnabled(bool enabled) {
+    if (m_rfkitEnabled != enabled) {
+        m_rfkitEnabled = enabled;
+        save();
+        emit rfkitEnabledChanged(enabled);
+    }
+}
+
+int RadioSettings::rfkitPollInterval() const {
+    return m_rfkitPollInterval;
+}
+
+void RadioSettings::setRfkitPollInterval(int intervalMs) {
+    intervalMs = qBound(500, intervalMs, 10000);
+    if (m_rfkitPollInterval != intervalMs) {
+        m_rfkitPollInterval = intervalMs;
+        save();
+        emit rfkitPollIntervalChanged(intervalMs);
+    }
+}
+
+QPoint RadioSettings::rfkitWindowPosition() const {
+    int x = m_settings.value("rfkit/windowX", 0).toInt();
+    int y = m_settings.value("rfkit/windowY", 0).toInt();
+    return QPoint(x, y);
+}
+
+void RadioSettings::setRfkitWindowPosition(const QPoint &pos) {
+    m_settings.setValue("rfkit/windowX", pos.x());
+    m_settings.setValue("rfkit/windowY", pos.y());
+    m_settings.sync();
+}
+
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }
@@ -440,6 +503,19 @@ void RadioSettings::setSpotDupeColor(const QString &color) {
     }
 }
 
+int RadioSettings::spotFontSize() const {
+    return m_spotFontSize;
+}
+
+void RadioSettings::setSpotFontSize(int size) {
+    size = qBound(8, size, 24);
+    if (m_spotFontSize != size) {
+        m_spotFontSize = size;
+        save();
+        emit spotFontSizeChanged(size);
+    }
+}
+
 void RadioSettings::load() {
     int count = m_settings.beginReadArray("radios");
     m_radios.clear();
@@ -472,6 +548,12 @@ void RadioSettings::load() {
     m_kpa1500Enabled = m_settings.value("kpa1500/enabled", false).toBool();
     m_kpa1500PollInterval = m_settings.value("kpa1500/pollInterval", 300).toInt();
 
+    // RFKit Amplifier settings
+    m_rfkitHost = m_settings.value("rfkit/host", "").toString();
+    m_rfkitPort = m_settings.value("rfkit/port", 8080).toUInt();
+    m_rfkitEnabled = m_settings.value("rfkit/enabled", false).toBool();
+    m_rfkitPollInterval = m_settings.value("rfkit/pollInterval", 1000).toInt();
+
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
@@ -489,6 +571,7 @@ void RadioSettings::load() {
     m_spotMultColor = m_settings.value("n1mm/multColor", "#FF0000").toString();
     m_spotNewQsoColor = m_settings.value("n1mm/newQsoColor", "#4DA6FF").toString();
     m_spotDupeColor = m_settings.value("n1mm/dupeColor", "#555555").toString();
+    m_spotFontSize = m_settings.value("n1mm/fontSize", 10).toInt();
 
     // Macro settings
     int macroCount = m_settings.beginReadArray("macros");
@@ -571,6 +654,12 @@ void RadioSettings::save() {
     m_settings.setValue("kpa1500/enabled", m_kpa1500Enabled);
     m_settings.setValue("kpa1500/pollInterval", m_kpa1500PollInterval);
 
+    // RFKit Amplifier settings
+    m_settings.setValue("rfkit/host", m_rfkitHost);
+    m_settings.setValue("rfkit/port", m_rfkitPort);
+    m_settings.setValue("rfkit/enabled", m_rfkitEnabled);
+    m_settings.setValue("rfkit/pollInterval", m_rfkitPollInterval);
+
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);
     m_settings.setValue("catServer/port", m_catServerPort);
@@ -588,6 +677,7 @@ void RadioSettings::save() {
     m_settings.setValue("n1mm/multColor", m_spotMultColor);
     m_settings.setValue("n1mm/newQsoColor", m_spotNewQsoColor);
     m_settings.setValue("n1mm/dupeColor", m_spotDupeColor);
+    m_settings.setValue("n1mm/fontSize", m_spotFontSize);
 
     // Macro settings
     m_settings.beginWriteArray("macros");

@@ -74,6 +74,7 @@ set(SOURCES
     src/network/tcpclient.cpp
     src/network/protocol.cpp
     src/network/kpa1500client.cpp
+    src/network/rfkitclient.cpp
     src/network/catserver.cpp
     src/network/n1mmlistener.cpp
     src/audio/audioengine.cpp
@@ -120,6 +121,8 @@ set(SOURCES
     src/ui/k4popupbase.cpp
     src/ui/kpa1500panel.cpp
     src/ui/kpa1500window.cpp
+    src/ui/rfkitpanel.cpp
+    src/ui/rfkitwindow.cpp
     src/ui/sidecontroloverlay.cpp
     src/ui/monoverlay.cpp
     src/ui/baloverlay.cpp
@@ -137,6 +140,7 @@ set(HEADERS
     src/network/tcpclient.h
     src/network/protocol.h
     src/network/kpa1500client.h
+    src/network/rfkitclient.h
     src/network/catserver.h
     src/network/n1mmlistener.h
     src/audio/audioengine.h
@@ -183,6 +187,8 @@ set(HEADERS
     src/ui/k4popupbase.h
     src/ui/kpa1500panel.h
     src/ui/kpa1500window.h
+    src/ui/rfkitpanel.h
+    src/ui/rfkitwindow.h
     src/ui/sidecontroloverlay.h
     src/ui/monoverlay.h
     src/ui/baloverlay.h

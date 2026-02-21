@@ -43,6 +43,13 @@ float SpotOverlayWidget::freqToX(qint64 freq, int w) const {
     return normalized * w;
 }
 
+void SpotOverlayWidget::setFontSize(int pixelSize) {
+    if (m_fontSize != pixelSize) {
+        m_fontSize = pixelSize;
+        update();
+    }
+}
+
 void SpotOverlayWidget::setSpotColors(const QColor &mult, const QColor &newQso, const QColor &dupe) {
     m_multColor = mult;
     m_newQsoColor = newQso;
@@ -69,7 +76,7 @@ void SpotOverlayWidget::paintEvent(QPaintEvent * /*event*/) {
     painter.setRenderHint(QPainter::Antialiasing);
 
     QFont font;
-    font.setPixelSize(10);
+    font.setPixelSize(m_fontSize);
     font.setBold(true);
     painter.setFont(font);
     QFontMetrics fm(font);
@@ -122,7 +129,7 @@ void SpotOverlayWidget::paintEvent(QPaintEvent * /*event*/) {
         // Set font weight based on status
         QFont spotFont = font;
         spotFont.setBold(isMult);
-        spotFont.setPixelSize(isMult ? 12 : 10);
+        spotFont.setPixelSize(isMult ? m_fontSize + 2 : m_fontSize);
         painter.setFont(spotFont);
         QFontMetrics spotFm(spotFont);
 
