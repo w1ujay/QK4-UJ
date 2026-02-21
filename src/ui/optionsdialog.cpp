@@ -2091,7 +2091,19 @@ QWidget *OptionsDialog::createRfkitPage() {
     m_rfkitMaxDriveSpin->setSuffix(" W");
     m_rfkitMaxDriveSpin->setValue(RadioSettings::instance()->rfkitMaxDrivePower());
     m_rfkitMaxDriveSpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
-    m_rfkitMaxDriveSpin->setStyleSheet(spinBoxStyle);
+    m_rfkitMaxDriveSpin->setStyleSheet(
+        QString("QDoubleSpinBox { background-color: %1; color: %2; border: 1px solid %3; "
+                "border-radius: 4px; padding: %4px; font-size: %5px; }"
+                "QDoubleSpinBox::up-button, QDoubleSpinBox::down-button { "
+                "  width: 16px; border: none; background-color: %6; }"
+                "QDoubleSpinBox::up-arrow { image: none; border-left: 4px solid transparent; "
+                "  border-right: 4px solid transparent; border-bottom: 5px solid %2; }"
+                "QDoubleSpinBox::down-arrow { image: none; border-left: 4px solid transparent; "
+                "  border-right: 4px solid transparent; border-top: 5px solid %2; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Dimensions::PaddingSmall)
+            .arg(K4Styles::Dimensions::FontSizePopup)
+            .arg(K4Styles::Colors::Background));
 
     auto *driveHint = new QLabel("If K4 power exceeds this, amp goes to standby", page);
     driveHint->setStyleSheet(QString("color: %1; font-size: %2px;")

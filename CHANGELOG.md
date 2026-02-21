@@ -38,8 +38,9 @@ This changelog is auto-generated from [conventional commits](https://www.convent
   - Tri-state mode button: WAKE UP! (sleeping, voltage < 10V), STANDBY, OPERATE
   - Antenna cycling, error reset, and disabled TUNE button (pending RF-Kit API support)
   - Drive power protection: configurable max K4 drive power with automatic amp standby
+  - Temperature display in Celsius or Fahrenheit (configurable in settings)
   - HTTP polling with automatic connection detection
-  - Settings page in Tools > Settings (host, port, enable, low power mode)
+  - Settings page in Tools > Settings (host, port, enable, low power mode, temp unit)
 - **KPA1500 Settings Page**: Added KPA1500 configuration to Tools > Settings
   - Host, port, and enable checkbox now accessible from the settings UI
   - Connection status indicator
