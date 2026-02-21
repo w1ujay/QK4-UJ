@@ -993,27 +993,9 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
         // Draw secondary VFO passband first (so it renders behind primary when overlapping)
         if (m_secondaryVisible && m_secondaryFilterBw > 0 && m_secondaryTunedFreq > 0) {
-            qint64 secLowFreq, secHighFreq;
-            int secShiftOffsetHz = m_secondaryIfShift * 10;
-
-            if (m_secondaryMode == "LSB") {
-                qint64 center = m_secondaryTunedFreq - secShiftOffsetHz;
-                secLowFreq = center - m_secondaryFilterBw / 2;
-                secHighFreq = center + m_secondaryFilterBw / 2;
-            } else if (m_secondaryMode == "USB" || m_secondaryMode == "DATA" || m_secondaryMode == "DATA-R") {
-                qint64 center = m_secondaryTunedFreq + secShiftOffsetHz;
-                secLowFreq = center - m_secondaryFilterBw / 2;
-                secHighFreq = center + m_secondaryFilterBw / 2;
-            } else if (m_secondaryMode == "CW" || m_secondaryMode == "CW-R") {
-                int pitchOffset = (m_secondaryMode == "CW") ? m_secondaryCwPitch : -m_secondaryCwPitch;
-                qint64 center = m_secondaryTunedFreq + pitchOffset;
-                secLowFreq = center - m_secondaryFilterBw / 2;
-                secHighFreq = center + m_secondaryFilterBw / 2;
-            } else {
-                // AM/FM - symmetric around carrier (both sidebands, no IF shift)
-                secLowFreq = m_secondaryTunedFreq - m_secondaryFilterBw / 2;
-                secHighFreq = m_secondaryTunedFreq + m_secondaryFilterBw / 2;
-            }
+            // Passband centered on secondary tuned frequency in all modes
+            qint64 secLowFreq = m_secondaryTunedFreq - m_secondaryFilterBw / 2;
+            qint64 secHighFreq = m_secondaryTunedFreq + m_secondaryFilterBw / 2;
 
             float secX1 = freqToNormalized(secLowFreq) * w;
             float secX2 = freqToNormalized(secHighFreq) * w;
@@ -1052,14 +1034,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                 cb->draw(6);
             }
 
-            // Secondary VFO marker - at passband center (matches secondary passband overlay)
-            qint64 secMarkerFreq = m_secondaryTunedFreq;
-            if (m_secondaryMode == "CW") {
-                secMarkerFreq = m_secondaryTunedFreq + m_secondaryCwPitch;
-            } else if (m_secondaryMode == "CW-R") {
-                secMarkerFreq = m_secondaryTunedFreq - m_secondaryCwPitch;
-            }
-            float secMarkerX = freqToNormalized(secMarkerFreq) * w;
+            // Secondary VFO marker - at secondary tuned frequency
+            float secMarkerX = freqToNormalized(m_secondaryTunedFreq) * w;
             if (secMarkerX >= 0 && secMarkerX <= w) {
                 float markerWidth = 2.0f;
                 QVector<float> secMarkerVerts = {secMarkerX,
@@ -1106,36 +1082,11 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
         // Draw passband overlay (uses separate buffers to avoid GPU conflicts)
         if (m_cursorVisible && m_filterBw > 0 && m_tunedFreq > 0) {
-            // Calculate passband edges based on mode
-            qint64 lowFreq, highFreq;
-
-            // K4 IF shift is reported in decahertz (10 Hz units)
-            // This is the passband center offset from the dial frequency
-            // USB with shift=150 means passband centered 1500 Hz above dial
-            // CW with shift=50 means passband centered at 500 Hz pitch
-            int shiftOffsetHz = m_ifShift * 10;
-
-            if (m_mode == "LSB") {
-                // LSB: passband is below dial, shift indicates center offset (negative)
-                qint64 center = m_tunedFreq - shiftOffsetHz;
-                lowFreq = center - m_filterBw / 2;
-                highFreq = center + m_filterBw / 2;
-            } else if (m_mode == "USB" || m_mode == "DATA" || m_mode == "DATA-R") {
-                // USB: passband is above dial, shift indicates center offset
-                qint64 center = m_tunedFreq + shiftOffsetHz;
-                lowFreq = center - m_filterBw / 2;
-                highFreq = center + m_filterBw / 2;
-            } else if (m_mode == "CW" || m_mode == "CW-R") {
-                // CW: shift already includes pitch offset from K4
-                int pitchOffset = (m_mode == "CW") ? m_cwPitch : -m_cwPitch;
-                qint64 center = m_tunedFreq + pitchOffset;
-                lowFreq = center - m_filterBw / 2;
-                highFreq = center + m_filterBw / 2;
-            } else {
-                // AM/FM - symmetric around carrier (both sidebands, no IF shift)
-                lowFreq = m_tunedFreq - m_filterBw / 2;
-                highFreq = m_tunedFreq + m_filterBw / 2;
-            }
+            // Passband centered on tuned frequency in all modes
+            // The K4 spectrum data is already centered so that the signal peak
+            // aligns with the dial frequency on the display
+            qint64 lowFreq = m_tunedFreq - m_filterBw / 2;
+            qint64 highFreq = m_tunedFreq + m_filterBw / 2;
 
             // Convert to pixel coordinates
             float x1 = freqToNormalized(lowFreq) * w;
@@ -1180,15 +1131,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
             // Draw frequency marker - use dedicated VBO, uniform buffer, and SRB
             // Use spectrumHeight not h - marker should only appear in spectrum area, not waterfall
-            // Marker at passband center frequency (matches the passband overlay position)
-            // In CW modes the passband is offset by cwPitch from the dial frequency
-            qint64 markerFreq = m_tunedFreq;
-            if (m_mode == "CW") {
-                markerFreq = m_tunedFreq + m_cwPitch;
-            } else if (m_mode == "CW-R") {
-                markerFreq = m_tunedFreq - m_cwPitch;
-            }
-            float markerX = freqToNormalized(markerFreq) * w;
+            // Marker at tuned frequency (matches VFO display and signal peak)
+            float markerX = freqToNormalized(m_tunedFreq) * w;
             if (markerX >= 0 && markerX <= w) {
                 // Draw as filled rectangle (2px wide) instead of line for robust Metal rendering
                 float markerWidth = 2.0f;
