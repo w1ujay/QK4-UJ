@@ -54,6 +54,8 @@ private:
     QLabel *m_identityLabel;
     QComboBox *m_encodeModeCombo;
     QComboBox *m_streamingLatencyCombo;
+    QCheckBox *m_n1mmEnabledCheck;
+    QSpinBox *m_n1mmPortSpin;
 
     QPushButton *m_connectButton;
     QPushButton *m_newButton;
