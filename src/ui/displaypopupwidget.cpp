@@ -442,7 +442,7 @@ DisplayPopupWidget::DisplayPopupWidget(QWidget *parent) : K4PopupBase(parent) {
 QSize DisplayPopupWidget::contentSize() const {
     int cm = ContentMargin;
 
-    int width = 7 * MenuButtonWidth + 6 * ButtonSpacing + 2 * cm;
+    int width = 8 * MenuButtonWidth + 7 * ButtonSpacing + 2 * cm;
     int height = TopRowHeight + MenuButtonHeight + RowSpacing + 2 * cm;
     return QSize(width, height);
 }
@@ -766,7 +766,7 @@ void DisplayPopupWidget::setupBottomRow() {
     QList<MenuItemDef> items = {{"PAN = A", "WTRFALL", PanWaterfall}, {"NB", "WTR CLRS", NbWtrClrs},
                                 {"REF LVL", "SCALE", RefLvlScale},    {"SPAN", "CENTER", SpanCenter},
                                 {"AVERAGE", "PEAK OFF", AveragePeak}, {"FIXED2", "FREEZE", FixedFreeze},
-                                {"CURS A+", "CURS B+", CursAB}};
+                                {"CURS A+", "CURS B+", CursAB},       {"PAN ON", "PAN OFF", PanOnOff}};
 
     for (const auto &def : items) {
         auto *btn = new DisplayMenuButton(def.primary, def.alternate, this);
@@ -783,6 +783,14 @@ void DisplayPopupWidget::setupBottomRow() {
 }
 
 void DisplayPopupWidget::onMenuItemClicked(MenuItem item) {
+    // PanOnOff is a simple toggle - don't change selected item or control page
+    if (item == PanOnOff) {
+        m_panadapterOn = !m_panadapterOn;
+        updateMenuButtonLabels();
+        emit panadapterToggled(m_panadapterOn);
+        return;
+    }
+
     m_selectedItem = item;
     updateMenuButtonStyles();
 
@@ -1223,12 +1231,19 @@ void DisplayPopupWidget::setWaterfallHeightExt(int percent) {
     }
 }
 
+void DisplayPopupWidget::setPanadapterEnabled(bool enabled) {
+    if (m_panadapterOn != enabled) {
+        m_panadapterOn = enabled;
+        updateMenuButtonLabels();
+    }
+}
+
 // ============================================================================
 // Button Label Updates
 // ============================================================================
 
 void DisplayPopupWidget::updateMenuButtonLabels() {
-    if (m_menuButtons.size() < 7)
+    if (m_menuButtons.size() < 8)
         return;
 
     // Use LCD or EXT state based on selection
@@ -1283,6 +1298,11 @@ void DisplayPopupWidget::updateMenuButtonLabels() {
     }
     if (m_vfbMode >= 0 && m_vfbMode <= 3) {
         m_menuButtons[6]->setAlternateText(cursorBNames[m_vfbMode]);
+    }
+
+    // PAN ON/OFF button (index 7)
+    if (m_menuButtons.size() > PanOnOff) {
+        m_menuButtons[PanOnOff]->setPrimaryText(m_panadapterOn ? "PAN ON" : "PAN OFF");
     }
 }
 

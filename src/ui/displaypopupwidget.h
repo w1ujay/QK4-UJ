@@ -16,7 +16,7 @@ class DisplayPopupWidget : public K4PopupBase {
     Q_OBJECT
 
 public:
-    enum MenuItem { PanWaterfall = 0, NbWtrClrs, RefLvlScale, SpanCenter, AveragePeak, FixedFreeze, CursAB };
+    enum MenuItem { PanWaterfall = 0, NbWtrClrs, RefLvlScale, SpanCenter, AveragePeak, FixedFreeze, CursAB, PanOnOff };
 
     explicit DisplayPopupWidget(QWidget *parent = nullptr);
 
@@ -51,6 +51,8 @@ public slots:
     void setVfoBCursor(int mode);
     void setDdcNbMode(int mode);   // 0=OFF, 1=ON, 2=AUTO
     void setDdcNbLevel(int level); // 0-14
+
+    void setPanadapterEnabled(bool enabled);
 
     // Waterfall height percentage (0-100, default 50 = 50/50 split)
     void setWaterfallHeight(int percent);    // LCD: #WFHxx;
@@ -100,6 +102,9 @@ signals:
     // Pan mode changed (for MainWindow to update panadapter display)
     // K4 doesn't echo #DPM commands, so we notify directly
     void dualPanModeChanged(int mode);
+
+    // Panadapter on/off toggle
+    void panadapterToggled(bool enabled);
 
 protected:
     QSize contentSize() const override;
@@ -211,6 +216,9 @@ private:
     // Global setting - applies to both VFO A and B
     int m_waterfallHeight = 50;    // LCD: 0-100% (default 50%)
     int m_waterfallHeightExt = 50; // EXT: 0-100% (default 50%)
+
+    // Panadapter on/off state
+    bool m_panadapterOn = true;
 };
 
 // Helper class for dual-line menu buttons
