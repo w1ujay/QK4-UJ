@@ -12,6 +12,7 @@
 #include <QPushButton>
 #include <QShowEvent>
 #include <QHideEvent>
+#include <QSpinBox>
 
 class RadioState;
 class AudioEngine;
@@ -19,15 +20,17 @@ class MicMeterWidget;
 class KpodDevice;
 class CatServer;
 class HalikeyDevice;
+class N1mmListener;
 
 class OptionsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    enum Page { PageAbout = 0, PageAudioInput, PageAudioOutput, PageRigControl, PageCwKeyer, PageKpod, PageCount };
+    enum Page { PageAbout = 0, PageAudioInput, PageAudioOutput, PageRigControl, PageCwKeyer, PageKpod, PageN1mm, PageCount };
 
     explicit OptionsDialog(RadioState *radioState, AudioEngine *audioEngine, KpodDevice *kpodDevice,
-                           CatServer *catServer, HalikeyDevice *halikeyDevice, QWidget *parent = nullptr);
+                           CatServer *catServer, HalikeyDevice *halikeyDevice, N1mmListener *n1mmListener,
+                           QWidget *parent = nullptr);
     ~OptionsDialog();
 
 protected:
@@ -55,7 +58,9 @@ private:
     QWidget *createAudioOutputPage();
     QWidget *createRigControlPage();
     QWidget *createCwKeyerPage();
+    QWidget *createN1mmPage();
     void updateCatServerStatus();
+    void updateN1mmStatus();
     void populateMicDevices();
     void populateSpeakerDevices();
     void populateCwKeyerPorts();
@@ -65,6 +70,7 @@ private:
     KpodDevice *m_kpodDevice;
     CatServer *m_catServer;
     HalikeyDevice *m_halikeyDevice;
+    N1mmListener *m_n1mmListener;
     QListWidget *m_tabList;
     QStackedWidget *m_pageStack;
     bool m_pageCreated[PageCount] = {};
@@ -110,6 +116,16 @@ private:
     QSlider *m_sidetoneVolumeSlider = nullptr;
     QLabel *m_sidetoneVolumeValueLabel = nullptr;
     void updateCwKeyerDescription();
+
+    // N1MM Spots page elements
+    QCheckBox *m_n1mmEnableCheckbox = nullptr;
+    QSpinBox *m_n1mmPortSpin = nullptr;
+    QSpinBox *m_n1mmExpirySpin = nullptr;
+    QPushButton *m_n1mmMultColorBtn = nullptr;
+    QPushButton *m_n1mmNewQsoColorBtn = nullptr;
+    QPushButton *m_n1mmDupeColorBtn = nullptr;
+    QLabel *m_n1mmStatusLabel = nullptr;
+    void updateColorButton(QPushButton *btn, const QColor &color);
 };
 
 #endif // OPTIONSDIALOG_H

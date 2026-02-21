@@ -204,34 +204,6 @@ void RadioManagerDialog::setupUi() {
     formLayout->addWidget(streamingLatencyLabel, 7, 0);
     formLayout->addWidget(m_streamingLatencyCombo, 7, 1);
 
-    // Row 8: N1MM Spots
-    m_n1mmEnabledCheck = new QCheckBox("N1MM Spots", this);
-    m_n1mmEnabledCheck->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; } "
-                                              "QCheckBox::indicator { width: 14px; height: 14px; }")
-                                          .arg(K4Styles::Colors::TextGray)
-                                          .arg(K4Styles::Dimensions::FontSizeButton)
-                                          .arg(K4Styles::Dimensions::BorderRadiusLarge));
-    m_n1mmPortSpin = new QSpinBox(this);
-    m_n1mmPortSpin->setRange(1024, 65535);
-    m_n1mmPortSpin->setValue(12060);
-    m_n1mmPortSpin->setPrefix("Port: ");
-    m_n1mmPortSpin->setStyleSheet(
-        QString("QSpinBox { "
-                "  background-color: %1; "
-                "  color: %2; "
-                "  border: 1px solid %3; "
-                "  border-radius: 4px; "
-                "  padding: %4px; "
-                "} "
-                "QSpinBox::up-button, QSpinBox::down-button { "
-                "  width: 16px; "
-                "  border: none; "
-                "}")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
-            .arg(K4Styles::Dimensions::PaddingSmall));
-    formLayout->addWidget(m_n1mmEnabledCheck, 8, 0);
-    formLayout->addWidget(m_n1mmPortSpin, 8, 1);
-
     // Initially hide ID field (shown when TLS is checked)
     m_identityLabel->setVisible(false);
     m_identityEdit->setVisible(false);
@@ -323,8 +295,6 @@ void RadioManagerDialog::onConnectClicked() {
         entry.identity = m_identityEdit->text();
         entry.encodeMode = m_encodeModeCombo->currentData().toInt();
         entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
-        entry.n1mmEnabled = m_n1mmEnabledCheck->isChecked();
-        entry.n1mmPort = m_n1mmPortSpin->value();
 
         // Set port based on TLS mode if not specified
         if (portText.isEmpty()) {
@@ -376,8 +346,6 @@ void RadioManagerDialog::onSaveClicked() {
     entry.identity = identity;
     entry.encodeMode = m_encodeModeCombo->currentData().toInt();
     entry.streamingLatency = m_streamingLatencyCombo->currentData().toInt();
-    entry.n1mmEnabled = m_n1mmEnabledCheck->isChecked();
-    entry.n1mmPort = m_n1mmPortSpin->value();
 
     // Set port based on TLS mode if not specified
     if (portText.isEmpty()) {
@@ -454,8 +422,6 @@ void RadioManagerDialog::clearFields() {
     m_identityEdit->setVisible(false);
     m_encodeModeCombo->setCurrentIndex(0);       // Reset to EM3 (default)
     m_streamingLatencyCombo->setCurrentIndex(3); // Reset to SL3 (default)
-    m_n1mmEnabledCheck->setChecked(false);
-    m_n1mmPortSpin->setValue(12060);
 }
 
 void RadioManagerDialog::populateFieldsFromSelection() {
@@ -479,9 +445,6 @@ void RadioManagerDialog::populateFieldsFromSelection() {
         if (latencyIndex >= 0) {
             m_streamingLatencyCombo->setCurrentIndex(latencyIndex);
         }
-        // Set N1MM fields
-        m_n1mmEnabledCheck->setChecked(radio.n1mmEnabled);
-        m_n1mmPortSpin->setValue(radio.n1mmPort);
     }
 }
 

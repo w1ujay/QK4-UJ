@@ -18,6 +18,9 @@ public:
     // Called by parent panadapter to keep frequency mapping in sync
     void setFrequencyRange(qint64 centerFreq, int spanHz, int cwPitch, const QString &mode);
 
+    // Dynamic spot colors (overrides K4Styles defaults)
+    void setSpotColors(const QColor &mult, const QColor &newQso, const QColor &dupe);
+
 signals:
     void spotClicked(qint64 frequencyHz);
 
@@ -41,6 +44,11 @@ private:
     int m_spanHz = 10000;
     int m_cwPitch = 500;
     QString m_mode = "USB";
+
+    // Custom spot colors (empty = use K4Styles defaults)
+    QColor m_multColor;
+    QColor m_newQsoColor;
+    QColor m_dupeColor;
 };
 
 #endif // SPOTOVERLAYWIDGET_H

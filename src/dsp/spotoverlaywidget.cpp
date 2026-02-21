@@ -49,15 +49,22 @@ float SpotOverlayWidget::freqToX(qint64 freq, int w) const {
     return normalized * w;
 }
 
+void SpotOverlayWidget::setSpotColors(const QColor &mult, const QColor &newQso, const QColor &dupe) {
+    m_multColor = mult;
+    m_newQsoColor = newQso;
+    m_dupeColor = dupe;
+    update();
+}
+
 QColor SpotOverlayWidget::colorForStatus(const QString &status) const {
     if (status.contains("mult")) {
-        return QColor(K4Styles::Colors::SpotMult);
+        return m_multColor.isValid() ? m_multColor : QColor(K4Styles::Colors::SpotMult);
     } else if (status.contains("dupe")) {
-        return QColor(K4Styles::Colors::SpotDupe);
+        return m_dupeColor.isValid() ? m_dupeColor : QColor(K4Styles::Colors::SpotDupe);
     } else if (status.contains("new qso") || status.isEmpty()) {
-        return QColor(K4Styles::Colors::SpotNewQso);
+        return m_newQsoColor.isValid() ? m_newQsoColor : QColor(K4Styles::Colors::SpotNewQso);
     }
-    return QColor(K4Styles::Colors::SpotDefault);
+    return m_newQsoColor.isValid() ? m_newQsoColor : QColor(K4Styles::Colors::SpotDefault);
 }
 
 void SpotOverlayWidget::paintEvent(QPaintEvent * /*event*/) {

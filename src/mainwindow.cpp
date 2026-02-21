@@ -1837,39 +1837,86 @@ MainWindow::MainWindow(QWidget *parent)
         m_catServer->start(RadioSettings::instance()->catServerPort());
     }
 
-    // N1MM spot listener
-    if (!m_n1mmListener) {
-        m_n1mmListener = new N1mmListener(this);
-        connect(m_n1mmListener, &N1mmListener::spotReceived, this, [this](const SpotData &spot) {
-            if (m_panadapterA && m_panadapterA->spotOverlay()) {
-                m_panadapterA->spotOverlay()->addSpot(spot);
-            }
-            if (m_panadapterB && m_panadapterB->spotOverlay()) {
-                m_panadapterB->spotOverlay()->addSpot(spot);
-            }
-        });
-        connect(m_n1mmListener, &N1mmListener::spotRemoved, this, [this](const QString &callsign) {
-            if (m_panadapterA && m_panadapterA->spotOverlay()) {
-                m_panadapterA->spotOverlay()->removeSpot(callsign);
-            }
-            if (m_panadapterB && m_panadapterB->spotOverlay()) {
-                m_panadapterB->spotOverlay()->removeSpot(callsign);
-            }
-        });
-
-        // Connect spot click-to-tune (inside guard to avoid duplicates on reconnect)
+    // N1MM spot listener (global — independent of radio connection)
+    m_n1mmListener = new N1mmListener(this);
+    connect(m_n1mmListener, &N1mmListener::spotReceived, this, [this](const SpotData &spot) {
         if (m_panadapterA && m_panadapterA->spotOverlay()) {
-            connect(m_panadapterA->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
-                QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
-                m_tcpClient->sendCAT(cmd);
-            });
+            m_panadapterA->spotOverlay()->addSpot(spot);
         }
         if (m_panadapterB && m_panadapterB->spotOverlay()) {
-            connect(m_panadapterB->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
-                QString cmd = QString("FB%1;").arg(freq, 11, 10, QChar('0'));
-                m_tcpClient->sendCAT(cmd);
-            });
+            m_panadapterB->spotOverlay()->addSpot(spot);
         }
+    });
+    connect(m_n1mmListener, &N1mmListener::spotRemoved, this, [this](const QString &callsign) {
+        if (m_panadapterA && m_panadapterA->spotOverlay()) {
+            m_panadapterA->spotOverlay()->removeSpot(callsign);
+        }
+        if (m_panadapterB && m_panadapterB->spotOverlay()) {
+            m_panadapterB->spotOverlay()->removeSpot(callsign);
+        }
+    });
+
+    // Connect spot click-to-tune
+    if (m_panadapterA && m_panadapterA->spotOverlay()) {
+        connect(m_panadapterA->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
+            QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
+            m_tcpClient->sendCAT(cmd);
+        });
+    }
+    if (m_panadapterB && m_panadapterB->spotOverlay()) {
+        connect(m_panadapterB->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
+            QString cmd = QString("FB%1;").arg(freq, 11, 10, QChar('0'));
+            m_tcpClient->sendCAT(cmd);
+        });
+    }
+
+    // Connect to global N1MM settings for live start/stop
+    connect(RadioSettings::instance(), &RadioSettings::n1mmEnabledChanged, this, [this](bool enabled) {
+        if (enabled) {
+            m_n1mmListener->setExpiryMinutes(RadioSettings::instance()->spotExpiryMinutes());
+            m_n1mmListener->start(RadioSettings::instance()->n1mmPort());
+        } else {
+            m_n1mmListener->stop();
+            m_n1mmListener->clearSpots();
+            if (m_panadapterA && m_panadapterA->spotOverlay())
+                m_panadapterA->spotOverlay()->clearSpots();
+            if (m_panadapterB && m_panadapterB->spotOverlay())
+                m_panadapterB->spotOverlay()->clearSpots();
+        }
+    });
+    connect(RadioSettings::instance(), &RadioSettings::n1mmPortChanged, this, [this](quint16 port) {
+        if (RadioSettings::instance()->n1mmEnabled()) {
+            m_n1mmListener->stop();
+            m_n1mmListener->start(port);
+        }
+    });
+    connect(RadioSettings::instance(), &RadioSettings::spotExpiryMinutesChanged, this,
+            [this](int minutes) { m_n1mmListener->setExpiryMinutes(minutes); });
+    connect(RadioSettings::instance(), &RadioSettings::spotColorsChanged, this, [this]() {
+        QColor mult(RadioSettings::instance()->spotMultColor());
+        QColor newQso(RadioSettings::instance()->spotNewQsoColor());
+        QColor dupe(RadioSettings::instance()->spotDupeColor());
+        if (m_panadapterA && m_panadapterA->spotOverlay())
+            m_panadapterA->spotOverlay()->setSpotColors(mult, newQso, dupe);
+        if (m_panadapterB && m_panadapterB->spotOverlay())
+            m_panadapterB->spotOverlay()->setSpotColors(mult, newQso, dupe);
+    });
+
+    // Start N1MM listener if enabled in global settings
+    if (RadioSettings::instance()->n1mmEnabled()) {
+        m_n1mmListener->setExpiryMinutes(RadioSettings::instance()->spotExpiryMinutes());
+        m_n1mmListener->start(RadioSettings::instance()->n1mmPort());
+    }
+
+    // Apply saved spot colors
+    {
+        QColor mult(RadioSettings::instance()->spotMultColor());
+        QColor newQso(RadioSettings::instance()->spotNewQsoColor());
+        QColor dupe(RadioSettings::instance()->spotDupeColor());
+        if (m_panadapterA && m_panadapterA->spotOverlay())
+            m_panadapterA->spotOverlay()->setSpotColors(mult, newQso, dupe);
+        if (m_panadapterB && m_panadapterB->spotOverlay())
+            m_panadapterB->spotOverlay()->setSpotColors(mult, newQso, dupe);
     }
 
     // resize directly instead of deferring - testing if deferred resize affects QRhi
@@ -1939,8 +1986,8 @@ void MainWindow::setupMenuBar() {
     optionsAction->setMenuRole(QAction::PreferencesRole); // macOS: moves to app menu as Preferences
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
-            m_optionsDialog =
-                new OptionsDialog(m_radioState, m_audioEngine, m_kpodDevice, m_catServer, m_halikeyDevice, this);
+            m_optionsDialog = new OptionsDialog(m_radioState, m_audioEngine, m_kpodDevice, m_catServer,
+                                                m_halikeyDevice, m_n1mmListener, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();
@@ -3937,12 +3984,6 @@ void MainWindow::onAuthenticated() {
         m_kpa1500Client->connectToHost(RadioSettings::instance()->kpa1500Host(),
                                        RadioSettings::instance()->kpa1500Port());
     }
-
-    // Start N1MM spot listener if enabled for this radio
-    if (m_n1mmListener && m_currentRadio.n1mmEnabled) {
-        m_n1mmListener->setExpiryMinutes(m_currentRadio.spotExpiryMinutes);
-        m_n1mmListener->start(m_currentRadio.n1mmPort);
-    }
 }
 
 void MainWindow::onAuthenticationFailed() {
@@ -4219,12 +4260,6 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         // Disconnect KPA1500 when K4 disconnects
         if (m_kpa1500Client->isConnected()) {
             m_kpa1500Client->disconnectFromHost();
-        }
-
-        // Stop N1MM spot listener
-        if (m_n1mmListener) {
-            m_n1mmListener->stop();
-            m_n1mmListener->clearSpots();
         }
 
         break;

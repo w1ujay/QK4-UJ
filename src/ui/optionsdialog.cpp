@@ -18,18 +18,22 @@
 #include <QComboBox>
 #include <QSlider>
 #include <QPushButton>
+#include <QSpinBox>
+#include <QColorDialog>
+#include "../network/n1mmlistener.h"
 
 // Use K4Styles::Colors::DialogBorder for dialog-specific borders
 
 OptionsDialog::OptionsDialog(RadioState *radioState, AudioEngine *audioEngine, KpodDevice *kpodDevice,
-                             CatServer *catServer, HalikeyDevice *halikeyDevice, QWidget *parent)
+                             CatServer *catServer, HalikeyDevice *halikeyDevice, N1mmListener *n1mmListener,
+                             QWidget *parent)
     : QDialog(parent), m_radioState(radioState), m_audioEngine(audioEngine), m_kpodDevice(kpodDevice),
-      m_catServer(catServer), m_halikeyDevice(halikeyDevice), m_micDeviceCombo(nullptr), m_micGainSlider(nullptr),
-      m_micGainValueLabel(nullptr), m_micTestBtn(nullptr), m_micMeter(nullptr), m_speakerDeviceCombo(nullptr),
-      m_catServerEnableCheckbox(nullptr), m_catServerPortEdit(nullptr), m_catServerStatusLabel(nullptr),
-      m_catServerClientsLabel(nullptr), m_cwKeyerDeviceTypeCombo(nullptr), m_cwKeyerDescLabel(nullptr),
-      m_cwKeyerPortCombo(nullptr), m_cwKeyerRefreshBtn(nullptr), m_cwKeyerConnectBtn(nullptr),
-      m_cwKeyerStatusLabel(nullptr) {
+      m_catServer(catServer), m_halikeyDevice(halikeyDevice), m_n1mmListener(n1mmListener), m_micDeviceCombo(nullptr),
+      m_micGainSlider(nullptr), m_micGainValueLabel(nullptr), m_micTestBtn(nullptr), m_micMeter(nullptr),
+      m_speakerDeviceCombo(nullptr), m_catServerEnableCheckbox(nullptr), m_catServerPortEdit(nullptr),
+      m_catServerStatusLabel(nullptr), m_catServerClientsLabel(nullptr), m_cwKeyerDeviceTypeCombo(nullptr),
+      m_cwKeyerDescLabel(nullptr), m_cwKeyerPortCombo(nullptr), m_cwKeyerRefreshBtn(nullptr),
+      m_cwKeyerConnectBtn(nullptr), m_cwKeyerStatusLabel(nullptr) {
     setWindowModality(Qt::ApplicationModal);
     setupUi();
 
@@ -92,6 +96,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("Rig Control");
     m_tabList->addItem("CW Keyer");
     m_tabList->addItem("K-Pod");
+    m_tabList->addItem("N1MM Spots");
     m_tabList->setCurrentRow(0);
 
     // Right side: stacked pages (lazy — only About is created eagerly)
@@ -131,6 +136,9 @@ void OptionsDialog::ensurePageCreated(int index) {
         break;
     case PageKpod:
         page = createKpodPage();
+        break;
+    case PageN1mm:
+        page = createN1mmPage();
         break;
     default:
         return;
@@ -1409,5 +1417,268 @@ void OptionsDialog::updateCwKeyerStatus() {
                                                 .arg(K4Styles::Colors::ErrorRed)
                                                 .arg(K4Styles::Dimensions::FontSizePopup));
         m_cwKeyerConnectBtn->setText("Connect");
+    }
+}
+
+void OptionsDialog::updateColorButton(QPushButton *btn, const QColor &color) {
+    btn->setStyleSheet(
+        QString("QPushButton { background-color: %1; border: 1px solid %2; border-radius: 4px; min-width: 40px; "
+                "min-height: 24px; }"
+                "QPushButton:hover { border-color: %3; }")
+            .arg(color.name(), K4Styles::Colors::DialogBorder, K4Styles::Colors::BorderHover));
+}
+
+QWidget *OptionsDialog::createN1mmPage() {
+    auto *page = new QWidget(this);
+    page->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::Background));
+
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
+                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
+    layout->setSpacing(K4Styles::Dimensions::PaddingLarge);
+
+    // Title
+    auto *titleLabel = new QLabel("N1MM Spots", page);
+    titleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                  .arg(K4Styles::Colors::AccentAmber)
+                                  .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(titleLabel);
+
+    // Description
+    auto *descLabel =
+        new QLabel("Display DX spots from N1MM Logger+ on the panadapter. N1MM broadcasts spot data via UDP.", page);
+    descLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeButton));
+    descLabel->setWordWrap(true);
+    layout->addWidget(descLabel);
+
+    // Separator
+    auto *line = new QFrame(page);
+    line->setFrameShape(QFrame::HLine);
+    line->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line);
+
+    // Status indicator
+    auto *statusLayout = new QHBoxLayout();
+    auto *statusTitleLabel = new QLabel("Status:", page);
+    statusTitleLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                        .arg(K4Styles::Colors::TextGray)
+                                        .arg(K4Styles::Dimensions::FontSizePopup));
+    statusTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_n1mmStatusLabel = new QLabel("Not running", page);
+    statusLayout->addWidget(statusTitleLabel);
+    statusLayout->addWidget(m_n1mmStatusLabel);
+    statusLayout->addStretch();
+    layout->addLayout(statusLayout);
+
+    // Separator
+    auto *line2 = new QFrame(page);
+    line2->setFrameShape(QFrame::HLine);
+    line2->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line2->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line2);
+
+    // Settings section
+    auto *sectionLabel = new QLabel("Settings", page);
+    sectionLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                    .arg(K4Styles::Colors::TextWhite)
+                                    .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(sectionLabel);
+
+    QString spinBoxStyle =
+        QString("QSpinBox { background-color: %1; color: %2; border: 1px solid %3; border-radius: 4px; padding: %4px; "
+                "font-size: %5px; }"
+                "QSpinBox::up-button, QSpinBox::down-button { width: 16px; border: none; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Dimensions::PaddingSmall)
+            .arg(K4Styles::Dimensions::FontSizePopup);
+
+    // Port
+    auto *portLayout = new QHBoxLayout();
+    auto *portLabel = new QLabel("UDP Port:", page);
+    portLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizePopup));
+    portLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_n1mmPortSpin = new QSpinBox(page);
+    m_n1mmPortSpin->setRange(1024, 65535);
+    m_n1mmPortSpin->setValue(RadioSettings::instance()->n1mmPort());
+    m_n1mmPortSpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
+    m_n1mmPortSpin->setStyleSheet(spinBoxStyle);
+
+    auto *portHint = new QLabel("(default: 12060)", page);
+    portHint->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                .arg(K4Styles::Colors::TextGray)
+                                .arg(K4Styles::Dimensions::FontSizeLarge));
+
+    portLayout->addWidget(portLabel);
+    portLayout->addWidget(m_n1mmPortSpin);
+    portLayout->addWidget(portHint);
+    portLayout->addStretch();
+    layout->addLayout(portLayout);
+
+    // Expiry
+    auto *expiryLayout = new QHBoxLayout();
+    auto *expiryLabel = new QLabel("Spot Expiry:", page);
+    expiryLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                   .arg(K4Styles::Colors::TextGray)
+                                   .arg(K4Styles::Dimensions::FontSizePopup));
+    expiryLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
+
+    m_n1mmExpirySpin = new QSpinBox(page);
+    m_n1mmExpirySpin->setRange(1, 60);
+    m_n1mmExpirySpin->setValue(RadioSettings::instance()->spotExpiryMinutes());
+    m_n1mmExpirySpin->setSuffix(" min");
+    m_n1mmExpirySpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
+    m_n1mmExpirySpin->setStyleSheet(spinBoxStyle);
+
+    expiryLayout->addWidget(expiryLabel);
+    expiryLayout->addWidget(m_n1mmExpirySpin);
+    expiryLayout->addStretch();
+    layout->addLayout(expiryLayout);
+
+    // Separator
+    auto *line3 = new QFrame(page);
+    line3->setFrameShape(QFrame::HLine);
+    line3->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line3->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line3);
+
+    // Spot Colors section
+    auto *colorsLabel = new QLabel("Spot Colors", page);
+    colorsLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                   .arg(K4Styles::Colors::TextWhite)
+                                   .arg(K4Styles::Dimensions::FontSizePopup));
+    layout->addWidget(colorsLabel);
+
+    auto *colorsGrid = new QGridLayout();
+    colorsGrid->setHorizontalSpacing(K4Styles::Dimensions::PaddingMedium);
+    colorsGrid->setVerticalSpacing(K4Styles::Dimensions::PopupButtonSpacing);
+
+    QString colorLabelStyle =
+        QString("color: %1; font-size: %2px;").arg(K4Styles::Colors::TextGray).arg(K4Styles::Dimensions::FontSizePopup);
+
+    // Multiplier color
+    auto *multLabel = new QLabel("Multiplier:", page);
+    multLabel->setStyleSheet(colorLabelStyle);
+    m_n1mmMultColorBtn = new QPushButton(page);
+    updateColorButton(m_n1mmMultColorBtn, QColor(RadioSettings::instance()->spotMultColor()));
+    colorsGrid->addWidget(multLabel, 0, 0);
+    colorsGrid->addWidget(m_n1mmMultColorBtn, 0, 1);
+
+    // Unworked color
+    auto *newQsoLabel = new QLabel("Unworked:", page);
+    newQsoLabel->setStyleSheet(colorLabelStyle);
+    m_n1mmNewQsoColorBtn = new QPushButton(page);
+    updateColorButton(m_n1mmNewQsoColorBtn, QColor(RadioSettings::instance()->spotNewQsoColor()));
+    colorsGrid->addWidget(newQsoLabel, 1, 0);
+    colorsGrid->addWidget(m_n1mmNewQsoColorBtn, 1, 1);
+
+    // Worked/Dupe color
+    auto *dupeLabel = new QLabel("Worked:", page);
+    dupeLabel->setStyleSheet(colorLabelStyle);
+    m_n1mmDupeColorBtn = new QPushButton(page);
+    updateColorButton(m_n1mmDupeColorBtn, QColor(RadioSettings::instance()->spotDupeColor()));
+    colorsGrid->addWidget(dupeLabel, 2, 0);
+    colorsGrid->addWidget(m_n1mmDupeColorBtn, 2, 1);
+
+    colorsGrid->setColumnStretch(2, 1);
+    layout->addLayout(colorsGrid);
+
+    // Separator
+    auto *line4 = new QFrame(page);
+    line4->setFrameShape(QFrame::HLine);
+    line4->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line4->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line4);
+
+    // Enable checkbox
+    m_n1mmEnableCheckbox = new QCheckBox("Enable N1MM UDP Spots", page);
+    m_n1mmEnableCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                                "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                            .arg(K4Styles::Colors::TextWhite)
+                                            .arg(K4Styles::Dimensions::FontSizePopup)
+                                            .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                            .arg(K4Styles::Dimensions::CheckboxSize));
+    m_n1mmEnableCheckbox->setChecked(RadioSettings::instance()->n1mmEnabled());
+    layout->addWidget(m_n1mmEnableCheckbox);
+
+    // Help text
+    auto *helpLabel = new QLabel("In N1MM Logger+, enable UDP broadcast on the port above. "
+                                 "Spots will appear on the panadapter. Click a spot to tune to it.",
+                                 page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+
+    layout->addStretch();
+
+    // Connect signals
+    connect(m_n1mmEnableCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setN1mmEnabled(checked); });
+
+    connect(m_n1mmPortSpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int value) { RadioSettings::instance()->setN1mmPort(static_cast<quint16>(value)); });
+
+    connect(m_n1mmExpirySpin, QOverload<int>::of(&QSpinBox::valueChanged), this,
+            [](int value) { RadioSettings::instance()->setSpotExpiryMinutes(value); });
+
+    connect(m_n1mmMultColorBtn, &QPushButton::clicked, this, [this]() {
+        QColor color =
+            QColorDialog::getColor(QColor(RadioSettings::instance()->spotMultColor()), this, "Multiplier Color");
+        if (color.isValid()) {
+            RadioSettings::instance()->setSpotMultColor(color.name());
+            updateColorButton(m_n1mmMultColorBtn, color);
+        }
+    });
+
+    connect(m_n1mmNewQsoColorBtn, &QPushButton::clicked, this, [this]() {
+        QColor color =
+            QColorDialog::getColor(QColor(RadioSettings::instance()->spotNewQsoColor()), this, "Unworked Color");
+        if (color.isValid()) {
+            RadioSettings::instance()->setSpotNewQsoColor(color.name());
+            updateColorButton(m_n1mmNewQsoColorBtn, color);
+        }
+    });
+
+    connect(m_n1mmDupeColorBtn, &QPushButton::clicked, this, [this]() {
+        QColor color = QColorDialog::getColor(QColor(RadioSettings::instance()->spotDupeColor()), this, "Worked Color");
+        if (color.isValid()) {
+            RadioSettings::instance()->setSpotDupeColor(color.name());
+            updateColorButton(m_n1mmDupeColorBtn, color);
+        }
+    });
+
+    // Listen for N1MM status changes
+    connect(RadioSettings::instance(), &RadioSettings::n1mmEnabledChanged, this, [this]() { updateN1mmStatus(); });
+
+    // Initialize status
+    updateN1mmStatus();
+
+    return page;
+}
+
+void OptionsDialog::updateN1mmStatus() {
+    if (!m_n1mmStatusLabel)
+        return;
+
+    bool isListening = m_n1mmListener && m_n1mmListener->isListening();
+
+    if (isListening) {
+        m_n1mmStatusLabel->setText(QString("Listening on port %1").arg(RadioSettings::instance()->n1mmPort()));
+        m_n1mmStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                             .arg(K4Styles::Colors::StatusGreen)
+                                             .arg(K4Styles::Dimensions::FontSizePopup));
+    } else {
+        m_n1mmStatusLabel->setText("Not running");
+        m_n1mmStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                             .arg(K4Styles::Colors::ErrorRed)
+                                             .arg(K4Styles::Dimensions::FontSizePopup));
     }
 }

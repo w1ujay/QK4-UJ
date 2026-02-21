@@ -366,6 +366,80 @@ void RadioSettings::clearTxEqPreset(int index) {
     }
 }
 
+bool RadioSettings::n1mmEnabled() const {
+    return m_n1mmEnabled;
+}
+
+void RadioSettings::setN1mmEnabled(bool enabled) {
+    if (m_n1mmEnabled != enabled) {
+        m_n1mmEnabled = enabled;
+        save();
+        emit n1mmEnabledChanged(enabled);
+    }
+}
+
+quint16 RadioSettings::n1mmPort() const {
+    return m_n1mmPort;
+}
+
+void RadioSettings::setN1mmPort(quint16 port) {
+    port = qBound(quint16(1024), port, quint16(65535));
+    if (m_n1mmPort != port) {
+        m_n1mmPort = port;
+        save();
+        emit n1mmPortChanged(port);
+    }
+}
+
+int RadioSettings::spotExpiryMinutes() const {
+    return m_spotExpiryMinutes;
+}
+
+void RadioSettings::setSpotExpiryMinutes(int minutes) {
+    minutes = qBound(1, minutes, 60);
+    if (m_spotExpiryMinutes != minutes) {
+        m_spotExpiryMinutes = minutes;
+        save();
+        emit spotExpiryMinutesChanged(minutes);
+    }
+}
+
+QString RadioSettings::spotMultColor() const {
+    return m_spotMultColor;
+}
+
+void RadioSettings::setSpotMultColor(const QString &color) {
+    if (m_spotMultColor != color) {
+        m_spotMultColor = color;
+        save();
+        emit spotColorsChanged();
+    }
+}
+
+QString RadioSettings::spotNewQsoColor() const {
+    return m_spotNewQsoColor;
+}
+
+void RadioSettings::setSpotNewQsoColor(const QString &color) {
+    if (m_spotNewQsoColor != color) {
+        m_spotNewQsoColor = color;
+        save();
+        emit spotColorsChanged();
+    }
+}
+
+QString RadioSettings::spotDupeColor() const {
+    return m_spotDupeColor;
+}
+
+void RadioSettings::setSpotDupeColor(const QString &color) {
+    if (m_spotDupeColor != color) {
+        m_spotDupeColor = color;
+        save();
+        emit spotColorsChanged();
+    }
+}
+
 void RadioSettings::load() {
     int count = m_settings.beginReadArray("radios");
     m_radios.clear();
@@ -407,6 +481,14 @@ void RadioSettings::load() {
     m_halikeyEnabled = m_settings.value("halikey/enabled", false).toBool();
     m_halikeyDeviceType = m_settings.value("halikey/deviceType", 0).toInt();
     m_sidetoneVolume = m_settings.value("halikey/sidetoneVolume", 30).toInt();
+
+    // N1MM Spot settings (global)
+    m_n1mmEnabled = m_settings.value("n1mm/enabled", false).toBool();
+    m_n1mmPort = m_settings.value("n1mm/port", 12060).toUInt();
+    m_spotExpiryMinutes = m_settings.value("n1mm/expiryMinutes", 10).toInt();
+    m_spotMultColor = m_settings.value("n1mm/multColor", "#FF0000").toString();
+    m_spotNewQsoColor = m_settings.value("n1mm/newQsoColor", "#4DA6FF").toString();
+    m_spotDupeColor = m_settings.value("n1mm/dupeColor", "#555555").toString();
 
     // Macro settings
     int macroCount = m_settings.beginReadArray("macros");
@@ -498,6 +580,14 @@ void RadioSettings::save() {
     m_settings.setValue("halikey/enabled", m_halikeyEnabled);
     m_settings.setValue("halikey/deviceType", m_halikeyDeviceType);
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);
+
+    // N1MM Spot settings (global)
+    m_settings.setValue("n1mm/enabled", m_n1mmEnabled);
+    m_settings.setValue("n1mm/port", m_n1mmPort);
+    m_settings.setValue("n1mm/expiryMinutes", m_spotExpiryMinutes);
+    m_settings.setValue("n1mm/multColor", m_spotMultColor);
+    m_settings.setValue("n1mm/newQsoColor", m_spotNewQsoColor);
+    m_settings.setValue("n1mm/dupeColor", m_spotDupeColor);
 
     // Macro settings
     m_settings.beginWriteArray("macros");

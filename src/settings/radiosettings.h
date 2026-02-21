@@ -128,6 +128,20 @@ public:
     void setTxEqPreset(int index, const EqPreset &preset); // Set preset 0-3
     void clearTxEqPreset(int index);                       // Clear preset 0-3
 
+    // N1MM Spot settings (global)
+    bool n1mmEnabled() const;
+    void setN1mmEnabled(bool enabled);
+    quint16 n1mmPort() const;
+    void setN1mmPort(quint16 port);
+    int spotExpiryMinutes() const;
+    void setSpotExpiryMinutes(int minutes);
+    QString spotMultColor() const;
+    void setSpotMultColor(const QString &color);
+    QString spotNewQsoColor() const;
+    void setSpotNewQsoColor(const QString &color);
+    QString spotDupeColor() const;
+    void setSpotDupeColor(const QString &color);
+
 signals:
     void radiosChanged();
     void kpodEnabledChanged(bool enabled);
@@ -146,6 +160,10 @@ signals:
     void sidetoneVolumeChanged(int value);
     void rxEqPresetsChanged();
     void txEqPresetsChanged();
+    void n1mmEnabledChanged(bool enabled);
+    void n1mmPortChanged(quint16 port);
+    void spotExpiryMinutesChanged(int minutes);
+    void spotColorsChanged();
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
@@ -171,6 +189,14 @@ private:
     bool m_halikeyEnabled = false;
     int m_halikeyDeviceType = 0; // 0=V14, 1=MiDi
     int m_sidetoneVolume = 30;   // Default 30%
+
+    // N1MM Spot settings (global)
+    bool m_n1mmEnabled = false;
+    quint16 m_n1mmPort = 12060;
+    int m_spotExpiryMinutes = 10;
+    QString m_spotMultColor = "#FF0000";
+    QString m_spotNewQsoColor = "#4DA6FF";
+    QString m_spotDupeColor = "#555555";
 
     // Macro settings
     QMap<QString, MacroEntry> m_macros;

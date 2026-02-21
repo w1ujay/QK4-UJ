@@ -8,7 +8,6 @@
 #include <QListWidget>
 #include <QLineEdit>
 #include <QPushButton>
-#include <QSpinBox>
 #include "settings/radiosettings.h"
 
 class RadioManagerDialog : public QDialog {
@@ -54,8 +53,6 @@ private:
     QLabel *m_identityLabel;
     QComboBox *m_encodeModeCombo;
     QComboBox *m_streamingLatencyCombo;
-    QCheckBox *m_n1mmEnabledCheck;
-    QSpinBox *m_n1mmPortSpin;
 
     QPushButton *m_connectButton;
     QPushButton *m_newButton;
