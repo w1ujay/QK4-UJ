@@ -28,6 +28,8 @@ void SpotOverlayWidget::clearSpots() {
 }
 
 void SpotOverlayWidget::setFrequencyRange(qint64 centerFreq, int spanHz, int cwPitch, const QString &mode) {
+    if (m_centerFreq == centerFreq && m_spanHz == spanHz && m_cwPitch == cwPitch && m_mode == mode)
+        return;
     m_centerFreq = centerFreq;
     m_spanHz = spanHz;
     m_cwPitch = cwPitch;

@@ -1856,20 +1856,20 @@ MainWindow::MainWindow(QWidget *parent)
                 m_panadapterB->spotOverlay()->removeSpot(callsign);
             }
         });
-    }
 
-    // Connect spot click-to-tune (VFO A)
-    if (m_panadapterA && m_panadapterA->spotOverlay()) {
-        connect(m_panadapterA->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
-            QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
-            m_tcpClient->sendCAT(cmd);
-        });
-    }
-    if (m_panadapterB && m_panadapterB->spotOverlay()) {
-        connect(m_panadapterB->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
-            QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
-            m_tcpClient->sendCAT(cmd);
-        });
+        // Connect spot click-to-tune (inside guard to avoid duplicates on reconnect)
+        if (m_panadapterA && m_panadapterA->spotOverlay()) {
+            connect(m_panadapterA->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
+                QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
+                m_tcpClient->sendCAT(cmd);
+            });
+        }
+        if (m_panadapterB && m_panadapterB->spotOverlay()) {
+            connect(m_panadapterB->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
+                QString cmd = QString("FB%1;").arg(freq, 11, 10, QChar('0'));
+                m_tcpClient->sendCAT(cmd);
+            });
+        }
     }
 
     // resize directly instead of deferring - testing if deferred resize affects QRhi
