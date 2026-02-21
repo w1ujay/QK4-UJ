@@ -381,6 +381,10 @@ void RadioSettings::load() {
         entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus Float)
         entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
         entry.displayFps = m_settings.value("displayFps", 30).toInt();            // Default 30 FPS
+        entry.n1mmEnabled = m_settings.value("n1mmEnabled", false).toBool();
+        entry.n1mmPort = m_settings.value("n1mmPort", 12060).toUInt();
+        entry.spotExpiryMinutes = m_settings.value("spotExpiryMinutes", 10).toInt();
+        entry.panadapterEnabled = m_settings.value("panadapterEnabled", true).toBool();
         m_radios.append(entry);
     }
     m_settings.endArray();
@@ -469,6 +473,10 @@ void RadioSettings::save() {
         m_settings.setValue("encodeMode", m_radios[i].encodeMode);
         m_settings.setValue("streamingLatency", m_radios[i].streamingLatency);
         m_settings.setValue("displayFps", m_radios[i].displayFps);
+        m_settings.setValue("n1mmEnabled", m_radios[i].n1mmEnabled);
+        m_settings.setValue("n1mmPort", m_radios[i].n1mmPort);
+        m_settings.setValue("spotExpiryMinutes", m_radios[i].spotExpiryMinutes);
+        m_settings.setValue("panadapterEnabled", m_radios[i].panadapterEnabled);
     }
     m_settings.endArray();
 

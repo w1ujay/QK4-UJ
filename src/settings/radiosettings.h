@@ -36,11 +36,15 @@ struct RadioEntry {
     QString host;
     QString password; // Password (used as PSK when TLS enabled)
     quint16 port;
-    bool useTls = false;      // Use TLS/PSK encryption (port 9204)
-    QString identity;         // TLS-PSK identity (optional, empty = default)
-    int encodeMode = 3;       // Audio encode mode: 0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float (default)
-    int streamingLatency = 3; // Remote streaming audio latency: 0-7 (default 3)
-    int displayFps = 30;      // Display FPS: 12-30 (default 30)
+    bool useTls = false;           // Use TLS/PSK encryption (port 9204)
+    QString identity;              // TLS-PSK identity (optional, empty = default)
+    int encodeMode = 3;            // Audio encode mode: 0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float (default)
+    int streamingLatency = 3;      // Remote streaming audio latency: 0-7 (default 3)
+    int displayFps = 30;           // Display FPS: 12-30 (default 30)
+    bool n1mmEnabled = false;      // Whether to listen for N1MM spot broadcasts
+    quint16 n1mmPort = 12060;      // N1MM UDP listen port
+    int spotExpiryMinutes = 10;    // Auto-expire spots after N minutes
+    bool panadapterEnabled = true; // Persist panadapter on/off state
 
     bool operator==(const RadioEntry &other) const {
         return name == other.name && host == other.host && port == other.port;
