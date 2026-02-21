@@ -38,13 +38,7 @@ void SpotOverlayWidget::setFrequencyRange(qint64 centerFreq, int spanHz, int cwP
 }
 
 float SpotOverlayWidget::freqToX(qint64 freq, int w) const {
-    qint64 effectiveCenter = m_centerFreq;
-    if (m_mode == "CW") {
-        effectiveCenter = m_centerFreq + m_cwPitch;
-    } else if (m_mode == "CW-R") {
-        effectiveCenter = m_centerFreq - m_cwPitch;
-    }
-    qint64 startFreq = effectiveCenter - m_spanHz / 2;
+    qint64 startFreq = m_centerFreq - m_spanHz / 2;
     float normalized = static_cast<float>(freq - startFreq) / static_cast<float>(m_spanHz);
     return normalized * w;
 }
@@ -85,14 +79,8 @@ void SpotOverlayWidget::paintEvent(QPaintEvent * /*event*/) {
     int tickHeight = 8;
 
     // Collect visible spots
-    qint64 effectiveCenter = m_centerFreq;
-    if (m_mode == "CW") {
-        effectiveCenter = m_centerFreq + m_cwPitch;
-    } else if (m_mode == "CW-R") {
-        effectiveCenter = m_centerFreq - m_cwPitch;
-    }
-    qint64 startFreq = effectiveCenter - m_spanHz / 2;
-    qint64 endFreq = effectiveCenter + m_spanHz / 2;
+    qint64 startFreq = m_centerFreq - m_spanHz / 2;
+    qint64 endFreq = m_centerFreq + m_spanHz / 2;
 
     struct VisibleSpot {
         SpotData spot;

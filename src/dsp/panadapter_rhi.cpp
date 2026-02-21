@@ -135,16 +135,9 @@ protected:
         const int w = width();
         const int h = height();
 
-        // Calculate effective center frequency (CW mode applies pitch offset)
-        qint64 effectiveCenter = m_centerFreq;
-        if (m_mode == "CW") {
-            effectiveCenter = m_centerFreq + m_cwPitch;
-        } else if (m_mode == "CW-R") {
-            effectiveCenter = m_centerFreq - m_cwPitch;
-        }
-
-        qint64 startFreq = effectiveCenter - m_spanHz / 2;
-        qint64 endFreq = effectiveCenter + m_spanHz / 2;
+        // centerFreq from the K4 is the true center of the spectrum data in all modes
+        qint64 startFreq = m_centerFreq - m_spanHz / 2;
+        qint64 endFreq = m_centerFreq + m_spanHz / 2;
 
         // Get appropriate interval for this span (targets ~20-30 labels)
         int interval = calculateLabelInterval(m_spanHz);
@@ -1362,16 +1355,8 @@ float PanadapterRhiWidget::freqToNormalized(qint64 freq) {
     // Map frequency to normalized range [0.0, 1.0] where:
     // - 0.0 = left edge (startFreq)
     // - 1.0 = right edge (startFreq + spanHz)
-    //
-    // IMPORTANT: In CW mode, the K4 centers the spectrum on (dial + cwPitch), not the dial frequency.
-    // This is because the IF center is offset by the CW sidetone pitch.
-    qint64 effectiveCenter = m_centerFreq;
-    if (m_mode == "CW") {
-        effectiveCenter = m_centerFreq + m_cwPitch;
-    } else if (m_mode == "CW-R") {
-        effectiveCenter = m_centerFreq - m_cwPitch;
-    }
-    qint64 startFreq = effectiveCenter - m_spanHz / 2;
+    // centerFreq from the K4 spectrum packet is the true center of the data in all modes.
+    qint64 startFreq = m_centerFreq - m_spanHz / 2;
     return static_cast<float>(freq - startFreq) / static_cast<float>(m_spanHz);
 }
 
