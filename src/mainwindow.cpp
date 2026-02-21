@@ -40,6 +40,8 @@
 #include "ui/kpa1500window.h"
 #include "ui/kpa1500panel.h"
 #include "network/catserver.h"
+#include "network/n1mmlistener.h"
+#include "dsp/spotoverlaywidget.h"
 #include "settings/radiosettings.h"
 #include <QVBoxLayout>
 #include <QInputDialog>
@@ -206,6 +208,9 @@ MainWindow::MainWindow(QWidget *parent)
 
     // DisplayPopup CAT commands -> TcpClient
     connect(m_displayPopup, &DisplayPopupWidget::catCommandRequested, m_tcpClient, &TcpClient::sendCAT);
+
+    // DisplayPopup panadapter on/off toggle
+    connect(m_displayPopup, &DisplayPopupWidget::panadapterToggled, this, &MainWindow::onPanadapterToggled);
 
     // Create Fn popup with dual-action buttons (macro system)
     m_fnPopup = new FnPopupWidget(this);
@@ -1830,6 +1835,41 @@ MainWindow::MainWindow(QWidget *parent)
     // Start CAT server if enabled
     if (RadioSettings::instance()->catServerEnabled()) {
         m_catServer->start(RadioSettings::instance()->catServerPort());
+    }
+
+    // N1MM spot listener
+    if (!m_n1mmListener) {
+        m_n1mmListener = new N1mmListener(this);
+        connect(m_n1mmListener, &N1mmListener::spotReceived, this, [this](const SpotData &spot) {
+            if (m_panadapterA && m_panadapterA->spotOverlay()) {
+                m_panadapterA->spotOverlay()->addSpot(spot);
+            }
+            if (m_panadapterB && m_panadapterB->spotOverlay()) {
+                m_panadapterB->spotOverlay()->addSpot(spot);
+            }
+        });
+        connect(m_n1mmListener, &N1mmListener::spotRemoved, this, [this](const QString &callsign) {
+            if (m_panadapterA && m_panadapterA->spotOverlay()) {
+                m_panadapterA->spotOverlay()->removeSpot(callsign);
+            }
+            if (m_panadapterB && m_panadapterB->spotOverlay()) {
+                m_panadapterB->spotOverlay()->removeSpot(callsign);
+            }
+        });
+    }
+
+    // Connect spot click-to-tune (VFO A)
+    if (m_panadapterA && m_panadapterA->spotOverlay()) {
+        connect(m_panadapterA->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
+            QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
+            m_tcpClient->sendCAT(cmd);
+        });
+    }
+    if (m_panadapterB && m_panadapterB->spotOverlay()) {
+        connect(m_panadapterB->spotOverlay(), &SpotOverlayWidget::spotClicked, this, [this](qint64 freq) {
+            QString cmd = QString("FA%1;").arg(freq, 11, 10, QChar('0'));
+            m_tcpClient->sendCAT(cmd);
+        });
     }
 
     // resize directly instead of deferring - testing if deferred resize affects QRhi
@@ -3827,6 +3867,16 @@ void MainWindow::connectToRadio(const RadioEntry &radio) {
     m_currentRadio = radio;
     m_titleLabel->setText("Elecraft K4 - " + radio.name);
 
+    // Restore panadapter on/off state from saved settings
+    m_panadapterEnabled = m_currentRadio.panadapterEnabled;
+    if (!m_panadapterEnabled) {
+        m_spectrumContainer->setVisible(false);
+        m_displayPopup->setPanadapterEnabled(false);
+    } else {
+        m_spectrumContainer->setVisible(true);
+        m_displayPopup->setPanadapterEnabled(true);
+    }
+
     qDebug() << "Connecting to" << radio.host << ":" << radio.port << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)")
              << "encodeMode:" << radio.encodeMode << "streamingLatency:" << radio.streamingLatency;
     QMetaObject::invokeMethod(m_tcpClient, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, radio.host),
@@ -3886,6 +3936,12 @@ void MainWindow::onAuthenticated() {
     if (RadioSettings::instance()->kpa1500Enabled() && !RadioSettings::instance()->kpa1500Host().isEmpty()) {
         m_kpa1500Client->connectToHost(RadioSettings::instance()->kpa1500Host(),
                                        RadioSettings::instance()->kpa1500Port());
+    }
+
+    // Start N1MM spot listener if enabled for this radio
+    if (m_n1mmListener && m_currentRadio.n1mmEnabled) {
+        m_n1mmListener->setExpiryMinutes(m_currentRadio.spotExpiryMinutes);
+        m_n1mmListener->start(m_currentRadio.n1mmPort);
     }
 }
 
@@ -4163,6 +4219,12 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         // Disconnect KPA1500 when K4 disconnects
         if (m_kpa1500Client->isConnected()) {
             m_kpa1500Client->disconnectFromHost();
+        }
+
+        // Stop N1MM spot listener
+        if (m_n1mmListener) {
+            m_n1mmListener->stop();
+            m_n1mmListener->clearSpots();
         }
 
         break;
@@ -4472,6 +4534,9 @@ void MainWindow::onProcessingChangedB() {
 
 void MainWindow::onSpectrumData(int receiver, const QByteArray &data, qint64 centerFreq, qint32 sampleRate,
                                 float noiseFloor) {
+    if (!m_panadapterEnabled)
+        return;
+
     // Route spectrum data to appropriate panadapter
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
     if (receiver == 0) {
@@ -4482,6 +4547,9 @@ void MainWindow::onSpectrumData(int receiver, const QByteArray &data, qint64 cen
 }
 
 void MainWindow::onMiniSpectrumData(int receiver, const QByteArray &data) {
+    if (!m_panadapterEnabled)
+        return;
+
     // Route Mini-PAN data based on receiver byte (0=Main/A, 1=Sub/B)
     if (receiver == 0 && m_vfoA->isMiniPanVisible()) {
         m_vfoA->updateMiniPan(data);
@@ -5426,5 +5494,36 @@ void MainWindow::onSubRxButtonRightClicked(int index) {
         break;
     default:
         break;
+    }
+}
+
+void MainWindow::onPanadapterToggled(bool enabled) {
+    m_panadapterEnabled = enabled;
+
+    if (enabled) {
+        // Restore spectrum streaming
+        int fps = m_currentRadio.displayFps;
+        QString fpsCmd = QString("#FPS%1;").arg(fps, 2, 10, QChar('0'));
+        m_tcpClient->sendCAT(fpsCmd);
+
+        // Show panadapter
+        m_spectrumContainer->setVisible(true);
+    } else {
+        // Stop spectrum streaming
+        m_tcpClient->sendCAT("#FPS00;");
+
+        // Disable MiniPAN streams
+        m_tcpClient->sendCAT("#MP0;");
+        m_tcpClient->sendCAT("#MP$0;");
+
+        // Hide panadapter
+        m_spectrumContainer->setVisible(false);
+    }
+
+    // Persist setting
+    m_currentRadio.panadapterEnabled = enabled;
+    int idx = RadioSettings::instance()->lastSelectedIndex();
+    if (idx >= 0) {
+        RadioSettings::instance()->updateRadio(idx, m_currentRadio);
     }
 }

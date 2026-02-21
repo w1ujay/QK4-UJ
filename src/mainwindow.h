@@ -49,6 +49,7 @@ class KPA1500Client;
 class KPA1500Window;
 class CatServer;
 class OptionsDialog;
+class N1mmListener;
 class NotificationWidget;
 class VfoRowWidget;
 class SidetoneGenerator;
@@ -146,6 +147,9 @@ private slots:
 
     // Display FPS (synthetic menu item)
     void onDisplayFpsChanged(int fps);
+
+    // Panadapter on/off toggle
+    void onPanadapterToggled(bool enabled);
 
     // Fn popup / macro slots
     void onFnFunctionTriggered(const QString &functionId);
@@ -331,6 +335,10 @@ private:
 
     // Notification popup for K4 error/status messages (ERxx:)
     NotificationWidget *m_notificationWidget;
+
+    // N1MM spot listener
+    N1mmListener *m_n1mmListener = nullptr;
+    bool m_panadapterEnabled = true;
 
     // Debounce timer for RX EQ slider changes
     QTimer *m_rxEqDebounceTimer;
