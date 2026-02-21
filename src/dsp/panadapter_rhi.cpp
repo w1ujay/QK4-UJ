@@ -1052,14 +1052,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
                 cb->draw(6);
             }
 
-            // Secondary VFO marker
-            qint64 secMarkerFreq = m_secondaryTunedFreq;
-            if (m_secondaryMode == "CW") {
-                secMarkerFreq = m_secondaryTunedFreq + m_secondaryCwPitch;
-            } else if (m_secondaryMode == "CW-R") {
-                secMarkerFreq = m_secondaryTunedFreq - m_secondaryCwPitch;
-            }
-            float secMarkerX = freqToNormalized(secMarkerFreq) * w;
+            // Secondary VFO marker - at dial frequency (matching VFO display)
+            float secMarkerX = freqToNormalized(m_secondaryTunedFreq) * w;
             if (secMarkerX >= 0 && secMarkerX <= w) {
                 float markerWidth = 2.0f;
                 QVector<float> secMarkerVerts = {secMarkerX,
@@ -1180,18 +1174,8 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
 
             // Draw frequency marker - use dedicated VBO, uniform buffer, and SRB
             // Use spectrumHeight not h - marker should only appear in spectrum area, not waterfall
-            // For CW modes: marker at passband center (dial + pitch offset)
-            // For SSB/other: marker at dial frequency (passband shifts around it)
-            qint64 markerFreq = m_tunedFreq;
-            if (m_mode == "CW") {
-                // CW marker at passband center (pitch offset from dial)
-                markerFreq = m_tunedFreq + m_cwPitch;
-            } else if (m_mode == "CW-R") {
-                // CW-R marker at passband center (pitch offset below dial)
-                markerFreq = m_tunedFreq - m_cwPitch;
-            }
-            // For USB/LSB/AM/FM: marker stays at dial frequency
-            float markerX = freqToNormalized(markerFreq) * w;
+            // Marker at dial frequency (matching VFO display) in all modes
+            float markerX = freqToNormalized(m_tunedFreq) * w;
             if (markerX >= 0 && markerX <= w) {
                 // Draw as filled rectangle (2px wide) instead of line for robust Metal rendering
                 float markerWidth = 2.0f;
