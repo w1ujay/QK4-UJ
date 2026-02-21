@@ -1,0 +1,11 @@
+2026-02-10 21:26:55,004 - aqt.main - INFO - installer 124466359951488 aqtinstall(aqt) v3.3.0 on Python 3.12.3 [CPython GCC 13.3.0]
+2026-02-10 21:26:55,005 - aqt.helper - DEBUG - helper 124466359951488 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_681/qt6_681/Updates.xml.sha256
+2026-02-10 21:26:56,029 - aqt.helper - DEBUG - helper 124466359951488 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/extensions/qtwebengine/681/x86_64/Updates.xml.sha256
+2026-02-10 21:26:57,175 - aqt.archives - INFO - archives 124466359951488 Found extension qtwebengine
+2026-02-10 21:26:57,176 - aqt.helper - DEBUG - helper 124466359951488 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/extensions/qtpdf/681/x86_64/Updates.xml.sha256
+2026-02-10 21:26:58,175 - aqt.archives - INFO - archives 124466359951488 Found extension qtpdf
+2026-02-10 21:26:58,183 - aqt.main - ERROR - installer 124466359951488 The packages ['qt_base', 'qtmultimedia', 'qtserialport', 'qtshadertools'] were not found while parsing XML of package information!
+==============================Suggested follow-up:==============================
+* Please use 'aqt list-qt linux desktop --arch 6.8.1' to show architectures available.
+* Please use 'aqt list-qt linux desktop --modules 6.8.1 <arch>' to show modules available.
+2026-02-10 21:28:15,451 - aqt.helper - DEBUG - helper 137137415241856 Attempt to download checksum at https://download.qt.io/online/qtsdkrepository/linux_x64/desktop/qt6_681/qt6_681/Updates.xml.sha256
