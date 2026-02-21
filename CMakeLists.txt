@@ -82,6 +82,7 @@ set(SOURCES
     src/audio/sidetonegenerator.cpp
     src/dsp/panadapter_rhi.cpp
     src/dsp/minipan_rhi.cpp
+    src/dsp/spotoverlaywidget.cpp
     src/settings/radiosettings.cpp
     src/models/radiostate.cpp
     src/models/menumodel.cpp
@@ -144,6 +145,7 @@ set(HEADERS
     src/audio/sidetonegenerator.h
     src/dsp/panadapter_rhi.h
     src/dsp/minipan_rhi.h
+    src/dsp/spotoverlaywidget.h
     src/settings/radiosettings.h
     src/models/radiostate.h
     src/models/menumodel.h
