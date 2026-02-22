@@ -8,9 +8,8 @@ AudioEngine::AudioEngine(QObject *parent)
     : QObject(parent), m_audioSink(nullptr), m_audioSinkDevice(nullptr), m_audioSource(nullptr),
       m_audioSourceDevice(nullptr), m_micPollTimer(nullptr) {
 
-    // Output format: 48kHz stereo Float32 for maximum device compatibility
-    // K4 sends 12kHz audio; we upsample 4x at playback time
-    m_outputFormat.setSampleRate(48000);
+    // Output format: 12kHz stereo Float32 (native K4 rate — no resampling needed)
+    m_outputFormat.setSampleRate(12000);
     m_outputFormat.setChannelCount(2);
     m_outputFormat.setSampleFormat(QAudioFormat::Float);
 
@@ -229,25 +228,23 @@ void AudioEngine::feedAudioDevice() {
         // Drain packets that fit in the sink's free space (accounting for 4x upsample)
         while (!m_audioQueue.isEmpty()) {
             int headSize = m_audioQueue.head().size();
-            int upsampledSize = headSize * 4; // 12kHz → 48kHz
-            if (bytesFree < upsampledSize)
+            if (bytesFree < headSize)
                 break;
 
             QByteArray pkt = m_audioQueue.dequeue();
             m_queueBytes -= pkt.size();
-            bytesFree -= upsampledSize;
+            bytesFree -= headSize;
             localPackets.append(std::move(pkt));
         }
     }
 
-    // Apply mix/volume, upsample 12kHz→48kHz, and write to audio sink without holding the lock
+    // Apply mix/volume and write directly to audio sink (12kHz native — no resampling)
     for (QByteArray &packet : localPackets) {
         applyMixAndVolume(packet);
-        QByteArray upsampled = upsample12kTo48k(packet);
-        qint64 written = m_audioSinkDevice->write(upsampled.constData(), upsampled.size());
-        if (written < upsampled.size()) {
+        qint64 written = m_audioSinkDevice->write(packet.constData(), packet.size());
+        if (written < packet.size()) {
             // Partial write — save remainder for next feed cycle
-            m_writeBuffer.append(upsampled.constData() + written, upsampled.size() - static_cast<int>(written));
+            m_writeBuffer.append(packet.constData() + written, packet.size() - static_cast<int>(written));
         }
     }
 }

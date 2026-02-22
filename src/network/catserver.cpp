@@ -436,10 +436,11 @@ QString CatServer::handleCommand(const QString &cmd) {
     }
 
     // AG/AG$ SET - control QK4 local volume when audio enabled, forward to K4 when disabled
+    // K4 AG range is 000-060 (not 255)
     if (prefix == "AG" || prefix == "AG$") {
         if (RadioSettings::instance()->audioEnabled()) {
-            int gain = qBound(0, args.toInt(), 255);
-            int percent = (gain * 100 + 127) / 255; // Map 0-255 → 0-100
+            int gain = qBound(0, args.toInt(), 60);
+            int percent = (gain * 100 + 30) / 60; // Map 0-60 → 0-100
             if (prefix == "AG") {
                 m_mainVolume = gain;
                 emit volumeRequested(percent);

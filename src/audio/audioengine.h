@@ -132,9 +132,9 @@ private:
     static constexpr int BYTES_PER_MS = 96;
 
     // Audio buffer sizes
-    // QAudioSink runs at 48kHz (4x upsample for WSL/PulseAudio compatibility)
-    // 500ms × 96 bytes/ms × 4 (upsample ratio) = 192,000 bytes
-    static constexpr int OUTPUT_BUFFER_SIZE = 500 * BYTES_PER_MS * 4; // 192,000 bytes
+    // QAudioSink runs at 12kHz native (no upsampling)
+    // 500ms × 96 bytes/ms = 48,000 bytes
+    static constexpr int OUTPUT_BUFFER_SIZE = 500 * BYTES_PER_MS; // 48,000 bytes
     // Input: 48kHz * 4 bytes/sample * 0.1 sec = 19200 bytes
     static constexpr int INPUT_BUFFER_SIZE = 19200;
 
