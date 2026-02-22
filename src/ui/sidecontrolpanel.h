@@ -66,6 +66,8 @@ public:
     // Volume control
     int volume() const;
     int subVolume() const;
+    void setVolume(int value);    // 0-100, updates slider
+    void setSubVolume(int value); // 0-100, updates slider
 
     // Monitor level (MON overlay)
     void updateMonitorLevel(int mode, int level);

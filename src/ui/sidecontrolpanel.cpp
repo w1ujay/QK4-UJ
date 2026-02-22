@@ -653,6 +653,16 @@ int SideControlPanel::subVolume() const {
     return m_subVolumeSlider ? m_subVolumeSlider->value() : 100;
 }
 
+void SideControlPanel::setVolume(int value) {
+    if (m_volumeSlider)
+        m_volumeSlider->setValue(qBound(0, value, 100));
+}
+
+void SideControlPanel::setSubVolume(int value) {
+    if (m_subVolumeSlider)
+        m_subVolumeSlider->setValue(qBound(0, value, 100));
+}
+
 void SideControlPanel::updateMonitorLevel(int mode, int level) {
     // Only update if this is the current mode
     if (m_monOverlay && m_monOverlay->mode() == mode) {

@@ -1878,6 +1878,20 @@ MainWindow::MainWindow(QWidget *parent)
         m_bottomMenuBar->setPttActive(on);
     });
 
+    // AG/AG$ from external apps controls QK4 local playback volume
+    connect(m_catServer, &CatServer::volumeRequested, this, [this](int level) {
+        if (m_audioEngine)
+            m_audioEngine->setMainVolume(level / 100.0f);
+        m_sideControlPanel->setVolume(level);
+        RadioSettings::instance()->setVolume(level);
+    });
+    connect(m_catServer, &CatServer::subVolumeRequested, this, [this](int level) {
+        if (m_audioEngine)
+            m_audioEngine->setSubVolume(level / 100.0f);
+        m_sideControlPanel->setSubVolume(level);
+        RadioSettings::instance()->setSubVolume(level);
+    });
+
     // Connect to settings for CAT server enable/disable
     connect(RadioSettings::instance(), &RadioSettings::catServerEnabledChanged, this, [this](bool enabled) {
         if (enabled) {

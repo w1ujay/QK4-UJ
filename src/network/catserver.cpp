@@ -336,10 +336,13 @@ QString CatServer::handleCommand(const QString &cmd) {
             QString mode = m_radioState->isQrpMode() ? "L" : "H";
             return QString("PC%1%2;").arg(power, 3, 10, QChar('0')).arg(mode);
         }
-        // AG - AF gain (audio volume)
+        // AG - AF gain (Main RX volume, mapped to QK4 local playback)
         if (prefix == "AG") {
-            // Audio gain 0-255, but we don't track this - return 0
-            return "AG000;";
+            return QString("AG%1;").arg(m_mainVolume, 3, 10, QChar('0'));
+        }
+        // AG$ - AF gain (Sub RX volume)
+        if (prefix == "AG$") {
+            return QString("AG$%1;").arg(m_subVolume, 3, 10, QChar('0'));
         }
         // SQ - Squelch level
         if (prefix == "SQ") {
@@ -427,6 +430,20 @@ QString CatServer::handleCommand(const QString &cmd) {
             QTimer::singleShot(clearMs, this, [this]() { m_cwPending = 0; });
         }
         emit catCommandReceived(cmd);
+        return QString();
+    }
+
+    // AG/AG$ SET - control QK4 local playback volume (don't forward to K4)
+    if (prefix == "AG" || prefix == "AG$") {
+        int gain = qBound(0, args.toInt(), 255);
+        int percent = (gain * 100 + 127) / 255; // Map 0-255 → 0-100
+        if (prefix == "AG") {
+            m_mainVolume = gain;
+            emit volumeRequested(percent);
+        } else {
+            m_subVolume = gain;
+            emit subVolumeRequested(percent);
+        }
         return QString();
     }
 

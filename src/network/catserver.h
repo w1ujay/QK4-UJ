@@ -50,6 +50,11 @@ signals:
     // This controls the audio input gate, not direct K4 PTT
     void pttRequested(bool on);
 
+    // Emitted when external app sets AF gain via AG/AG$ commands
+    // level is 0-100 (mapped from K4's 0-255 range)
+    void volumeRequested(int level);
+    void subVolumeRequested(int level);
+
 private slots:
     void onNewConnection();
     void onClientData();
@@ -66,7 +71,9 @@ private:
     QList<QTcpSocket *> m_clients;
     QMap<QTcpSocket *, QByteArray> m_clientBuffers;
     quint16 m_port = 0;
-    int m_cwPending = 0; // Approximate chars pending in K4 CW keyer buffer
+    int m_cwPending = 0;    // Approximate chars pending in K4 CW keyer buffer
+    int m_mainVolume = 115; // AG value 0-255 (default ~45%)
+    int m_subVolume = 115;  // AG$ value 0-255 (default ~45%)
 };
 
 #endif // CATSERVER_H
