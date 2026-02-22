@@ -291,9 +291,11 @@ QString CatServer::handleCommand(const QString &cmd) {
         if (prefix == "XT") {
             return QString("XT%1;").arg(m_radioState->xitEnabled() ? 1 : 0);
         }
-        // RF power
+        // RF power — include mode suffix (H=QRO, L=QRP) to match K4 format
         if (prefix == "PC") {
-            return QString("PC%1;").arg(static_cast<int>(m_radioState->rfPower()), 3, 10, QChar('0'));
+            int power = static_cast<int>(m_radioState->rfPower());
+            QString mode = m_radioState->isQrpMode() ? "L" : "H";
+            return QString("PC%1%2;").arg(power, 3, 10, QChar('0')).arg(mode);
         }
         // AGC
         if (prefix == "GT") {
@@ -481,7 +483,7 @@ QString CatServer::handleCommand(const QString &cmd) {
     // (K4 echo may take 50-100ms, but N1MM polls immediately after SET)
     // Only update freq/mode/split — other commands could trigger audio flushes or side effects
     if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$" || prefix == "FT" || prefix == "RT" ||
-        prefix == "XT" || prefix == "RO") {
+        prefix == "XT" || prefix == "RO" || prefix == "PC" || prefix == "KS") {
         m_radioState->parseCATCommand(cmd);
     }
 
