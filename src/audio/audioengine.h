@@ -32,8 +32,8 @@ public:
     float volume() const { return m_volume.load(std::memory_order_relaxed); }
 
     // Channel volume controls (applied at playback time for instant response)
-    void setMainVolume(float volume);
-    void setSubVolume(float volume);
+    void setMainVolume(float volume); // 0.0 to VOLUME_GAIN_MAX
+    void setSubVolume(float volume);  // 0.0 to VOLUME_GAIN_MAX
     float mainVolume() const { return m_mainVolume.load(std::memory_order_relaxed); }
     float subVolume() const { return m_subVolume.load(std::memory_order_relaxed); }
 
@@ -106,7 +106,7 @@ private:
     // Volume control (QAudioSink system volume)
     std::atomic<float> m_volume{1.0f};
 
-    // Channel volume controls (0.0 to 1.0)
+    // Channel volume controls (0.0 to VOLUME_GAIN_MAX)
     std::atomic<float> m_mainVolume{1.0f};
     std::atomic<float> m_subVolume{1.0f};
 
@@ -134,6 +134,9 @@ private:
     static constexpr int OUTPUT_BUFFER_SIZE = 500 * BYTES_PER_MS * 4; // 192,000 bytes
     // Input: 48kHz * 4 bytes/sample * 0.1 sec = 19200 bytes
     static constexpr int INPUT_BUFFER_SIZE = 19200;
+
+    // RX volume gain ceiling (slider 100% / AG 255 = 3× amplification to match K4 speaker level)
+    static constexpr float VOLUME_GAIN_MAX = 3.0f;
 
     // Microphone gain scaling factor (gain slider 0-1 maps to 0-2x, so 0.5 = unity)
     static constexpr float MIC_GAIN_SCALE = 2.0f;

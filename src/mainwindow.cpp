@@ -1607,6 +1607,8 @@ MainWindow::MainWindow(QWidget *parent)
     // m_audioEngine->enqueueAudio() is mutex-protected → safe from any thread
     connect(m_tcpClient->protocol(), &Protocol::audioDataReady, m_tcpClient->protocol(),
             [this](const QByteArray &payload) {
+                if (!RadioSettings::instance()->audioEnabled())
+                    return;
                 QByteArray pcmData = m_opusDecoder->decodeK4Packet(payload);
                 if (!pcmData.isEmpty()) {
                     m_audioEngine->enqueueAudio(pcmData);
@@ -1881,13 +1883,13 @@ MainWindow::MainWindow(QWidget *parent)
     // AG/AG$ from external apps controls QK4 local playback volume
     connect(m_catServer, &CatServer::volumeRequested, this, [this](int level) {
         if (m_audioEngine)
-            m_audioEngine->setMainVolume(level / 100.0f);
+            m_audioEngine->setMainVolume(level / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
         m_sideControlPanel->setVolume(level);
         RadioSettings::instance()->setVolume(level);
     });
     connect(m_catServer, &CatServer::subVolumeRequested, this, [this](int level) {
         if (m_audioEngine)
-            m_audioEngine->setSubVolume(level / 100.0f);
+            m_audioEngine->setSubVolume(level / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
         m_sideControlPanel->setSubVolume(level);
         RadioSettings::instance()->setSubVolume(level);
     });
@@ -2487,7 +2489,7 @@ void MainWindow::setupUi() {
     // Connect volume slider to AudioEngine (Main RX / VFO A)
     connect(m_sideControlPanel, &SideControlPanel::volumeChanged, this, [this](int value) {
         if (m_audioEngine) {
-            m_audioEngine->setMainVolume(value / 100.0f);
+            m_audioEngine->setMainVolume(value / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
         }
         RadioSettings::instance()->setVolume(value); // Persist setting
     });
@@ -2507,7 +2509,7 @@ void MainWindow::setupUi() {
                 m_radioState->setBalance(1, offset);
             } else {
                 // NOR mode: slider controls sub RX volume
-                m_audioEngine->setSubVolume(value / 100.0f);
+                m_audioEngine->setSubVolume(value / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
             }
         }
         RadioSettings::instance()->setSubVolume(value); // Persist setting
@@ -4062,8 +4064,8 @@ void MainWindow::onAuthenticated() {
         if (audioStarted) {
             qDebug() << "Audio engine started for RX audio";
             // Volume setters are atomic — safe as direct calls from any thread
-            m_audioEngine->setMainVolume(m_sideControlPanel->volume() / 100.0f);
-            m_audioEngine->setSubVolume(m_sideControlPanel->subVolume() / 100.0f);
+            m_audioEngine->setMainVolume(m_sideControlPanel->volume() / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
+            m_audioEngine->setSubVolume(m_sideControlPanel->subVolume() / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
             m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
         } else {
             qWarning() << "Failed to start audio engine";

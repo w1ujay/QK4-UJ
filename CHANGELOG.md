@@ -4,7 +4,7 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
-## [0.4.0-UJ.4] - 2026-02-22
+## [0.4.0-UJ.5] - 2026-02-22
 
 ### Added
 
@@ -18,12 +18,18 @@ This changelog is auto-generated from [conventional commits](https://www.convent
   - GET queries return current volume level
   - When audio is disabled, AG/AG$ commands pass through to K4 instead
 - **Audio Enable/Disable**: New checkbox in Tools > Settings > Audio Output
-  - Disables local audio playback (audio engine does not start on connect)
+  - Disables local audio playback (audio engine does not start, audio packets are not decoded)
   - AG/AG$ and TX/RX commands pass through to K4 when audio is disabled
   - Persisted per-installation via QSettings
 
 ### Fixed
 
+- **Audio Disable Not Stopping Playback**: Audio packets were still being decoded and enqueued when audio was disabled
+  - The audio engine start was gated but the protocol audio data connection was not
+  - Added early return in the audio data handler when audio is disabled
+- **Volume Range Too Low**: AG 0-255 only produced ~1/3 of K4 speaker volume at full scale
+  - K4 audio stream over TCP arrives well below full scale; QK4 was capping at unity gain (1.0×)
+  - Added VOLUME_GAIN_MAX (3.0×) so slider 100% / AG 255 amplifies to match K4 speaker levels
 - **CatServer TX/RX Commands**: Fixed TX; and RX; being silently discarded
   - TX/RX have no arguments, so they fell into the GET handler block and were dropped as unrecognized
   - Moved TX/RX handling before the GET block so they are processed correctly

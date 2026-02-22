@@ -469,11 +469,11 @@ void AudioEngine::setVolume(float volume) {
 }
 
 void AudioEngine::setMainVolume(float volume) {
-    m_mainVolume.store(qBound(0.0f, volume, 1.0f), std::memory_order_relaxed);
+    m_mainVolume.store(qBound(0.0f, volume, VOLUME_GAIN_MAX), std::memory_order_relaxed);
 }
 
 void AudioEngine::setSubVolume(float volume) {
-    m_subVolume.store(qBound(0.0f, volume, 1.0f), std::memory_order_relaxed);
+    m_subVolume.store(qBound(0.0f, volume, VOLUME_GAIN_MAX), std::memory_order_relaxed);
 }
 
 void AudioEngine::setSubMuted(bool muted) {
