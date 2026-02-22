@@ -198,9 +198,12 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
-    // RU/RD (RIT Up/Down) - no args, forward directly to K4
-    if ((prefix == "RU" || prefix == "RD") && args.isEmpty()) {
+    // RU/RD/RC (RIT Up/Down/Clear) - no args, forward to K4 then query new state
+    if ((prefix == "RU" || prefix == "RD" || prefix == "RC") && args.isEmpty()) {
         emit catCommandReceived(cmd);
+        // K4 doesn't echo RIT changes — query for updated offset and on/off state
+        emit catCommandReceived("RT;");
+        emit catCommandReceived("RO;");
         return QString();
     }
 
@@ -466,7 +469,8 @@ QString CatServer::handleCommand(const QString &cmd) {
     // Optimistically update RadioState for freq/mode/split so the next poll returns the new value
     // (K4 echo may take 50-100ms, but N1MM polls immediately after SET)
     // Only update freq/mode/split — other commands could trigger audio flushes or side effects
-    if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$" || prefix == "FT") {
+    if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$" || prefix == "FT" || prefix == "RT" ||
+        prefix == "XT" || prefix == "RO") {
         m_radioState->parseCATCommand(cmd);
     }
 
