@@ -198,12 +198,23 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
-    // RU/RD/RC (RIT Up/Down/Clear) - no args, forward to K4 then query new state
-    if ((prefix == "RU" || prefix == "RD" || prefix == "RC") && args.isEmpty()) {
+    // RU/RD/RC (RIT Up/Down/Clear) - forward to K4 then query new state
+    // These can be no-args (RU;) or with args (RU5; RD$10;)
+    if (prefix == "RU" || prefix == "RD" || prefix == "RC") {
         emit catCommandReceived(cmd);
         // K4 doesn't echo RIT changes — query for updated offset and on/off state
         emit catCommandReceived("RT;");
         emit catCommandReceived("RO;");
+        return QString();
+    }
+
+    // DN/DNB/UP/UPB (VFO step up/down) - no args, forward directly to K4
+    if ((prefix == "DN" || prefix == "UP") && args.isEmpty()) {
+        emit catCommandReceived(cmd);
+        return QString();
+    }
+    if ((prefix == "DNB" || prefix == "UPB") && args.isEmpty()) {
+        emit catCommandReceived(cmd);
         return QString();
     }
 
