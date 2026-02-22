@@ -1,5 +1,6 @@
 #include "catserver.h"
 #include "models/radiostate.h"
+#include "settings/radiosettings.h"
 #include "tcpclient.h"
 #include <QDebug>
 #include <QTimer>
@@ -174,6 +175,29 @@ QString CatServer::handleCommand(const QString &cmd) {
         }
     }
 
+    // TX/RX commands (no args) - must be handled before the GET block
+    // Audio disabled or CW/CW-R: forward directly to K4
+    // Voice/Data with audio enabled: control audio input gate (VOX triggers TX from audio stream)
+    if (prefix == "TX" && args.isEmpty()) {
+        int mode = m_radioState->mode();
+        if (!RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R) {
+            emit catCommandReceived(cmd);
+        } else {
+            emit pttRequested(true);
+        }
+        return QString();
+    }
+    if (prefix == "RX" && args.isEmpty()) {
+        int mode = m_radioState->mode();
+        if (!RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R) {
+            emit catCommandReceived(cmd);
+        } else {
+            emit pttRequested(false);
+        }
+        m_cwPending = 0;
+        return QString();
+    }
+
     // Handle GET commands (no args) - respond from RadioState
     if (args.isEmpty()) {
         // VFO A frequency
@@ -336,13 +360,15 @@ QString CatServer::handleCommand(const QString &cmd) {
             QString mode = m_radioState->isQrpMode() ? "L" : "H";
             return QString("PC%1%2;").arg(power, 3, 10, QChar('0')).arg(mode);
         }
-        // AG - AF gain (Main RX volume, mapped to QK4 local playback)
-        if (prefix == "AG") {
-            return QString("AG%1;").arg(m_mainVolume, 3, 10, QChar('0'));
-        }
-        // AG$ - AF gain (Sub RX volume)
-        if (prefix == "AG$") {
-            return QString("AG$%1;").arg(m_subVolume, 3, 10, QChar('0'));
+        // AG/AG$ - AF gain (controls QK4 local volume when audio enabled, forwarded to K4 when disabled)
+        if (prefix == "AG" || prefix == "AG$") {
+            if (RadioSettings::instance()->audioEnabled()) {
+                int vol = (prefix == "AG") ? m_mainVolume : m_subVolume;
+                return QString("%1%2;").arg(prefix).arg(vol, 3, 10, QChar('0'));
+            }
+            // Audio disabled — forward to K4
+            emit catCommandReceived(cmd);
+            return QString();
         }
         // SQ - Squelch level
         if (prefix == "SQ") {
@@ -389,30 +415,6 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
-    // TX/RX commands - mode-dependent behavior:
-    // CW/CW-R: forward to K4 so it actually keys the transmitter
-    // Voice/Data: control audio input gate only (VOX triggers TX from audio stream)
-    if (prefix == "TX") {
-        int mode = m_radioState->mode();
-        if (mode == RadioState::CW || mode == RadioState::CW_R) {
-            emit catCommandReceived(cmd);
-        } else {
-            emit pttRequested(true);
-        }
-        return QString();
-    }
-    if (prefix == "RX") {
-        int mode = m_radioState->mode();
-        if (mode == RadioState::CW || mode == RadioState::CW_R) {
-            emit catCommandReceived(cmd);
-        } else {
-            emit pttRequested(false);
-        }
-        // Abort any CW message in progress on the K4 keyer
-        m_cwPending = 0;
-        return QString();
-    }
-
     // KY - Keyer CW text: track pending chars and forward to K4
     if (prefix == "KY") {
         if (args == "0") {
@@ -433,18 +435,21 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
-    // AG/AG$ SET - control QK4 local playback volume (don't forward to K4)
+    // AG/AG$ SET - control QK4 local volume when audio enabled, forward to K4 when disabled
     if (prefix == "AG" || prefix == "AG$") {
-        int gain = qBound(0, args.toInt(), 255);
-        int percent = (gain * 100 + 127) / 255; // Map 0-255 → 0-100
-        if (prefix == "AG") {
-            m_mainVolume = gain;
-            emit volumeRequested(percent);
-        } else {
-            m_subVolume = gain;
-            emit subVolumeRequested(percent);
+        if (RadioSettings::instance()->audioEnabled()) {
+            int gain = qBound(0, args.toInt(), 255);
+            int percent = (gain * 100 + 127) / 255; // Map 0-255 → 0-100
+            if (prefix == "AG") {
+                m_mainVolume = gain;
+                emit volumeRequested(percent);
+            } else {
+                m_subVolume = gain;
+                emit subVolumeRequested(percent);
+            }
+            return QString();
         }
-        return QString();
+        // Audio disabled — fall through to forward to K4
     }
 
     // SET commands (have args) - forward to real K4

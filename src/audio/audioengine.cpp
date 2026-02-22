@@ -226,26 +226,28 @@ void AudioEngine::feedAudioDevice() {
             m_prebuffering = false;
         }
 
-        // Drain packets that fit in the sink's free space
+        // Drain packets that fit in the sink's free space (accounting for 4x upsample)
         while (!m_audioQueue.isEmpty()) {
             int headSize = m_audioQueue.head().size();
-            if (bytesFree < headSize)
+            int upsampledSize = headSize * 4; // 12kHz → 48kHz
+            if (bytesFree < upsampledSize)
                 break;
 
             QByteArray pkt = m_audioQueue.dequeue();
             m_queueBytes -= pkt.size();
-            bytesFree -= headSize;
+            bytesFree -= upsampledSize;
             localPackets.append(std::move(pkt));
         }
     }
 
-    // Apply mix/volume and write to audio sink without holding the lock
+    // Apply mix/volume, upsample 12kHz→48kHz, and write to audio sink without holding the lock
     for (QByteArray &packet : localPackets) {
         applyMixAndVolume(packet);
-        qint64 written = m_audioSinkDevice->write(packet.constData(), packet.size());
-        if (written < packet.size()) {
+        QByteArray upsampled = upsample12kTo48k(packet);
+        qint64 written = m_audioSinkDevice->write(upsampled.constData(), upsampled.size());
+        if (written < upsampled.size()) {
             // Partial write — save remainder for next feed cycle
-            m_writeBuffer.append(packet.constData() + written, packet.size() - static_cast<int>(written));
+            m_writeBuffer.append(upsampled.constData() + written, upsampled.size() - static_cast<int>(written));
         }
     }
 }

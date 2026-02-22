@@ -80,6 +80,10 @@ public:
     QPoint kpa1500WindowPosition() const;
     void setKpa1500WindowPosition(const QPoint &pos);
 
+    // Audio enable/disable (when disabled, AG commands pass through to K4)
+    bool audioEnabled() const;
+    void setAudioEnabled(bool enabled);
+
     // Audio output settings
     int volume() const;
     void setVolume(int value); // 0-100, default 45
@@ -168,6 +172,7 @@ signals:
     void kpa1500EnabledChanged(bool enabled);
     void kpa1500SettingsChanged();
     void kpa1500PollIntervalChanged(int intervalMs);
+    void audioEnabledChanged(bool enabled);
     void micGainChanged(int value);
     void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);

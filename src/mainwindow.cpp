@@ -4054,17 +4054,22 @@ void MainWindow::onError(const QString &error) {
 void MainWindow::onAuthenticated() {
     qDebug() << "Successfully authenticated with K4 radio";
 
-    // Start audio engine on its dedicated thread (BlockingQueued to get return value)
-    bool audioStarted = false;
-    QMetaObject::invokeMethod(m_audioEngine, "start", Qt::BlockingQueuedConnection, Q_RETURN_ARG(bool, audioStarted));
-    if (audioStarted) {
-        qDebug() << "Audio engine started for RX audio";
-        // Volume setters are atomic — safe as direct calls from any thread
-        m_audioEngine->setMainVolume(m_sideControlPanel->volume() / 100.0f);
-        m_audioEngine->setSubVolume(m_sideControlPanel->subVolume() / 100.0f);
-        m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
+    // Start audio engine on its dedicated thread (skip if audio is disabled)
+    if (RadioSettings::instance()->audioEnabled()) {
+        bool audioStarted = false;
+        QMetaObject::invokeMethod(m_audioEngine, "start", Qt::BlockingQueuedConnection,
+                                  Q_RETURN_ARG(bool, audioStarted));
+        if (audioStarted) {
+            qDebug() << "Audio engine started for RX audio";
+            // Volume setters are atomic — safe as direct calls from any thread
+            m_audioEngine->setMainVolume(m_sideControlPanel->volume() / 100.0f);
+            m_audioEngine->setSubVolume(m_sideControlPanel->subVolume() / 100.0f);
+            m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
+        } else {
+            qWarning() << "Failed to start audio engine";
+        }
     } else {
-        qWarning() << "Failed to start audio engine";
+        qDebug() << "Audio disabled — skipping audio engine start";
     }
 
     // Most state is already included in the RDY; response from TcpClient.

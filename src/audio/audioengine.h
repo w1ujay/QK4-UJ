@@ -125,13 +125,13 @@ private:
     // Microphone gain control
     std::atomic<float> m_micGain{0.25f}; // Default 25% (macOS mic input is typically hot)
 
-    // Audio throughput: 12kHz × 2ch × sizeof(float) = 96,000 bytes/sec = 96 bytes/ms
+    // Audio throughput at 12kHz input: 12kHz × 2ch × sizeof(float) = 96,000 bytes/sec = 96 bytes/ms
     static constexpr int BYTES_PER_MS = 96;
 
     // Audio buffer sizes
-    // QAudioSink buffer: 500ms — large enough for 4+ max-size packets (SL7 = 11,520 bytes = 120ms)
-    // Ensures bytesFree() always exceeds one max packet, preventing partial writes and data loss
-    static constexpr int OUTPUT_BUFFER_SIZE = 500 * BYTES_PER_MS; // 48,000 bytes
+    // QAudioSink runs at 48kHz (4x upsample for WSL/PulseAudio compatibility)
+    // 500ms × 96 bytes/ms × 4 (upsample ratio) = 192,000 bytes
+    static constexpr int OUTPUT_BUFFER_SIZE = 500 * BYTES_PER_MS * 4; // 192,000 bytes
     // Input: 48kHz * 4 bytes/sample * 0.1 sec = 19200 bytes
     static constexpr int INPUT_BUFFER_SIZE = 19200;
 

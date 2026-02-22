@@ -244,6 +244,16 @@ void RadioSettings::setRfkitTempFahrenheit(bool fahrenheit) {
     }
 }
 
+bool RadioSettings::audioEnabled() const {
+    return m_settings.value("audio/enabled", true).toBool();
+}
+
+void RadioSettings::setAudioEnabled(bool enabled) {
+    m_settings.setValue("audio/enabled", enabled);
+    m_settings.sync();
+    emit audioEnabledChanged(enabled);
+}
+
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }

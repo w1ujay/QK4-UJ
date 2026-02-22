@@ -4,10 +4,29 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
-## [0.4.0-UJ.2] - 2026-02-22
+## [0.4.0-UJ.4] - 2026-02-22
+
+### Added
+
+- **CatServer CW Keying**: TX/RX commands now forward directly to K4 in CW/CW-R mode
+  - External CW keying programs (WinKey emulators, etc.) can key the radio via port 9299
+  - Voice/Data modes retain existing audio-gate behavior for WSJT-X compatibility
+  - When audio is disabled, TX/RX always forward to K4 regardless of mode
+- **CatServer Volume Control**: AG/AG$ commands control QK4 local playback volume
+  - AG (main) and AG$ (sub) mapped to QK4 volume sliders (0-255 K4 range → 0-100%)
+  - Volume slider UI updates in sync with external commands
+  - GET queries return current volume level
+  - When audio is disabled, AG/AG$ commands pass through to K4 instead
+- **Audio Enable/Disable**: New checkbox in Tools > Settings > Audio Output
+  - Disables local audio playback (audio engine does not start on connect)
+  - AG/AG$ and TX/RX commands pass through to K4 when audio is disabled
+  - Persisted per-installation via QSettings
 
 ### Fixed
 
+- **CatServer TX/RX Commands**: Fixed TX; and RX; being silently discarded
+  - TX/RX have no arguments, so they fell into the GET handler block and were dropped as unrecognized
+  - Moved TX/RX handling before the GET block so they are processed correctly
 - **CatServer Split Commands**: Fixed split-related responses on port 9299 for external app compatibility
   - SB (Sub RX) response now returns actual state from RadioState instead of hardcoded SB0
   - Returns SB0 (off), SB1 (sub RX on), or SB3 (diversity) based on live radio state

@@ -824,6 +824,21 @@ QWidget *OptionsDialog::createAudioOutputPage() {
     line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
     layout->addWidget(line);
 
+    // === Audio Enable/Disable ===
+    auto *audioEnableCheckbox = new QCheckBox("Enable Audio", page);
+    audioEnableCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                               "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                           .arg(K4Styles::Colors::TextWhite)
+                                           .arg(K4Styles::Dimensions::FontSizePopup)
+                                           .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                           .arg(K4Styles::Dimensions::CheckboxSize));
+    audioEnableCheckbox->setChecked(RadioSettings::instance()->audioEnabled());
+    connect(audioEnableCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setAudioEnabled(checked); });
+    layout->addWidget(audioEnableCheckbox);
+
+    layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
+
     // === Speaker Device Selection ===
     auto *deviceLabel = new QLabel("Speaker:", page);
     deviceLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
