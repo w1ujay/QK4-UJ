@@ -386,18 +386,27 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
-    // TX/RX commands - control audio input gate for external app transmit
-    // Don't forward to K4 - the audio stream itself triggers K4 TX
+    // TX/RX commands - mode-dependent behavior:
+    // CW/CW-R: forward to K4 so it actually keys the transmitter
+    // Voice/Data: control audio input gate only (VOX triggers TX from audio stream)
     if (prefix == "TX") {
-        emit pttRequested(true);
+        int mode = m_radioState->mode();
+        if (mode == RadioState::CW || mode == RadioState::CW_R) {
+            emit catCommandReceived(cmd);
+        } else {
+            emit pttRequested(true);
+        }
         return QString();
     }
     if (prefix == "RX") {
-        emit pttRequested(false);
+        int mode = m_radioState->mode();
+        if (mode == RadioState::CW || mode == RadioState::CW_R) {
+            emit catCommandReceived(cmd);
+        } else {
+            emit pttRequested(false);
+        }
         // Abort any CW message in progress on the K4 keyer
         m_cwPending = 0;
-        if (m_tcpClient)
-            m_tcpClient->sendCAT("KY0;");
         return QString();
     }
 
