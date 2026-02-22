@@ -1894,6 +1894,12 @@ MainWindow::MainWindow(QWidget *parent)
         RadioSettings::instance()->setSubVolume(level);
     });
 
+    // Connect noise filter setting to audio engine
+    connect(RadioSettings::instance(), &RadioSettings::noiseFilterEnabledChanged, this, [this](bool enabled) {
+        if (m_audioEngine)
+            m_audioEngine->setNoiseFilterEnabled(enabled);
+    });
+
     // Connect to settings for CAT server enable/disable
     connect(RadioSettings::instance(), &RadioSettings::catServerEnabledChanged, this, [this](bool enabled) {
         if (enabled) {
@@ -4067,6 +4073,7 @@ void MainWindow::onAuthenticated() {
             m_audioEngine->setMainVolume(m_sideControlPanel->volume() / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
             m_audioEngine->setSubVolume(m_sideControlPanel->subVolume() / 100.0f * AudioEngine::VOLUME_GAIN_MAX);
             m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
+            m_audioEngine->setNoiseFilterEnabled(RadioSettings::instance()->noiseFilterEnabled());
         } else {
             qWarning() << "Failed to start audio engine";
         }

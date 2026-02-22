@@ -276,6 +276,7 @@ void AudioEngine::applyMixAndVolume(QByteArray &packet) {
     const bool subMuted = m_subMuted.load(std::memory_order_relaxed);
     const int balMode = m_balanceMode.load(std::memory_order_relaxed);
     const int balOffset = m_balanceOffset.load(std::memory_order_relaxed);
+    const bool filterOn = m_noiseFilterEnabled.load(std::memory_order_relaxed);
 
     MixSource mixL, mixR;
     {
@@ -297,27 +298,27 @@ void AudioEngine::applyMixAndVolume(QByteArray &packet) {
 
         // Step 1: SUB RX off — both channels get main audio only, sub slider has no effect
         // BL balance still applies (L/R gain is independent of SUB RX state)
+        float left, right;
         if (subMuted) {
             float s = mainSample * mainVol;
-            samples[i * 2] = qBound(-1.0f, s * balLeftGain, 1.0f);
-            samples[i * 2 + 1] = qBound(-1.0f, s * balRightGain, 1.0f);
-            continue;
-        }
-
-        // Step 2: SUB RX on — apply MX routing
-        float left, right;
-        if (balMode == 0) {
-            // NOR mode: main slider controls main, sub slider controls sub
+            left = s * balLeftGain;
+            right = s * balRightGain;
+        } else if (balMode == 0) {
+            // Step 2a: NOR mode — main slider controls main, sub slider controls sub
             left = mixChannel(mainSample, subSample, mixL, mainVol, subVol);
             right = mixChannel(mainSample, subSample, mixR, mainVol, subVol);
         } else {
-            // BAL mode: mainVolume controls both receivers (sub slider repurposed as balance)
+            // Step 2b: BAL mode — mainVolume controls both, sub slider is balance
             left = mixChannel(mainSample, subSample, mixL, mainVol, mainVol);
             right = mixChannel(mainSample, subSample, mixR, mainVol, mainVol);
-
-            // Step 3: Apply BL balance (L/R gain adjustment after MX routing)
             left *= balLeftGain;
             right *= balRightGain;
+        }
+
+        // Step 3: Low-pass noise filter (3.5kHz Butterworth, removes out-of-band noise)
+        if (filterOn) {
+            left = biquadProcess(m_lpfLeft, left);
+            right = biquadProcess(m_lpfRight, right);
         }
 
         // Step 4: Clamp
@@ -475,6 +476,15 @@ void AudioEngine::setSubVolume(float volume) {
 
 void AudioEngine::setSubMuted(bool muted) {
     m_subMuted.store(muted, std::memory_order_relaxed);
+}
+
+void AudioEngine::setNoiseFilterEnabled(bool enabled) {
+    m_noiseFilterEnabled.store(enabled, std::memory_order_relaxed);
+    if (!enabled) {
+        // Reset filter state to avoid transient when re-enabled
+        m_lpfLeft = {};
+        m_lpfRight = {};
+    }
 }
 
 void AudioEngine::setAudioMix(int left, int right) {

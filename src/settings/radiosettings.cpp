@@ -254,6 +254,16 @@ void RadioSettings::setAudioEnabled(bool enabled) {
     emit audioEnabledChanged(enabled);
 }
 
+bool RadioSettings::noiseFilterEnabled() const {
+    return m_settings.value("audio/noiseFilter", true).toBool();
+}
+
+void RadioSettings::setNoiseFilterEnabled(bool enabled) {
+    m_settings.setValue("audio/noiseFilter", enabled);
+    m_settings.sync();
+    emit noiseFilterEnabledChanged(enabled);
+}
+
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }

@@ -50,6 +50,10 @@ public:
     void setBalanceMode(int mode);
     void setBalanceOffset(int offset); // -50 to +50
 
+    // RX noise filter (3.5kHz low-pass to remove out-of-band noise)
+    void setNoiseFilterEnabled(bool enabled);
+    bool noiseFilterEnabled() const { return m_noiseFilterEnabled.load(std::memory_order_relaxed); }
+
     // Microphone settings
     void setMicGain(float gain); // 0.0 to 1.0
     float micGain() const { return m_micGain.load(std::memory_order_relaxed); }
@@ -89,6 +93,29 @@ private:
     // Apply MX routing + volume + balance to a raw [main, sub] interleaved packet
     void applyMixAndVolume(QByteArray &packet);
 
+    // 2nd-order Butterworth low-pass filter (biquad) state per channel
+    struct BiquadState {
+        float z1 = 0.0f; // delay line
+        float z2 = 0.0f;
+    };
+    BiquadState m_lpfLeft;
+    BiquadState m_lpfRight;
+
+    // Biquad coefficients for 2nd-order Butterworth LPF: fc=3.5kHz, fs=12kHz
+    // -3dB at 3.5kHz, -18dB at 5kHz — removes out-of-band receiver/codec noise
+    static constexpr float LPF_B0 = 0.373978f;
+    static constexpr float LPF_B1 = 0.747956f;
+    static constexpr float LPF_B2 = 0.373978f;
+    static constexpr float LPF_A1 = 0.307566f;
+    static constexpr float LPF_A2 = 0.188345f;
+
+    static inline float biquadProcess(BiquadState &s, float in) {
+        float out = LPF_B0 * in + s.z1;
+        s.z1 = LPF_B1 * in - LPF_A1 * out + s.z2;
+        s.z2 = LPF_B2 * in - LPF_A2 * out;
+        return out;
+    }
+
     // Audio output format: 12kHz stereo Float32 (K4 RX audio, L=Main R=Sub)
     QAudioFormat m_outputFormat;
 
@@ -115,6 +142,9 @@ private:
 
     // SUB RX mute state (true = sub muted, sub channel is silent)
     std::atomic<bool> m_subMuted{true}; // Starts muted (SUB RX is off at startup)
+
+    // RX noise filter (low-pass biquad to remove out-of-band noise)
+    std::atomic<bool> m_noiseFilterEnabled{true};
 
     // Audio mix routing (MX command) - default A.B (main left, sub right)
     MixSource m_mixLeft = MixA;

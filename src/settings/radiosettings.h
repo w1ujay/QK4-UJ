@@ -84,6 +84,10 @@ public:
     bool audioEnabled() const;
     void setAudioEnabled(bool enabled);
 
+    // RX noise filter (3.5kHz low-pass)
+    bool noiseFilterEnabled() const;
+    void setNoiseFilterEnabled(bool enabled);
+
     // Audio output settings
     int volume() const;
     void setVolume(int value); // 0-100, default 45
@@ -173,6 +177,7 @@ signals:
     void kpa1500SettingsChanged();
     void kpa1500PollIntervalChanged(int intervalMs);
     void audioEnabledChanged(bool enabled);
+    void noiseFilterEnabledChanged(bool enabled);
     void micGainChanged(int value);
     void micDeviceChanged(const QString &deviceId);
     void speakerDeviceChanged(const QString &deviceId);

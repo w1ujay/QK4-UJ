@@ -837,6 +837,18 @@ QWidget *OptionsDialog::createAudioOutputPage() {
             [](bool checked) { RadioSettings::instance()->setAudioEnabled(checked); });
     layout->addWidget(audioEnableCheckbox);
 
+    auto *noiseFilterCheckbox = new QCheckBox("RX Noise Filter (3.5 kHz low-pass)", page);
+    noiseFilterCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                               "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                           .arg(K4Styles::Colors::TextWhite)
+                                           .arg(K4Styles::Dimensions::FontSizePopup)
+                                           .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                           .arg(K4Styles::Dimensions::CheckboxSize));
+    noiseFilterCheckbox->setChecked(RadioSettings::instance()->noiseFilterEnabled());
+    connect(noiseFilterCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setNoiseFilterEnabled(checked); });
+    layout->addWidget(noiseFilterCheckbox);
+
     layout->addSpacing(K4Styles::Dimensions::PaddingMedium);
 
     // === Speaker Device Selection ===
@@ -1555,7 +1567,7 @@ QWidget *OptionsDialog::createN1mmPage() {
     expiryLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
 
     m_n1mmExpirySpin = new QSpinBox(page);
-    m_n1mmExpirySpin->setRange(1, 60);
+    m_n1mmExpirySpin->setRange(1, 600);
     m_n1mmExpirySpin->setValue(RadioSettings::instance()->spotExpiryMinutes());
     m_n1mmExpirySpin->setSuffix(" min");
     m_n1mmExpirySpin->setFixedWidth(K4Styles::Dimensions::InputFieldWidthSmall);
