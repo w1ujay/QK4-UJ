@@ -198,6 +198,12 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
+    // RU/RD (RIT Up/Down) - no args, forward directly to K4
+    if ((prefix == "RU" || prefix == "RD") && args.isEmpty()) {
+        emit catCommandReceived(cmd);
+        return QString();
+    }
+
     // Handle GET commands (no args) - respond from RadioState
     if (args.isEmpty()) {
         // VFO A frequency

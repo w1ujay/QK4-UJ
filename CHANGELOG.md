@@ -4,7 +4,7 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
-## [0.4.0-UJ.5] - 2026-02-22
+## [0.4.0-UJ.6] - 2026-02-22
 
 ### Added
 
@@ -13,7 +13,8 @@ This changelog is auto-generated from [conventional commits](https://www.convent
   - Voice/Data modes retain existing audio-gate behavior for WSJT-X compatibility
   - When audio is disabled, TX/RX always forward to K4 regardless of mode
 - **CatServer Volume Control**: AG/AG$ commands control QK4 local playback volume
-  - AG (main) and AG$ (sub) mapped to QK4 volume sliders (0-255 K4 range → 0-100%)
+  - AG (main) and AG$ (sub) mapped to QK4 volume sliders (K4 range 0-60 → 0-100%)
+  - Volume gain ceiling of 1.5× above unity for headroom without noise amplification
   - Volume slider UI updates in sync with external commands
   - GET queries return current volume level
   - When audio is disabled, AG/AG$ commands pass through to K4 instead
@@ -27,9 +28,9 @@ This changelog is auto-generated from [conventional commits](https://www.convent
 - **Audio Disable Not Stopping Playback**: Audio packets were still being decoded and enqueued when audio was disabled
   - The audio engine start was gated but the protocol audio data connection was not
   - Added early return in the audio data handler when audio is disabled
-- **Volume Range Too Low**: AG 0-255 only produced ~1/3 of K4 speaker volume at full scale
-  - K4 audio stream over TCP arrives well below full scale; QK4 was capping at unity gain (1.0×)
-  - Added VOLUME_GAIN_MAX (3.0×) so slider 100% / AG 255 amplifies to match K4 speaker levels
+- **CatServer RIT Commands**: RU; and RD; (RIT Up/Down) were silently discarded
+  - Same root cause as TX/RX: no-argument commands fell into the GET block and were dropped
+  - N1MM arrow-key RIT adjustments now forward correctly to K4 via port 9299
 - **CatServer TX/RX Commands**: Fixed TX; and RX; being silently discarded
   - TX/RX have no arguments, so they fell into the GET handler block and were dropped as unrecognized
   - Moved TX/RX handling before the GET block so they are processed correctly
@@ -45,6 +46,16 @@ This changelog is auto-generated from [conventional commits](https://www.convent
 
 - **Notch Filter Display**: Changed notch marker from solid line to dotted line on the panadapter
   - 6px dashes with 4px gaps for visual distinction from frequency marker and passband edges
+- **Audio Output**: Switched to 12kHz native output (no upsampling)
+  - Eliminates crackling/artifacts from crude 12kHz→48kHz linear interpolation
+  - Audio data writes directly from Opus decoder to speaker with zero resampling
+- **Merged upstream `development` branch**: Adopted threading and audio architecture improvements
+  - AudioEngine, TcpClient, and SidetoneGenerator moved to dedicated threads
+  - Byte-based audio queue with mutex protection (replaces packet-count approach)
+  - Partial-write staging buffer for reliable audio output
+  - Reduced prebuffer latency (1 packet vs 2)
+  - Atomic volume/gain variables for thread safety
+  - Shutdown crash fix for sidetone cleanup
 
 ## [0.4.0-UJ.1] - 2026-02-21
 

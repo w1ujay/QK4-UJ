@@ -17,8 +17,8 @@ class AudioEngine : public QObject {
 public:
     enum MixSource { MixA = 0, MixB = 1, MixAB = 2, MixNegA = 3 };
 
-    // RX volume gain ceiling (slider 100% / AG 255 = 3× amplification to match K4 speaker level)
-    static constexpr float VOLUME_GAIN_MAX = 3.0f;
+    // RX volume gain ceiling (slider 100% / AG 060 = 1.5× above unity for headroom)
+    static constexpr float VOLUME_GAIN_MAX = 1.5f;
 
     explicit AudioEngine(QObject *parent = nullptr);
     ~AudioEngine();
