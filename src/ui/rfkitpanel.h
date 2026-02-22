@@ -92,6 +92,8 @@ private:
     float m_peakForwardPower = 0.0f;
     float m_peakReflectedPower = 0.0f;
     float m_peakSwr = 1.0f;
+    int m_swrPeakHoldTicks = 0;
+    static constexpr int SWR_PEAK_HOLD_TICKS = 90; // ~3 seconds at 33ms
 
     // Animation timer
     QTimer *m_decayTimer = nullptr;

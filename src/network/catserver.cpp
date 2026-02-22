@@ -313,8 +313,12 @@ QString CatServer::handleCommand(const QString &cmd) {
         }
         // SB - Sub RX on/off
         if (prefix == "SB") {
-            // Check if sub receiver is active (typically based on dual watch or diversity)
-            return "SB0;"; // Sub RX off by default
+            int subStatus = 0;
+            if (m_radioState->diversityEnabled())
+                subStatus = 3;
+            else if (m_radioState->subReceiverEnabled())
+                subStatus = 1;
+            return QString("SB%1;").arg(subStatus);
         }
         // SM - S-meter reading
         if (prefix == "SM") {
@@ -421,10 +425,10 @@ QString CatServer::handleCommand(const QString &cmd) {
     // Commands like FA14074000;, MD1;, etc.
     emit catCommandReceived(cmd);
 
-    // Optimistically update RadioState for freq/mode so the next poll returns the new value
+    // Optimistically update RadioState for freq/mode/split so the next poll returns the new value
     // (K4 echo may take 50-100ms, but N1MM polls immediately after SET)
-    // Only update freq/mode — other commands could trigger audio flushes or side effects
-    if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$") {
+    // Only update freq/mode/split — other commands could trigger audio flushes or side effects
+    if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$" || prefix == "FT") {
         m_radioState->parseCATCommand(cmd);
     }
 

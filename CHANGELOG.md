@@ -4,6 +4,23 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.4.0-UJ.2] - 2026-02-22
+
+### Fixed
+
+- **CatServer Split Commands**: Fixed split-related responses on port 9299 for external app compatibility
+  - SB (Sub RX) response now returns actual state from RadioState instead of hardcoded SB0
+  - Returns SB0 (off), SB1 (sub RX on), or SB3 (diversity) based on live radio state
+  - FT (split) SET commands now optimistically update RadioState, eliminating stale-state window for fast-polling apps like N1MM+
+- **Notch Filter Position (CW)**: Fixed notch marker appearing to the right of the passband in CW mode
+  - Calculation now matches mini-pan approach: offset relative to CW pitch, not absolute RF frequency
+  - Correct positioning in all modes: CW, CW-R, LSB, USB, DATA, AM, FM
+
+### Changed
+
+- **Notch Filter Display**: Changed notch marker from solid line to dotted line on the panadapter
+  - 6px dashes with 4px gaps for visual distinction from frequency marker and passband edges
+
 ## [0.4.0-UJ.1] - 2026-02-21
 
 ### Added

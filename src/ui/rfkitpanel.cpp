@@ -103,6 +103,7 @@ void RFKitPanel::setSWR(float swr) {
     m_swr = qMax(1.0f, swr);
     if (m_swr > m_peakSwr) {
         m_peakSwr = m_swr;
+        m_swrPeakHoldTicks = SWR_PEAK_HOLD_TICKS;
     }
     startDecayTimer();
     update();
@@ -245,12 +246,19 @@ void RFKitPanel::onDecayTimer() {
     }
 
     if (m_peakSwr > m_swr) {
-        float decay = (m_peakSwr - m_swr) * PEAK_DECAY_RATE;
-        m_peakSwr -= qMax(decay, 0.005f);
-        if (m_peakSwr < m_swr)
-            m_peakSwr = m_swr;
-        needsUpdate = true;
-        allSettled = false;
+        if (m_swrPeakHoldTicks > 0) {
+            // Hold the peak value for a few seconds
+            m_swrPeakHoldTicks--;
+            allSettled = false;
+        } else {
+            // Then decay
+            float decay = (m_peakSwr - m_swr) * PEAK_DECAY_RATE;
+            m_peakSwr -= qMax(decay, 0.005f);
+            if (m_peakSwr < m_swr)
+                m_peakSwr = m_swr;
+            needsUpdate = true;
+            allSettled = false;
+        }
     }
 
     if (allSettled) {
@@ -328,10 +336,11 @@ void RFKitPanel::paintEvent(QPaintEvent *event) {
     drawMeter(painter, meterY, "FWD", fwdValue, fwdRatio, fwdPeakRatio, fwdLabels);
     meterY += meterSpacing;
 
-    // SWR meter (1.0-3.0)
+    // SWR meter (1.0-3.0) — show peak value while held
     float swrRatio = qMax(0.0f, (m_displaySwr - 1.0f) / 2.0f);
     float swrPeakRatio = qMax(0.0f, (m_peakSwr - 1.0f) / 2.0f);
-    QString swrValue = m_displaySwr >= 3.0f ? ">3.0" : QString::number(qMax(1.0f, m_displaySwr), 'f', 1);
+    float swrShow = (m_swrPeakHoldTicks > 0 && m_peakSwr > m_displaySwr) ? m_peakSwr : m_displaySwr;
+    QString swrValue = swrShow >= 3.0f ? ">3.0" : QString::number(qMax(1.0f, swrShow), 'f', 1);
     drawMeter(painter, meterY, "SWR", swrValue, swrRatio, swrPeakRatio, {"1.0", "1.5", "2.0", "2.5", "3.0"});
     meterY += meterSpacing;
 
