@@ -479,13 +479,10 @@ QString CatServer::handleCommand(const QString &cmd) {
     // Commands like FA14074000;, MD1;, etc.
     emit catCommandReceived(cmd);
 
-    // Optimistically update RadioState for freq/mode/split so the next poll returns the new value
+    // Optimistically update RadioState so the UI and next poll reflect the new value immediately
     // (K4 echo may take 50-100ms, but N1MM polls immediately after SET)
-    // Only update freq/mode/split — other commands could trigger audio flushes or side effects
-    if (prefix == "FA" || prefix == "FB" || prefix == "MD" || prefix == "MD$" || prefix == "FT" || prefix == "RT" ||
-        prefix == "XT" || prefix == "RO" || prefix == "PC" || prefix == "KS") {
-        m_radioState->parseCATCommand(cmd);
-    }
+    // Safe for all commands — RadioState only updates fields it has handlers for
+    m_radioState->parseCATCommand(cmd);
 
     // Most SET commands echo the new value
     return QString();

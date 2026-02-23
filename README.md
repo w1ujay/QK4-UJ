@@ -1,10 +1,11 @@
-# QK4
+# QK4-UJ
 
-A cross-platform desktop application for remote control of Elecraft K4 radios over TCP/IP with real-time audio streaming and spectrum display.
+> **Fork of [QK4](https://github.com/mikeg-dal/QK4)** by Mike Garcia — a cross-platform desktop application for remote control of Elecraft K4 radios over TCP/IP with real-time audio streaming and spectrum display.
 
-[![Release](https://img.shields.io/github/v/release/mikeg-dal/QK4?include_prereleases)](https://github.com/mikeg-dal/QK4/releases)
-[![Build](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml)
-[![Lint](https://github.com/mikeg-dal/QK4/actions/workflows/lint.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/lint.yml)
+This fork (maintained by Jay Corriveau, W1UJ) adds CatServer improvements for N1MM Logger+ and CW keying integration, audio quality fixes, panadapter enhancements, and RFKit amplifier support. See the [CHANGELOG](CHANGELOG.md) for a complete list of changes.
+
+[![Build](https://github.com/w1ujay/QK4-UJ/actions/workflows/build-windows.yml/badge.svg)](https://github.com/w1ujay/QK4-UJ/actions)
+[![Lint](https://github.com/w1ujay/QK4-UJ/actions/workflows/lint.yml/badge.svg)](https://github.com/w1ujay/QK4-UJ/actions/workflows/lint.yml)
 
 ## Supported Platforms
 
@@ -156,6 +157,25 @@ src/
 └── hardware/             # KPOD USB device support
 ```
 
+## Fork Changes (UJ Branch)
+
+Key additions and fixes in this fork:
+
+- **CatServer (port 9299)** — Extended for N1MM Logger+, CW keying, and external app compatibility
+  - TX/RX, RIT (RU/RD/RC), VFO step (DN/UP), and other no-arg commands forwarded correctly
+  - AG/AG$ volume control mapped to local playback
+  - Audio enable/disable toggle with command pass-through
+  - All SET commands optimistically update RadioState for immediate UI feedback
+- **Audio** — 12kHz native output (no upsampling), latency guard, RX noise filter (3.5kHz low-pass)
+- **N1MM Spot Overlay** — DX spots rendered on panadapter with color coding, click-to-tune, configurable expiry
+- **Keyboard Controls** — VFO tuning, cursor-aware digit tuning, control button navigation
+- **RFKit Amplifier** — Floating panel with power/SWR meters, mode control, drive protection
+- **Panadapter** — Fixed CW notch positioning, dotted notch line, ON/OFF toggle, frequency alignment fixes
+
+Full details in [CHANGELOG.md](CHANGELOG.md).
+
 ## License
 
 This project is licensed under the [GNU General Public License v3.0](LICENSE).
+
+Original work copyright Mike Garcia. Fork modifications copyright Jay Corriveau (W1UJ).

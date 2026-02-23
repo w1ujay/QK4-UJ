@@ -4,10 +4,14 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
-## [0.4.0-UJ.7] - 2026-02-22
+## [0.4.0-UJ.8] - 2026-02-22
 
 ### Added
 
+- **RX Noise Filter**: 2nd-order Butterworth low-pass at 3.5kHz to reduce out-of-band receiver/codec noise
+  - -3dB at 3.5kHz, -18dB at 5kHz — strips hiss above SSB audio bandwidth
+  - Toggleable checkbox in Tools > Settings > Audio Output
+  - Enabled by default, persisted via QSettings
 - **CatServer CW Keying**: TX/RX commands now forward directly to K4 in CW/CW-R mode
   - External CW keying programs (WinKey emulators, etc.) can key the radio via port 9299
   - Voice/Data modes retain existing audio-gate behavior for WSJT-X compatibility
@@ -24,6 +28,9 @@ This changelog is auto-generated from [conventional commits](https://www.convent
 
 ### Fixed
 
+- **Audio Latency Drift**: Audio delay accumulated over time, requiring reconnect to fix
+  - Queue could fill up to 1 second and never recover since packets arrive at the same rate they drain
+  - Added latency guard: drops oldest packets when queue exceeds 200ms target to stay near real-time
 - **Audio Disable Not Stopping Playback**: Audio packets were still being decoded and enqueued when audio was disabled
   - The audio engine start was gated but the protocol audio data connection was not
   - Added early return in the audio data handler when audio is disabled
@@ -33,6 +40,11 @@ This changelog is auto-generated from [conventional commits](https://www.convent
   - Queries RT/RO after forwarding so QK4 display and N1MM polling reflect updated RIT state
   - RC (RIT Clear) also forwarded correctly
 - **CatServer VFO Step Commands**: DN/DNB/UP/UPB were silently discarded (same no-arg root cause)
+- **CatServer UI Not Updating**: SET commands via port 9299 changed the radio but QK4 display didn't reflect changes
+  - Affected notch filter position, power (PC), keyer speed (KS), and other settings
+  - Root cause: only a whitelist of commands got optimistic RadioState updates
+  - Fix: all SET commands now optimistically update RadioState (safe — RadioState ignores unknown commands)
+- **CatServer PC Response Format**: Power GET response was missing mode suffix (H/L) — now matches K4 format
 - **CatServer TX/RX Commands**: Fixed TX; and RX; being silently discarded
   - TX/RX have no arguments, so they fell into the GET handler block and were dropped as unrecognized
   - Moved TX/RX handling before the GET block so they are processed correctly

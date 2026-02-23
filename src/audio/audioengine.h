@@ -196,7 +196,8 @@ private:
     // The SL level already provides jitter tolerance (larger packets = more runway),
     // so additional prebuffering just adds latency without benefit.
     static constexpr int PREBUFFER_PACKETS = 1;
-    static constexpr int MAX_QUEUE_BYTES = 1000 * BYTES_PER_MS; // 96,000 bytes (1s cap)
+    static constexpr int MAX_QUEUE_BYTES = 1000 * BYTES_PER_MS;     // 96,000 bytes (1s overflow cap)
+    static constexpr int LATENCY_TARGET_BYTES = 200 * BYTES_PER_MS; // 19,200 bytes (~200ms target)
     static constexpr int FEED_INTERVAL_MS = 10;
 };
 

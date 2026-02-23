@@ -225,7 +225,12 @@ void AudioEngine::feedAudioDevice() {
             m_prebuffering = false;
         }
 
-        // Drain packets that fit in the sink's free space (accounting for 4x upsample)
+        // Latency guard: if queue exceeds target, drop oldest to stay near real-time
+        while (m_queueBytes > LATENCY_TARGET_BYTES && m_audioQueue.size() > 1) {
+            m_queueBytes -= m_audioQueue.dequeue().size();
+        }
+
+        // Drain packets that fit in the sink's free space
         while (!m_audioQueue.isEmpty()) {
             int headSize = m_audioQueue.head().size();
             if (bytesFree < headSize)
