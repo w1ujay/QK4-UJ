@@ -1170,17 +1170,19 @@ void PanadapterRhiWidget::render(QRhiCommandBuffer *cb) {
             }
 
             // Draw notch filter marker (dotted line) - uses dedicated notch buffers
-            // Calculate notch offset from tunedFreq (consistent with mini-pan)
+            // Calculate notch offset from passband center (consistent with mini-pan)
+            // The K4 spectrum data is shifted so the signal appears at m_tunedFreq,
+            // so all offsets are relative to m_tunedFreq on the display.
             if (m_notchEnabled && m_notchPitchHz > 0 && m_spanHz > 0) {
-                // NM value is audio frequency offset from dial frequency (tunedFreq).
-                // CW/CW-R use the same mapping as USB/LSB respectively:
-                // CW:   notchRF = tunedFreq + NM  (USB-like sideband)
-                // CW-R: notchRF = tunedFreq - NM  (LSB-like sideband)
                 int offsetHz;
-                if (m_mode == "LSB" || m_mode == "CW-R") {
+                if (m_mode == "LSB") {
                     offsetHz = -m_notchPitchHz;
+                } else if (m_mode == "CW") {
+                    offsetHz = m_notchPitchHz - m_cwPitch;
+                } else if (m_mode == "CW-R") {
+                    offsetHz = -(m_notchPitchHz - m_cwPitch);
                 } else {
-                    // USB, CW, DATA, DATA-R, AM, FM
+                    // USB, DATA, DATA-R, AM, FM
                     offsetHz = m_notchPitchHz;
                 }
 

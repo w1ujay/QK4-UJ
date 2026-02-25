@@ -4,6 +4,24 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.4.0-beta.8] - 2026-02-24
+
+### Fixed
+
+- **cw: WPM-matched repeat timers, playSingle keying, lazy mic init, connect timeout**
+  - CW keying: Replace fixed 500ms repeat timers with WPM-matched intervals
+    (dit=2ditMs, dah=4ditMs) that align with element audio duration. Use
+    playSingleDit/playSingleDah API instead of start/stop for precise element
+    rendering. Add isActive guards to prevent extra elements during paddle
+    transitions (e.g., "A" dit-dah). Remove keyboard-repeat initial delay
+    that caused stutter between consecutive same-elements (e.g., "Q"
+    dah-dah-dit-dah). Add m_ditMs member updated on keyerSpeedChanged.
+- **dsp: Snap VFO B frequency to tuning rate on waterfall right-drag**
+  - Right-drag on both panadapters sent raw pixel-to-frequency values for
+    VFO B, causing jerky/unsnapped tuning. Now snaps to tuningStepB() grid,
+    matching the existing VFO A left-drag behavior.
+
+
 ## [0.4.0-UJ.8] - 2026-02-22
 
 ### Added
@@ -123,6 +141,36 @@ This changelog is auto-generated from [conventional commits](https://www.convent
   - Removed CW pitch offset from frequency coordinate mapping — the K4's centerFreq is the true spectrum center in all modes
   - Passband centered on tuned frequency for all modes (USB, LSB, CW, AM)
   - VFO marker positioned at dial frequency matching the VFO display
+
+## [0.4.0-beta.7] - 2026-02-23
+
+### Changed
+
+- **threading**: Move TcpClient/Protocol to I/O thread and SidetoneGenerator to dedicated thread
+  - AudioEngine was already on its own QThread, but audio blips persisted during minimize/maximize/Options dialog because the audio producer chain (TcpClient → Protocol → OpusDecoder → enqueueAudio) ran on the main thread
+  - Move TcpClient + Protocol to a dedicated I/O thread so the RX audio data path (network → decode → enqueue) bypasses the main thread entirely
+  - Move SidetoneGenerator to its own thread for CW timing independence
+  - QK4 now has 5 threads: Main (GUI), I/O, AudioEngine, Sidetone, HaliKey
+- **ui**: Make OptionsDialog persistent with lazy page creation
+  - Only the About page is created eagerly; other pages use placeholder QWidgets swapped on first tab visit via ensurePageCreated()
+  - Dialog is now heap-allocated and parented to MainWindow instead of stack-allocated with exec()
+  - Added showEvent/hideEvent lifecycle to refresh device lists on show and stop mic test on hide
+
+### Fixed
+
+- **shutdown**: Crash on exit and sidetone cleanup issues
+  - Close HaliKey port explicitly in ~MainWindow before other teardowns, preventing use-after-free
+  - Move QAudioSink teardown into SidetoneGenerator::stop() so it runs on the correct (sidetone) thread
+  - Suppress paddle sidetone when not connected to a server
+- **audio**: Proper buffer sizing, minimal prebuffer, remove band-aid flushes
+  - QAudioSink buffer was too small for SL6/7 packets, causing partial writes with silent data loss
+  - Rewrote feed pipeline with 500ms sink buffer, partial-write staging, and byte-based overflow
+  - Reduced prebuffer from 80ms to 1 packet
+  - Removed 10 band-aid flushQueue() calls that masked main-thread audio starvation
+- **dsp**: Correct notch filter placement in CW/CW-R modes
+  - NM value is a direct audio offset from the dial frequency — CW uses the same offset as USB, CW-R the same as LSB
+  - Fixed mini-pan to account for its center being at the passband center
+  - Renders notch as a dotted line on the main panadapter for visual distinction
 
 ## [0.4.0-beta.3] - 2026-02-12
 
