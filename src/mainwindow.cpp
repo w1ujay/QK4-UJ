@@ -1281,8 +1281,10 @@ MainWindow::MainWindow(QWidget *parent)
         m_sideControlPanel->setDelay(delay / 100.0); // 10ms units to seconds (20 -> 0.20)
     });
     connect(m_radioState, &RadioState::rfGainChanged, m_sideControlPanel, &SideControlPanel::setMainRfGain);
+    connect(m_radioState, &RadioState::rfGainChanged, m_vfoA, &VFOWidget::setRfGain);
     connect(m_radioState, &RadioState::squelchChanged, m_sideControlPanel, &SideControlPanel::setMainSquelch);
     connect(m_radioState, &RadioState::rfGainBChanged, m_sideControlPanel, &SideControlPanel::setSubRfGain);
+    connect(m_radioState, &RadioState::rfGainBChanged, m_vfoB, &VFOWidget::setRfGain);
     connect(m_radioState, &RadioState::squelchBChanged, m_sideControlPanel, &SideControlPanel::setSubSquelch);
     connect(m_radioState, &RadioState::micGainChanged, m_sideControlPanel, &SideControlPanel::setMicGain);
     connect(m_radioState, &RadioState::compressionChanged, m_sideControlPanel, &SideControlPanel::setCompression);
@@ -2148,8 +2150,8 @@ void MainWindow::setupMenuBar() {
     optionsAction->setMenuRole(QAction::PreferencesRole); // macOS: moves to app menu as Preferences
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
-            m_optionsDialog = new OptionsDialog(m_radioState, m_audioEngine, m_kpodDevice, m_catServer,
-                                                m_halikeyDevice, m_n1mmListener, m_rfkitClient, m_kpa1500Client, this);
+            m_optionsDialog = new OptionsDialog(m_radioState, m_audioEngine, m_kpodDevice, m_catServer, m_halikeyDevice,
+                                                m_n1mmListener, m_rfkitClient, m_kpa1500Client, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();
@@ -2178,7 +2180,7 @@ void MainWindow::setupMenuBar() {
 }
 
 void MainWindow::setupUi() {
-    setWindowTitle("QK4");
+    setWindowTitle("QK4-UJ");
     setMinimumSize(1340, 840);
     resize(1340, 840); // Default to minimum size on launch
 
@@ -4408,6 +4410,7 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         m_vfoA->setAGC("AGC");
         m_vfoA->setPreamp(false, 0);
         m_vfoA->setAtt(false, 0);
+        m_vfoA->setRfGain(0);
         m_vfoA->setNB(false);
         m_vfoA->setNR(false);
         m_vfoA->setNotch(false, false);
@@ -4417,6 +4420,7 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
         m_vfoB->setAGC("AGC");
         m_vfoB->setPreamp(false, 0);
         m_vfoB->setAtt(false, 0);
+        m_vfoB->setRfGain(0);
         m_vfoB->setNB(false);
         m_vfoB->setNR(false);
         m_vfoB->setNotch(false, false);

@@ -4,6 +4,96 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.4.0-UJ.9] - 2026-02-25
+
+### Added
+
+- **catserver: RG+/RG-/RG/ RF gain increment, decrement, and toggle commands**
+  - CatServer now handles RG+; RG-; RG/; (and RG$+; RG$-; RG$/; for sub RX)
+    for hardware controllers on port 9299
+  - RG+ decreases attenuation by 1dB, RG- increases by 1dB (range 0-60)
+  - RG/ toggles between current value and zero (remembers last non-zero value)
+  - All commands forward to K4 with optimistic local update, then query for
+    authoritative value
+- **catserver: RG/RG$ GET responses**
+  - RG; and RG$; queries now return current RF gain from RadioState
+    (was previously unhandled, returning empty)
+- **ui: RF gain indicator on VFO feature row**
+  - New "RF" label between ATT and NB on both VFO A and VFO B
+  - Shows dimmed "RF" at full gain, bright "RF-xx" when attenuated
+  - Updates in real-time from RadioState
+
+
+## [0.4.0-beta.10] - 2026-02-25
+
+### Added
+
+- **cw: Add iambic keyer state machine and KP paddle settings**
+  - Parse KP command in RadioState for iambic mode (A/B), paddle
+    orientation (N/R), and keying weight (090-125). Replace ad-hoc
+    repeat timers and settling timer with a proper IambicKeyer state
+    machine supporting iambic A/B squeeze logic, paddle reversal,
+    and WPM-synced element timing.
+  - Add TX popup CW-mode buttons: button 5 toggles paddle N/R
+    (right-click toggles iambic A/B), button 6 opens keying weight
+    popup. KeyingWeightPopupWidget provides +/- and scroll control.
+
+
+## [0.4.0-beta.9] - 2026-02-25
+
+### Added
+
+- **halikey: Parse MoMIDI CC events and fix velocity-0 key-down detection**
+  - MoMIDI (v0.0) sends CC events for version detection and timing data,
+    and uses Note On velocity=0 for key-down after idle timer reset. Without
+    this, the first element after >16s pause is dropped.
+  - Detect MoMIDI via CC on channel 0, store timing MSB from other CCs
+  - When MoMIDI detected: Note On is always key-down regardless of velocity
+  - When not detected: preserve traditional velocity-0 = Note Off behavior
+  - Route PTT (Note 31) to pttStateChanged signal
+
+### Fixed
+
+- **cw: WPM-matched repeat timers, playSingle keying, lazy mic init, connect timeout**
+  - CW keying: Replace fixed 500ms repeat timers with WPM-matched intervals
+    (dit=2ditMs, dah=4ditMs) that align with element audio duration. Use
+    playSingleDit/playSingleDah API instead of start/stop for precise element
+    rendering. Add isActive guards to prevent extra elements during paddle
+    transitions (e.g., "A" dit-dah). Remove keyboard-repeat initial delay
+    that caused stutter between consecutive same-elements (e.g., "Q"
+    dah-dah-dit-dah). Add m_ditMs member updated on keyerSpeedChanged.
+- **dsp: Snap VFO B frequency to tuning rate on waterfall right-drag**
+  - Right-drag on both panadapters sent raw pixel-to-frequency values for
+    VFO B, causing jerky/unsnapped tuning. Now snaps to tuningStepB() grid,
+    matching the existing VFO A left-drag behavior.
+- **ui: Prevent OptionsDialog shutdown crashes, eager page creation**
+  - Initialize all lazy-page widget pointers to nullptr in-class so existing
+    null guards actually work (were garbage, not null). Stop KPOD polling in
+    ~MainWindow before deleteChildren() to prevent use-after-free SEGV.
+  - Replace lazy page creation with eager — dialog is persistent so pay the
+    cost once at construction, eliminating tab-switch delay from MIDI enum.
+- **halikey: Disconnect worker signals before state reset in closePort()**
+  - Queued events from the worker thread (already in the main-thread event
+    loop) could be delivered after closePort() resets state, setting
+    m_confirmedDitState=true with no matching release. Disconnecting worker
+    signals first prevents stale events from reaching debounce slots.
+- **halikey: Add debounce confirmation to Linux V14 TIOCMIWAIT path**
+  - Linux TIOCMIWAIT does not reliably debounce across all kernels and
+    USB-serial adapters. Add DEBOUNCE_COUNT confirmation reads at 500us
+    intervals after TIOCMIWAIT returns, matching macOS and Windows behavior.
+  - Adds ~500us latency — imperceptible at any WPM.
+- **cw: Settling timer eliminates simultaneous-release phantom elements**
+  - When both paddles release simultaneously, events are processed
+    sequentially. The first release handler saw the other paddle as still
+    held and fired an extra KZ command.
+  - Add 3ms settling timer: on release, defer decision until both events
+    are dequeued, then check actual paddle state
+  - Send KZU0000 (key-up) when both paddles are released, canceling any
+    buffered elements in the K4's TCP pipeline
+  - Press during settling cancels the timer (no stale decisions)
+  - Stop settling timer on HaliKey disconnect
+
+
 ## [0.4.0-beta.8] - 2026-02-24
 
 ### Fixed

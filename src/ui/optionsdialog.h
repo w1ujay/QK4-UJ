@@ -29,7 +29,18 @@ class OptionsDialog : public QDialog {
     Q_OBJECT
 
 public:
-    enum Page { PageAbout = 0, PageAudioInput, PageAudioOutput, PageRigControl, PageCwKeyer, PageKpod, PageN1mm, PageKpa1500, PageRfkit, PageCount };
+    enum Page {
+        PageAbout = 0,
+        PageAudioInput,
+        PageAudioOutput,
+        PageRigControl,
+        PageCwKeyer,
+        PageKpod,
+        PageN1mm,
+        PageKpa1500,
+        PageRfkit,
+        PageCount
+    };
 
     explicit OptionsDialog(RadioState *radioState, AudioEngine *audioEngine, KpodDevice *kpodDevice,
                            CatServer *catServer, HalikeyDevice *halikeyDevice, N1mmListener *n1mmListener,

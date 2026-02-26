@@ -92,6 +92,9 @@ void VFOWidget::setupUi() {
     m_attLabel = new QLabel("ATT", featuresContainer);
     m_attLabel->setStyleSheet(featureLabelStyle);
 
+    m_rfGainLabel = new QLabel("RF", featuresContainer);
+    m_rfGainLabel->setStyleSheet(featureLabelStyle);
+
     m_nbLabel = new QLabel("NB", featuresContainer);
     m_nbLabel->setStyleSheet(featureLabelStyle);
 
@@ -109,6 +112,7 @@ void VFOWidget::setupUi() {
     featuresRow->addWidget(m_agcLabel);
     featuresRow->addWidget(m_preampLabel);
     featuresRow->addWidget(m_attLabel);
+    featuresRow->addWidget(m_rfGainLabel);
     featuresRow->addWidget(m_nbLabel);
     featuresRow->addWidget(m_nrLabel);
     featuresRow->addWidget(m_ntchLabel);
@@ -203,6 +207,16 @@ void VFOWidget::setAtt(bool on, int level) {
         m_attLabel->setText("ATT");
     }
     m_attLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(on ? "#FFFFFF" : "#999999"));
+}
+
+void VFOWidget::setRfGain(int gain) {
+    // gain is 0-60 where 0 = full gain, >0 = attenuation in dB
+    if (gain > 0) {
+        m_rfGainLabel->setText(QString("RF-%1").arg(gain));
+    } else {
+        m_rfGainLabel->setText("RF");
+    }
+    m_rfGainLabel->setStyleSheet(QString("color: %1; font-size: 11px;").arg(gain > 0 ? "#FFFFFF" : "#999999"));
 }
 
 void VFOWidget::setNB(bool on) {

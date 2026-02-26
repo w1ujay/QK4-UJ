@@ -218,6 +218,47 @@ QString CatServer::handleCommand(const QString &cmd) {
         return QString();
     }
 
+    // RG+/RG-/RG/ (RF gain increment/decrement/toggle) - K4 firmware 2.x+
+    // These use special suffixes that look like args to our parser
+    if (prefix == "RG" && (args == "+" || args == "-" || args == "/")) {
+        emit catCommandReceived(cmd);
+        int current = m_radioState->rfGain();
+        if (args == "+") {
+            m_radioState->setRfGain(qMax(0, current - 1));
+        } else if (args == "-") {
+            m_radioState->setRfGain(qMin(60, current + 1));
+        } else {
+            // Toggle: if non-zero → store and go to 0, if zero → restore previous
+            if (current > 0) {
+                m_lastRfGain = current;
+                m_radioState->setRfGain(0);
+            } else {
+                m_radioState->setRfGain(m_lastRfGain > 0 ? m_lastRfGain : 20);
+            }
+        }
+        // Query K4 for authoritative value
+        emit catCommandReceived("RG;");
+        return QString();
+    }
+    if (prefix == "RG$" && (args == "+" || args == "-" || args == "/")) {
+        emit catCommandReceived(cmd);
+        int current = m_radioState->rfGainB();
+        if (args == "+") {
+            m_radioState->setRfGainB(qMax(0, current - 1));
+        } else if (args == "-") {
+            m_radioState->setRfGainB(qMin(60, current + 1));
+        } else {
+            if (current > 0) {
+                m_lastRfGainB = current;
+                m_radioState->setRfGainB(0);
+            } else {
+                m_radioState->setRfGainB(m_lastRfGainB > 0 ? m_lastRfGainB : 20);
+            }
+        }
+        emit catCommandReceived("RG$;");
+        return QString();
+    }
+
     // Handle GET commands (no args) - respond from RadioState
     if (args.isEmpty()) {
         // VFO A frequency
@@ -391,6 +432,15 @@ QString CatServer::handleCommand(const QString &cmd) {
             // Audio disabled — forward to K4
             emit catCommandReceived(cmd);
             return QString();
+        }
+        // RG/RG$ - RF Gain
+        if (prefix == "RG") {
+            int rg = m_radioState->rfGain();
+            return QString("RG-%1;").arg(rg, 2, 10, QChar('0'));
+        }
+        if (prefix == "RG$") {
+            int rg = m_radioState->rfGainB();
+            return QString("RG$-%1;").arg(rg, 2, 10, QChar('0'));
         }
         // SQ - Squelch level
         if (prefix == "SQ") {
