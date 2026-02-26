@@ -4,6 +4,7 @@ on:
   push:
     tags:
       - 'v*'
+      - 'uj.*'
 
 env:
   CMAKE_BUILD_PARALLEL_LEVEL: 4
@@ -18,9 +19,14 @@ jobs:
         id: version
         shell: bash
         run: |
-          # Tag format: v0.1.0 or v0.1.0-alpha.123
-          # Strip leading 'v' to get version string
-          VERSION=${GITHUB_REF_NAME#v}
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == uj.* ]]; then
+            # uj.10 -> 0.4.0-UJ.10
+            VERSION="0.4.0-UJ.${TAG#uj.}"
+          else
+            # v0.1.0 -> 0.1.0
+            VERSION="${TAG#v}"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
@@ -96,7 +102,12 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == uj.* ]]; then
+            VERSION="0.4.0-UJ.${TAG#uj.}"
+          else
+            VERSION="${TAG#v}"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
@@ -136,7 +147,12 @@ jobs:
       - name: Extract version from tag
         id: version
         run: |
-          VERSION=${GITHUB_REF_NAME#v}
+          TAG="${GITHUB_REF_NAME}"
+          if [[ "$TAG" == uj.* ]]; then
+            VERSION="0.4.0-UJ.${TAG#uj.}"
+          else
+            VERSION="${TAG#v}"
+          fi
           echo "version=$VERSION" >> $GITHUB_OUTPUT
           echo "Extracted version: $VERSION"
 
@@ -212,7 +228,7 @@ jobs:
             QK4-linux-x86_64.tar.gz
             QK4-raspberry-pi-arm64.tar.gz
           body_path: release_notes.md
-          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
+          prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') || contains(github.ref, 'uj.') }}
 
   publish:
     needs: [release]
@@ -266,7 +282,7 @@ jobs:
           HASH_PI=$(sha256sum "downloads/$TAG/QK4-raspberry-pi-arm64.tar.gz" | cut -d' ' -f1)
 
           # Detect prerelease
-          if echo "$TAG" | grep -qE 'alpha|beta'; then
+          if echo "$TAG" | grep -qE 'alpha|beta|^uj\.'; then
             PRERELEASE=true
           else
             PRERELEASE=false

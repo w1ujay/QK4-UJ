@@ -4,6 +4,17 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.4.0-UJ.10] - 2026-02-26
+
+### Changed
+
+- **ci(release): drop macOS build, add Linux x86_64 build**
+  - Remove macOS build/sign/notarize job from release workflow
+  - Add native x86_64 Linux build using Debian Trixie container with portable tarball
+  - Release workflow now triggers on both `v*` and `uj.*` tags
+  - Release artifacts: Windows zip, Linux x86_64 tarball, Raspberry Pi ARM64 tarball
+
+
 ## [0.4.0-UJ.9] - 2026-02-25
 
 ### Added
