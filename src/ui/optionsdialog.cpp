@@ -31,11 +31,7 @@ OptionsDialog::OptionsDialog(RadioState *radioState, AudioEngine *audioEngine, K
                              RFKitClient *rfkitClient, KPA1500Client *kpa1500Client, QWidget *parent)
     : QDialog(parent), m_radioState(radioState), m_audioEngine(audioEngine), m_kpodDevice(kpodDevice),
       m_catServer(catServer), m_halikeyDevice(halikeyDevice), m_n1mmListener(n1mmListener), m_rfkitClient(rfkitClient),
-      m_kpa1500Client(kpa1500Client), m_micDeviceCombo(nullptr), m_micGainSlider(nullptr), m_micGainValueLabel(nullptr),
-      m_micTestBtn(nullptr), m_micMeter(nullptr), m_speakerDeviceCombo(nullptr), m_catServerEnableCheckbox(nullptr),
-      m_catServerPortEdit(nullptr), m_catServerStatusLabel(nullptr), m_catServerClientsLabel(nullptr),
-      m_cwKeyerDeviceTypeCombo(nullptr), m_cwKeyerDescLabel(nullptr), m_cwKeyerPortCombo(nullptr),
-      m_cwKeyerRefreshBtn(nullptr), m_cwKeyerConnectBtn(nullptr), m_cwKeyerStatusLabel(nullptr) {
+      m_kpa1500Client(kpa1500Client) {
     setWindowModality(Qt::ApplicationModal);
     setupUi();
 
@@ -103,63 +99,28 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("RFKit Amp");
     m_tabList->setCurrentRow(0);
 
-    // Right side: stacked pages (lazy — only About is created eagerly)
+    // Right side: stacked pages — all created eagerly (dialog is persistent)
     m_pageStack = new QStackedWidget(this);
     m_pageStack->addWidget(createAboutPage());
-    m_pageCreated[PageAbout] = true;
-    for (int i = 1; i < PageCount; ++i)
-        m_pageStack->addWidget(new QWidget(this));
+    m_pageStack->addWidget(createAudioInputPage());
+    m_pageStack->addWidget(createAudioOutputPage());
+    m_pageStack->addWidget(createRigControlPage());
+    m_pageStack->addWidget(createCwKeyerPage());
+    m_pageStack->addWidget(createKpodPage());
+    m_pageStack->addWidget(createN1mmPage());
+    m_pageStack->addWidget(createKpa1500Page());
+    m_pageStack->addWidget(createRfkitPage());
+    for (int i = 0; i < PageCount; ++i)
+        m_pageCreated[i] = true;
 
-    // Connect tab selection to page switching with lazy creation
+    // Connect tab selection to page switching
     connect(m_tabList, &QListWidget::currentRowChanged, this, [this](int index) {
-        ensurePageCreated(index);
         m_pageStack->setCurrentIndex(index);
+        refreshPage(index);
     });
 
     mainLayout->addWidget(m_tabList);
     mainLayout->addWidget(m_pageStack, 1);
-}
-
-void OptionsDialog::ensurePageCreated(int index) {
-    if (index < 0 || index >= PageCount || m_pageCreated[index])
-        return;
-
-    QWidget *page = nullptr;
-    switch (index) {
-    case PageAudioInput:
-        page = createAudioInputPage();
-        break;
-    case PageAudioOutput:
-        page = createAudioOutputPage();
-        break;
-    case PageRigControl:
-        page = createRigControlPage();
-        break;
-    case PageCwKeyer:
-        page = createCwKeyerPage();
-        break;
-    case PageKpod:
-        page = createKpodPage();
-        break;
-    case PageN1mm:
-        page = createN1mmPage();
-        break;
-    case PageKpa1500:
-        page = createKpa1500Page();
-        break;
-    case PageRfkit:
-        page = createRfkitPage();
-        break;
-    default:
-        return;
-    }
-
-    // Swap out the placeholder widget at this index
-    QWidget *placeholder = m_pageStack->widget(index);
-    m_pageStack->removeWidget(placeholder);
-    delete placeholder;
-    m_pageStack->insertWidget(index, page);
-    m_pageCreated[index] = true;
 }
 
 void OptionsDialog::showEvent(QShowEvent *event) {
