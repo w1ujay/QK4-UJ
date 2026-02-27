@@ -206,6 +206,7 @@ private:
     // PTT state
     bool m_pttActive = false;
     quint8 m_txSequence = 0;
+    int m_txFrameCount = 0;
 
     // Top status bar
     QLabel *m_titleLabel;

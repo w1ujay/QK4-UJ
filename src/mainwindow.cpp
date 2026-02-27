@@ -4827,6 +4827,7 @@ void MainWindow::onPttPressed() {
     }
 
     m_pttActive = true;
+    m_txFrameCount = 0;          // Reset frame counter for this PTT session
     m_txSequence = 0;            // Reset sequence on new PTT press
     m_tcpClient->sendCAT("TX;"); // Key the radio
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, true));
@@ -4839,7 +4840,11 @@ void MainWindow::onPttReleased() {
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
     m_tcpClient->sendCAT("RX;"); // Unkey the radio
     m_bottomMenuBar->setPttActive(false);
-    qDebug() << "PTT released - RX restored, microphone disabled";
+    if (m_notificationWidget) {
+        m_notificationWidget->showMessage(
+            QString("TX audio: %1 frames sent (EM%2)").arg(m_txFrameCount).arg(m_currentRadio.encodeMode), 3000);
+    }
+    qDebug() << "PTT released - RX restored, microphone disabled, frames sent:" << m_txFrameCount;
 }
 
 void MainWindow::onMicrophoneFrame(const QByteArray &s16leData) {
@@ -4899,6 +4904,7 @@ void MainWindow::onMicrophoneFrame(const QByteArray &s16leData) {
     // Build and send the audio packet with the selected encode mode
     QByteArray packet = Protocol::buildAudioPacket(audioData, m_txSequence++, m_currentRadio.encodeMode);
     m_tcpClient->sendRaw(packet);
+    m_txFrameCount++;
 }
 
 bool MainWindow::eventFilter(QObject *watched, QEvent *event) {
