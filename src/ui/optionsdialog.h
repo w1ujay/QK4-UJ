@@ -116,6 +116,9 @@ private:
 
     // Audio Output settings
     QComboBox *m_speakerDeviceCombo = nullptr;
+    QSpinBox *m_outputBufferSpin = nullptr;
+    QSpinBox *m_latencyTargetSpin = nullptr;
+    QCheckBox *m_tcpNoDelayCheckbox = nullptr;
 
     // CAT Server page elements
     QCheckBox *m_catServerEnableCheckbox = nullptr;

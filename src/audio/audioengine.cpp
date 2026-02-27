@@ -117,7 +117,7 @@ bool AudioEngine::setupAudioOutput() {
     }
 
     m_audioSink = new QAudioSink(outputDevice, m_outputFormat, this);
-    m_audioSink->setBufferSize(OUTPUT_BUFFER_SIZE);
+    m_audioSink->setBufferSize(m_outputBufferMs * BYTES_PER_MS);
 
     m_audioSinkDevice = m_audioSink->start();
     if (!m_audioSinkDevice) {
@@ -228,7 +228,8 @@ void AudioEngine::feedAudioDevice() {
         }
 
         // Latency guard: if queue exceeds target, drop oldest to stay near real-time
-        while (m_queueBytes > LATENCY_TARGET_BYTES && m_audioQueue.size() > 1) {
+        int latencyTarget = m_latencyTargetBytes.load(std::memory_order_relaxed);
+        while (m_queueBytes > latencyTarget && m_audioQueue.size() > 1) {
             m_queueBytes -= m_audioQueue.dequeue().size();
         }
 
@@ -577,6 +578,26 @@ void AudioEngine::setOutputDevice(const QString &deviceId) {
 
 QString AudioEngine::outputDeviceId() const {
     return m_selectedOutputDeviceId;
+}
+
+void AudioEngine::setOutputBufferMs(int ms) {
+    ms = qBound(50, ms, 1000);
+    if (m_outputBufferMs != ms) {
+        m_outputBufferMs = ms;
+        // Re-create audio sink with new buffer size if currently running
+        if (m_audioSink) {
+            m_audioSink->stop();
+            delete m_audioSink;
+            m_audioSink = nullptr;
+            m_audioSinkDevice = nullptr;
+            setupAudioOutput();
+        }
+    }
+}
+
+void AudioEngine::setLatencyTargetMs(int ms) {
+    ms = qBound(20, ms, 500);
+    m_latencyTargetBytes.store(ms * BYTES_PER_MS, std::memory_order_relaxed);
 }
 
 QList<QPair<QString, QString>> AudioEngine::availableOutputDevices() {

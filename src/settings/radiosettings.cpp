@@ -324,6 +324,47 @@ void RadioSettings::setSpeakerDevice(const QString &deviceId) {
     }
 }
 
+int RadioSettings::audioOutputBuffer() const {
+    return m_settings.value("audio/outputBufferMs", 500).toInt();
+}
+
+void RadioSettings::setAudioOutputBuffer(int ms) {
+    ms = qBound(50, ms, 1000);
+    int oldValue = m_settings.value("audio/outputBufferMs", 500).toInt();
+    if (oldValue != ms) {
+        m_settings.setValue("audio/outputBufferMs", ms);
+        m_settings.sync();
+        emit audioOutputBufferChanged(ms);
+    }
+}
+
+int RadioSettings::audioLatencyTarget() const {
+    return m_settings.value("audio/latencyTargetMs", 200).toInt();
+}
+
+void RadioSettings::setAudioLatencyTarget(int ms) {
+    ms = qBound(20, ms, 500);
+    int oldValue = m_settings.value("audio/latencyTargetMs", 200).toInt();
+    if (oldValue != ms) {
+        m_settings.setValue("audio/latencyTargetMs", ms);
+        m_settings.sync();
+        emit audioLatencyTargetChanged(ms);
+    }
+}
+
+bool RadioSettings::tcpNoDelay() const {
+    return m_settings.value("audio/tcpNoDelay", true).toBool();
+}
+
+void RadioSettings::setTcpNoDelay(bool enabled) {
+    bool oldValue = m_settings.value("audio/tcpNoDelay", true).toBool();
+    if (oldValue != enabled) {
+        m_settings.setValue("audio/tcpNoDelay", enabled);
+        m_settings.sync();
+        emit tcpNoDelayChanged(enabled);
+    }
+}
+
 bool RadioSettings::catServerEnabled() const {
     return m_catServerEnabled;
 }

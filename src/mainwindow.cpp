@@ -120,6 +120,8 @@ MainWindow::MainWindow(QWidget *parent)
         m_audioEngine->setOutputDevice(savedSpeakerDevice);
     }
     m_audioEngine->setMicGain(RadioSettings::instance()->micGain() / 100.0f);
+    m_audioEngine->setOutputBufferMs(RadioSettings::instance()->audioOutputBuffer());
+    m_audioEngine->setLatencyTargetMs(RadioSettings::instance()->audioLatencyTarget());
 
     // Move AudioEngine to dedicated thread for glitch-free audio playback
     m_audioThread = new QThread(this);

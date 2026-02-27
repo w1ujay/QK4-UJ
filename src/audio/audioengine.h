@@ -68,6 +68,10 @@ public:
     Q_INVOKABLE void setOutputDevice(const QString &deviceId);
     QString outputDeviceId() const;
 
+    // Latency tuning (call BEFORE start(), or use setters that re-create the sink)
+    void setOutputBufferMs(int ms);
+    void setLatencyTargetMs(int ms);
+
     // Get list of available output devices (for settings UI)
     static QList<QPair<QString, QString>> availableOutputDevices(); // (id, description)
 
@@ -161,12 +165,14 @@ private:
     // Audio throughput at 12kHz input: 12kHz × 2ch × sizeof(float) = 96,000 bytes/sec = 96 bytes/ms
     static constexpr int BYTES_PER_MS = 96;
 
-    // Audio buffer sizes
-    // QAudioSink runs at 12kHz native (no upsampling)
-    // 500ms × 96 bytes/ms = 48,000 bytes
-    static constexpr int OUTPUT_BUFFER_SIZE = 500 * BYTES_PER_MS; // 48,000 bytes
+    // Audio buffer sizes — defaults (overridable via setOutputBufferMs / setLatencyTargetMs)
+    static constexpr int DEFAULT_OUTPUT_BUFFER_MS = 500;
+    static constexpr int DEFAULT_OUTPUT_BUFFER_SIZE = DEFAULT_OUTPUT_BUFFER_MS * BYTES_PER_MS; // 48,000 bytes
     // Input: 48kHz * 4 bytes/sample * 0.1 sec = 19200 bytes
     static constexpr int INPUT_BUFFER_SIZE = 19200;
+
+    // Runtime-configurable buffer sizes
+    int m_outputBufferMs = DEFAULT_OUTPUT_BUFFER_MS;
 
     // Microphone gain scaling factor (gain slider 0-1 maps to 0-2x, so 0.5 = unity)
     static constexpr float MIC_GAIN_SCALE = 2.0f;
@@ -196,8 +202,9 @@ private:
     // The SL level already provides jitter tolerance (larger packets = more runway),
     // so additional prebuffering just adds latency without benefit.
     static constexpr int PREBUFFER_PACKETS = 1;
-    static constexpr int MAX_QUEUE_BYTES = 1000 * BYTES_PER_MS;     // 96,000 bytes (1s overflow cap)
-    static constexpr int LATENCY_TARGET_BYTES = 200 * BYTES_PER_MS; // 19,200 bytes (~200ms target)
+    static constexpr int MAX_QUEUE_BYTES = 1000 * BYTES_PER_MS; // 96,000 bytes (1s overflow cap)
+    static constexpr int DEFAULT_LATENCY_TARGET_MS = 200;
+    std::atomic<int> m_latencyTargetBytes{DEFAULT_LATENCY_TARGET_MS * BYTES_PER_MS}; // ~200ms default
     static constexpr int FEED_INTERVAL_MS = 10;
 };
 

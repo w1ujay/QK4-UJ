@@ -850,6 +850,99 @@ QWidget *OptionsDialog::createAudioOutputPage() {
     helpLabel->setWordWrap(true);
     layout->addWidget(helpLabel);
 
+    layout->addSpacing(K4Styles::Dimensions::PaddingLarge);
+
+    // === Latency Settings ===
+    auto *latencyTitle = new QLabel("Latency", page);
+    latencyTitle->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(latencyTitle);
+
+    auto *latencyLine = new QFrame(page);
+    latencyLine->setFrameShape(QFrame::HLine);
+    latencyLine->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    latencyLine->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(latencyLine);
+
+    // Spin box stylesheet (reused)
+    QString spinStyle =
+        QString("QSpinBox { background-color: %1; color: %2; border: 1px solid %3; "
+                "           padding: %5px; font-size: %4px; border-radius: %6px; }"
+                "QSpinBox:focus { border-color: %7; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Dimensions::FontSizePopup)
+            .arg(K4Styles::Dimensions::PaddingSmall)
+            .arg(K4Styles::Dimensions::SliderBorderRadius)
+            .arg(K4Styles::Colors::AccentAmber);
+
+    QString labelStyle =
+        QString("color: %1; font-size: %2px;").arg(K4Styles::Colors::TextGray).arg(K4Styles::Dimensions::FontSizePopup);
+
+    // Output Buffer
+    auto *bufferLabel = new QLabel("Output Buffer (default: 500 ms):", page);
+    bufferLabel->setStyleSheet(labelStyle);
+    layout->addWidget(bufferLabel);
+
+    m_outputBufferSpin = new QSpinBox(page);
+    m_outputBufferSpin->setRange(50, 1000);
+    m_outputBufferSpin->setSuffix(" ms");
+    m_outputBufferSpin->setValue(RadioSettings::instance()->audioOutputBuffer());
+    m_outputBufferSpin->setStyleSheet(spinStyle);
+    connect(m_outputBufferSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int value) {
+        RadioSettings::instance()->setAudioOutputBuffer(value);
+        if (m_audioEngine) {
+            QMetaObject::invokeMethod(
+                m_audioEngine, [this, value]() { m_audioEngine->setOutputBufferMs(value); }, Qt::QueuedConnection);
+        }
+    });
+    layout->addWidget(m_outputBufferSpin);
+
+    // Latency Target
+    auto *targetLabel = new QLabel("Latency Target (default: 200 ms):", page);
+    targetLabel->setStyleSheet(labelStyle);
+    layout->addWidget(targetLabel);
+
+    m_latencyTargetSpin = new QSpinBox(page);
+    m_latencyTargetSpin->setRange(20, 500);
+    m_latencyTargetSpin->setSuffix(" ms");
+    m_latencyTargetSpin->setValue(RadioSettings::instance()->audioLatencyTarget());
+    m_latencyTargetSpin->setStyleSheet(spinStyle);
+    connect(m_latencyTargetSpin, QOverload<int>::of(&QSpinBox::valueChanged), this, [this](int value) {
+        RadioSettings::instance()->setAudioLatencyTarget(value);
+        if (m_audioEngine) {
+            m_audioEngine->setLatencyTargetMs(value); // Atomic, safe from any thread
+        }
+    });
+    layout->addWidget(m_latencyTargetSpin);
+
+    layout->addSpacing(K4Styles::Dimensions::PaddingSmall);
+
+    // TCP No-Delay
+    m_tcpNoDelayCheckbox = new QCheckBox("TCP No-Delay (disable Nagle buffering)", page);
+    m_tcpNoDelayCheckbox->setStyleSheet(QString("QCheckBox { color: %1; font-size: %2px; spacing: %3px; }"
+                                                "QCheckBox::indicator { width: %4px; height: %4px; }")
+                                            .arg(K4Styles::Colors::TextWhite)
+                                            .arg(K4Styles::Dimensions::FontSizePopup)
+                                            .arg(K4Styles::Dimensions::BorderRadiusLarge)
+                                            .arg(K4Styles::Dimensions::CheckboxSize));
+    m_tcpNoDelayCheckbox->setChecked(RadioSettings::instance()->tcpNoDelay());
+    connect(m_tcpNoDelayCheckbox, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setTcpNoDelay(checked); });
+    layout->addWidget(m_tcpNoDelayCheckbox);
+
+    layout->addSpacing(K4Styles::Dimensions::PaddingSmall);
+
+    // Latency help text
+    auto *latencyHelp = new QLabel("Lower buffer values reduce latency but may cause audio glitches. "
+                                   "TCP No-Delay takes effect on next connection.",
+                                   page);
+    latencyHelp->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                   .arg(K4Styles::Colors::TextGray)
+                                   .arg(K4Styles::Dimensions::FontSizeLarge));
+    latencyHelp->setWordWrap(true);
+    layout->addWidget(latencyHelp);
+
     layout->addStretch();
     return page;
 }

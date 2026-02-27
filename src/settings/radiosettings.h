@@ -126,6 +126,14 @@ public:
     int sidetoneVolume() const;
     void setSidetoneVolume(int value); // 0-100, default 30
 
+    // Audio latency settings
+    int audioOutputBuffer() const;
+    void setAudioOutputBuffer(int ms); // 50-1000ms, default 500
+    int audioLatencyTarget() const;
+    void setAudioLatencyTarget(int ms); // 20-500ms, default 200
+    bool tcpNoDelay() const;
+    void setTcpNoDelay(bool enabled); // default true
+
     // RX EQ Presets (4 slots)
     EqPreset rxEqPreset(int index) const;                  // Get preset 0-3
     void setRxEqPreset(int index, const EqPreset &preset); // Set preset 0-3
@@ -200,6 +208,9 @@ signals:
     void rfkitPollIntervalChanged(int intervalMs);
     void rfkitLowPowerChanged();
     void rfkitTempUnitChanged(bool fahrenheit);
+    void audioOutputBufferChanged(int ms);
+    void audioLatencyTargetChanged(int ms);
+    void tcpNoDelayChanged(bool enabled);
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);

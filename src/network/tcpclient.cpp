@@ -1,4 +1,5 @@
 #include "tcpclient.h"
+#include "../settings/radiosettings.h"
 #include <QDebug>
 #include <QSslCipher>
 #include <QSslConfiguration>
@@ -192,6 +193,12 @@ void TcpClient::setState(ConnectionState state) {
 }
 
 void TcpClient::onSocketConnected() {
+    // Enable TCP_NODELAY (disable Nagle buffering) for lower latency
+    if (RadioSettings::instance()->tcpNoDelay()) {
+        m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
+        qDebug() << "TCP_NODELAY enabled";
+    }
+
     if (m_useTls) {
         // TLS connection: TCP connected, now waiting for TLS handshake to complete
         // The encrypted() signal will fire when TLS is fully established
