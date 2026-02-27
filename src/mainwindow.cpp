@@ -4827,17 +4827,19 @@ void MainWindow::onPttPressed() {
     }
 
     m_pttActive = true;
-    m_txSequence = 0; // Reset sequence on new PTT press
+    m_txSequence = 0;            // Reset sequence on new PTT press
+    m_tcpClient->sendCAT("TX;"); // Key the radio
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, true));
     m_bottomMenuBar->setPttActive(true);
-    qDebug() << "PTT pressed - microphone enabled";
+    qDebug() << "PTT pressed - TX keyed, microphone enabled";
 }
 
 void MainWindow::onPttReleased() {
     m_pttActive = false;
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
+    m_tcpClient->sendCAT("RX;"); // Unkey the radio
     m_bottomMenuBar->setPttActive(false);
-    qDebug() << "PTT released - microphone disabled";
+    qDebug() << "PTT released - RX restored, microphone disabled";
 }
 
 void MainWindow::onMicrophoneFrame(const QByteArray &s16leData) {
