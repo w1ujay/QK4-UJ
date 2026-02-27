@@ -1931,8 +1931,18 @@ MainWindow::MainWindow(QWidget *parent)
         m_pttActive = on;
         if (on) {
             m_txSequence = 0;
+            m_txFrameCount = 0;
+            m_tcpClient->sendCAT("TX;"); // Tell K4 to enter transmit mode
+        } else {
+            m_tcpClient->sendCAT("RX;"); // Tell K4 to return to receive mode
+            if (m_notificationWidget) {
+                m_notificationWidget->showMessage(
+                    QString("TX audio: %1 frames sent (EM%2)").arg(m_txFrameCount).arg(m_currentRadio.encodeMode),
+                    3000);
+            }
+            qDebug() << "CAT PTT released - frames sent:" << m_txFrameCount;
         }
-        m_audioEngine->setMicEnabled(on);
+        QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, on));
         m_bottomMenuBar->setPttActive(on);
     });
 
@@ -4829,14 +4839,22 @@ void MainWindow::onPttPressed() {
     m_pttActive = true;
     m_txFrameCount = 0; // Reset frame counter for this PTT session
     m_txSequence = 0;   // Reset sequence on new PTT press
+
+    // Tell K4 to enter transmit mode before sending audio
+    m_tcpClient->sendCAT("TX;");
+
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, true));
     m_bottomMenuBar->setPttActive(true);
-    qDebug() << "PTT pressed - microphone enabled";
+    qDebug() << "PTT pressed - TX; sent, microphone enabled";
 }
 
 void MainWindow::onPttReleased() {
     m_pttActive = false;
     QMetaObject::invokeMethod(m_audioEngine, "setMicEnabled", Qt::QueuedConnection, Q_ARG(bool, false));
+
+    // Tell K4 to return to receive mode
+    m_tcpClient->sendCAT("RX;");
+
     m_bottomMenuBar->setPttActive(false);
     if (m_notificationWidget) {
         m_notificationWidget->showMessage(
