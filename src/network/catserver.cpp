@@ -176,21 +176,22 @@ QString CatServer::handleCommand(const QString &cmd) {
     }
 
     // TX/RX commands (no args) - must be handled before the GET block
-    // Always forward TX;/RX; to K4 to key/unkey the radio.
-    // In voice/data modes with audio enabled, also gate the mic input so
-    // QK4 streams audio to the K4 while transmitting.
+    // Audio disabled or CW/CW-R: forward directly to K4
+    // Voice/Data with audio enabled: control audio input gate (audio stream triggers K4 TX)
     if (prefix == "TX" && args.isEmpty()) {
-        emit catCommandReceived(cmd); // Always forward TX; to K4
         int mode = m_radioState->mode();
-        if (RadioSettings::instance()->audioEnabled() && mode != RadioState::CW && mode != RadioState::CW_R) {
+        if (!RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R) {
+            emit catCommandReceived(cmd);
+        } else {
             emit pttRequested(true);
         }
         return QString();
     }
     if (prefix == "RX" && args.isEmpty()) {
-        emit catCommandReceived(cmd); // Always forward RX; to K4
         int mode = m_radioState->mode();
-        if (RadioSettings::instance()->audioEnabled() && mode != RadioState::CW && mode != RadioState::CW_R) {
+        if (!RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R) {
+            emit catCommandReceived(cmd);
+        } else {
             emit pttRequested(false);
         }
         m_cwPending = 0;
