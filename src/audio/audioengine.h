@@ -57,6 +57,7 @@ public:
     // Microphone settings
     void setMicGain(float gain); // 0.0 to 1.0
     float micGain() const { return m_micGain.load(std::memory_order_relaxed); }
+    void setDigitalMode(bool digital); // Switch mic gain scale for DATA modes
 
     Q_INVOKABLE void setMicDevice(const QString &deviceId);
     QString micDeviceId() const;
@@ -174,8 +175,10 @@ private:
     // Runtime-configurable buffer sizes
     int m_outputBufferMs = DEFAULT_OUTPUT_BUFFER_MS;
 
-    // Microphone gain scaling factor (gain slider 0-1 maps to 0-2x, so 0.5 = unity)
-    static constexpr float MIC_GAIN_SCALE = 2.0f;
+    // Microphone gain scaling: voice = 0-2x (slider 50% = unity), digital = 0-0.5x (all attenuation)
+    static constexpr float MIC_GAIN_SCALE_VOICE = 2.0f;
+    static constexpr float MIC_GAIN_SCALE_DIGITAL = 0.5f;
+    std::atomic<float> m_micGainScale{MIC_GAIN_SCALE_VOICE};
 
     // Microphone frame buffering for Opus encoding
     // Buffer accumulates S16LE samples at 12kHz until we have a complete frame

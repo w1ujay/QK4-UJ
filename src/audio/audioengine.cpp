@@ -193,7 +193,7 @@ void AudioEngine::flushQueue() {
 }
 
 void AudioEngine::feedAudioDevice() {
-    if (!m_audioSinkDevice)
+    if (!m_audioSink || !m_audioSinkDevice)
         return;
 
     // Drain any leftover write buffer from a previous partial write
@@ -447,11 +447,12 @@ void AudioEngine::onMicDataReady() {
     // Calculate RMS level AFTER gain for meter display (shows what will be transmitted)
     float sumSquares = 0.0f;
     const float gain = m_micGain.load(std::memory_order_relaxed);
+    const float gainScale = m_micGainScale.load(std::memory_order_relaxed);
 
     // Convert and append to buffer with gain applied
     for (int i = 0; i < floatSamples; i++) {
-        // Apply mic gain and clamp (MIC_GAIN_SCALE makes 50% slider = unity gain)
-        float sample = qBound(-1.0f, floatData[i] * gain * MIC_GAIN_SCALE, 1.0f);
+        // Apply mic gain and clamp (scale varies: voice=2x range, digital=0.5x range)
+        float sample = qBound(-1.0f, floatData[i] * gain * gainScale, 1.0f);
         qint16 s16Sample = static_cast<qint16>(sample * 32767.0f);
 
         // Accumulate for RMS calculation (after gain)
@@ -517,6 +518,10 @@ void AudioEngine::setBalanceOffset(int offset) {
 
 void AudioEngine::setMicGain(float gain) {
     m_micGain.store(qBound(0.0f, gain, 1.0f), std::memory_order_relaxed);
+}
+
+void AudioEngine::setDigitalMode(bool digital) {
+    m_micGainScale.store(digital ? MIC_GAIN_SCALE_DIGITAL : MIC_GAIN_SCALE_VOICE, std::memory_order_relaxed);
 }
 
 void AudioEngine::setMicDevice(const QString &deviceId) {

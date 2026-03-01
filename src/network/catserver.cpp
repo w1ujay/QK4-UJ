@@ -315,7 +315,7 @@ QString CatServer::handleCommand(const QString &cmd) {
                                + QStringLiteral("0")                                              // P10: VFO (1)
                                + QStringLiteral("0")                                              // P11: scan (1)
                                + QString::number(split)                                           // P12: split (1)
-                               + QStringLiteral("00")                                             // P13: data (2)
+                               + QString("%1").arg(m_radioState->dataSubMode(), 2, 10, QChar('0')) // P13: data (2)
                                + QStringLiteral(";");
             return response;
         }

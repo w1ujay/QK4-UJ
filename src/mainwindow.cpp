@@ -3027,6 +3027,12 @@ void MainWindow::setupUi() {
     // Connect microphone frames to encoding/transmission
     connect(m_audioEngine, &AudioEngine::microphoneFrame, this, &MainWindow::onMicrophoneFrame);
 
+    // Switch mic gain scale for digital modes (DATA/DATA-R use 0.5x, voice uses 2x)
+    connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode mode) {
+        bool digital = (mode == RadioState::DATA || mode == RadioState::DATA_R);
+        m_audioEngine->setDigitalMode(digital);
+    });
+
     // Note: audio buffer flushing on mode/filter changes was removed — AudioEngine now runs
     // on a dedicated thread with a properly sized jitter buffer, so stale audio lag no longer
     // occurs. Flushing would cause a brief audio dropout on every mode/filter switch.
