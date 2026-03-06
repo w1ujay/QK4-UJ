@@ -31,6 +31,7 @@ public:
     QPushButton *subRxButton() const { return m_subRxBtn; }
     QPushButton *txButton() const { return m_txBtn; }
     QPushButton *pttButton() const { return m_pttBtn; }
+    QPushButton *miniButton() const { return m_miniBtn; }
 
 public slots:
     void setMenuActive(bool active);    // Toggle MENU button inverse colors
@@ -50,6 +51,7 @@ signals:
     void mainRxClicked();
     void subRxClicked();
     void txClicked();
+    void miniClicked();
     void pttPressed();  // PTT button pressed (start TX audio)
     void pttReleased(); // PTT button released (stop TX audio)
 
@@ -68,6 +70,7 @@ private:
     QPushButton *m_mainRxBtn;
     QPushButton *m_subRxBtn;
     QPushButton *m_txBtn;
+    QPushButton *m_miniBtn;
     QPushButton *m_pttBtn;
 
     bool m_pttLocked = false;

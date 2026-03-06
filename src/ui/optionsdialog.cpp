@@ -123,6 +123,48 @@ void OptionsDialog::setupUi() {
     mainLayout->addWidget(m_pageStack, 1);
 }
 
+void OptionsDialog::ensurePageCreated(int index) {
+    if (index < 0 || index >= PageCount || m_pageCreated[index])
+        return;
+
+    QWidget *page = nullptr;
+    switch (index) {
+    case PageAudioInput:
+        page = createAudioInputPage();
+        break;
+    case PageAudioOutput:
+        page = createAudioOutputPage();
+        break;
+    case PageRigControl:
+        page = createRigControlPage();
+        break;
+    case PageCwKeyer:
+        page = createCwKeyerPage();
+        break;
+    case PageKpod:
+        page = createKpodPage();
+        break;
+    case PageN1mm:
+        page = createN1mmPage();
+        break;
+    case PageKpa1500:
+        page = createKpa1500Page();
+        break;
+    case PageRfkit:
+        page = createRfkitPage();
+        break;
+    default:
+        return;
+    }
+
+    // Swap out the placeholder widget at this index
+    QWidget *placeholder = m_pageStack->widget(index);
+    m_pageStack->removeWidget(placeholder);
+    delete placeholder;
+    m_pageStack->insertWidget(index, page);
+    m_pageCreated[index] = true;
+}
+
 void OptionsDialog::showEvent(QShowEvent *event) {
     QDialog::showEvent(event);
     refreshCurrentPage();

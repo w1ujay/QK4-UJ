@@ -124,6 +124,7 @@ set(SOURCES
     src/ui/kpa1500window.cpp
     src/ui/rfkitpanel.cpp
     src/ui/rfkitwindow.cpp
+    src/ui/miniviewwindow.cpp
     src/ui/sidecontroloverlay.cpp
     src/ui/monoverlay.cpp
     src/ui/baloverlay.cpp
@@ -192,6 +193,7 @@ set(HEADERS
     src/ui/kpa1500window.h
     src/ui/rfkitpanel.h
     src/ui/rfkitwindow.h
+    src/ui/miniviewwindow.h
     src/ui/sidecontroloverlay.h
     src/ui/monoverlay.h
     src/ui/baloverlay.h

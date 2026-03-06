@@ -4,6 +4,29 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.5.0-UJ.11] - 2026-03-04
+
+### Added (from upstream v0.5.0-beta.2)
+
+- **ui: sync WTRFALL control to mini panadapters**
+  - LCD waterfall height changes now propagate to Mini A and Mini B in real time
+  - Fixes mini pan spectrum clipping by removing 1.5x height boost (now matches main panadapter normalization)
+
+### Fixed (from upstream v0.5.0-beta.2)
+
+- **audio: use queued invoke for CAT PTT mic enable to fix cross-thread call**
+  - Direct call to `AudioEngine::setMicEnabled()` from CAT server PTT handler violated thread affinity, causing WSJT-X loopback audio to silently fail
+- **cat: optimistic RadioState update for external CAT commands fixes passband tracking**
+  - Spectrum packets from the K4 arrive before the CAT echo, causing the passband to go off-screen. Now `parseCATCommand()` is called immediately alongside `sendCAT()`
+- **ui: replace Qt::Popup with Qt::Tool so toolbar buttons work when a popup is open**
+- **ui: refresh About page on every show so radio data is never stale**
+
+### Changed
+
+- **ci: version-stamp release artifact filenames** (from upstream)
+- Rebased onto upstream `main` (origin/mikeg-dal) to incorporate all upstream fixes
+
+
 ## [0.4.0-UJ.10] - 2026-02-26
 
 ### Changed

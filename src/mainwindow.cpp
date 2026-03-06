@@ -44,6 +44,7 @@
 #include "network/catserver.h"
 #include "network/n1mmlistener.h"
 #include "network/rfkitclient.h"
+#include "ui/miniviewwindow.h"
 #include "ui/rfkitwindow.h"
 #include "ui/rfkitpanel.h"
 #include "dsp/spotoverlaywidget.h"
@@ -1997,6 +1998,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_panadapterB && m_panadapterB->spotOverlay()) {
             m_panadapterB->spotOverlay()->addSpot(spot);
         }
+        if (m_miniViewWindow)
+            m_miniViewWindow->addSpot(spot);
     });
     connect(m_n1mmListener, &N1mmListener::spotRemoved, this, [this](const QString &callsign) {
         if (m_panadapterA && m_panadapterA->spotOverlay()) {
@@ -2005,6 +2008,8 @@ MainWindow::MainWindow(QWidget *parent)
         if (m_panadapterB && m_panadapterB->spotOverlay()) {
             m_panadapterB->spotOverlay()->removeSpot(callsign);
         }
+        if (m_miniViewWindow)
+            m_miniViewWindow->removeSpot(callsign);
     });
 
     // Connect spot click-to-tune
@@ -2137,6 +2142,13 @@ MainWindow::~MainWindow() {
     if (m_kpodDevice) {
         m_kpodDevice->stopPolling();
     }
+
+    if (m_rfkitClient) {
+        disconnect(m_rfkitClient, nullptr, this, nullptr);
+        m_rfkitClient->disconnectFromHost();
+    }
+
+    delete m_miniViewWindow; // No parent, must delete manually
 }
 
 void MainWindow::setupMenuBar() {
@@ -3019,6 +3031,25 @@ void MainWindow::setupUi() {
     connect(m_bottomMenuBar, &BottomMenuBar::mainRxClicked, this, &MainWindow::toggleMainRxPopup);
     connect(m_bottomMenuBar, &BottomMenuBar::subRxClicked, this, &MainWindow::toggleSubRxPopup);
     connect(m_bottomMenuBar, &BottomMenuBar::txClicked, this, &MainWindow::toggleTxPopup);
+    connect(m_bottomMenuBar, &BottomMenuBar::miniClicked, this, [this]() {
+        // Switch to mini view: update with current state, show strip, hide main
+        m_miniViewWindow->setFrequencyA(m_vfoA->frequencyDisplay()->frequency());
+        m_miniViewWindow->setFrequencyB(m_vfoB->frequencyDisplay()->frequency());
+        m_miniViewWindow->setModeA(m_modeALabel->text());
+        m_miniViewWindow->setModeB(m_modeBLabel->text());
+
+        // Copy current spots
+        if (m_n1mmListener) {
+            m_miniViewWindow->clearSpots();
+            for (const auto &spot : m_n1mmListener->activeSpots()) {
+                m_miniViewWindow->addSpot(spot);
+            }
+        }
+
+        m_miniViewWindow->show();
+        m_miniViewWindow->raise();
+        hide();
+    });
 
     // PTT button connections
     connect(m_bottomMenuBar, &BottomMenuBar::pttPressed, this, &MainWindow::onPttPressed);
@@ -3523,6 +3554,16 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // ===== RFKit Floating Window =====
     m_rfkitWindow = new RFKitWindow(this);
     m_rfkitWindow->hide();
+
+    // ===== Mini View Floating Window =====
+    m_miniViewWindow = new MiniViewWindow(nullptr); // No parent so it persists when main window hides
+    m_miniViewWindow->hide();
+    connect(m_miniViewWindow, &MiniViewWindow::restoreRequested, this, [this]() {
+        m_miniViewWindow->hide();
+        showNormal();
+        raise();
+        activateWindow();
+    });
 
     // Add the VFO row to main layout
     mainVLayout->addWidget(vfoRowWidget);
@@ -4236,11 +4277,17 @@ void MainWindow::onCatResponse(const QString &response) {
 }
 
 void MainWindow::onFrequencyChanged(quint64 freq) {
-    m_vfoA->setFrequency(formatFrequency(freq));
+    QString formatted = formatFrequency(freq);
+    m_vfoA->setFrequency(formatted);
+    if (m_miniViewWindow && m_miniViewWindow->isVisible())
+        m_miniViewWindow->setFrequencyA(formatted);
 }
 
 void MainWindow::onFrequencyBChanged(quint64 freq) {
-    m_vfoB->setFrequency(formatFrequency(freq));
+    QString formatted = formatFrequency(freq);
+    m_vfoB->setFrequency(formatted);
+    if (m_miniViewWindow && m_miniViewWindow->isVisible())
+        m_miniViewWindow->setFrequencyB(formatted);
 }
 
 void MainWindow::onModeChanged(RadioState::Mode mode) {
@@ -4305,6 +4352,12 @@ void MainWindow::updateModeLabels() {
         modeB += "+";
     }
     m_modeBLabel->setText(modeB);
+
+    // Forward to mini view
+    if (m_miniViewWindow && m_miniViewWindow->isVisible()) {
+        m_miniViewWindow->setModeA(modeA);
+        m_miniViewWindow->setModeB(modeB);
+    }
 }
 
 void MainWindow::onSMeterChanged(double value) {

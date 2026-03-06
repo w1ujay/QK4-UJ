@@ -53,6 +53,7 @@ class CatServer;
 class OptionsDialog;
 class N1mmListener;
 class RFKitClient;
+class MiniViewWindow;
 class RFKitWindow;
 class NotificationWidget;
 class VfoRowWidget;
@@ -357,6 +358,9 @@ private:
 
     // N1MM spot listener
     N1mmListener *m_n1mmListener = nullptr;
+    // Mini view window
+    MiniViewWindow *m_miniViewWindow = nullptr;
+
     bool m_panadapterEnabled = true;
 
     // Debounce timer for RX EQ slider changes

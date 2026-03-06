@@ -207,6 +207,18 @@ void RadioSettings::setRfkitWindowPosition(const QPoint &pos) {
     m_settings.sync();
 }
 
+QPoint RadioSettings::miniViewWindowPosition() const {
+    int x = m_settings.value("miniview/windowX", 0).toInt();
+    int y = m_settings.value("miniview/windowY", 0).toInt();
+    return QPoint(x, y);
+}
+
+void RadioSettings::setMiniViewWindowPosition(const QPoint &pos) {
+    m_settings.setValue("miniview/windowX", pos.x());
+    m_settings.setValue("miniview/windowY", pos.y());
+    m_settings.sync();
+}
+
 bool RadioSettings::rfkitLowPowerEnabled() const {
     return m_rfkitLowPowerEnabled;
 }

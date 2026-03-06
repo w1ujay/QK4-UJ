@@ -2,12 +2,14 @@
 #include "rfkitpanel.h"
 #include "k4styles.h"
 #include "../settings/radiosettings.h"
+#include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QLabel>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPainterPath>
 #include <QPushButton>
+#include <QScreen>
 #include <QVBoxLayout>
 
 namespace {
@@ -145,6 +147,24 @@ void RFKitWindow::savePosition() {
 void RFKitWindow::restorePosition() {
     QPoint savedPos = RadioSettings::instance()->rfkitWindowPosition();
     if (!savedPos.isNull()) {
-        move(savedPos);
+        // Verify the saved position is visible on at least one screen
+        QRect windowRect(savedPos, size());
+        bool onScreen = false;
+        for (QScreen *screen : QGuiApplication::screens()) {
+            if (screen->availableGeometry().intersects(windowRect)) {
+                onScreen = true;
+                break;
+            }
+        }
+        if (onScreen) {
+            move(savedPos);
+        } else {
+            // Reset to center of primary screen
+            if (QScreen *screen = QGuiApplication::primaryScreen()) {
+                QRect screenGeo = screen->availableGeometry();
+                move(screenGeo.center() - QPoint(width() / 2, height() / 2));
+            }
+            savePosition();
+        }
     }
 }

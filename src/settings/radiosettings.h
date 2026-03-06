@@ -155,6 +155,10 @@ public:
     void setRfkitPollInterval(int intervalMs);
     QPoint rfkitWindowPosition() const;
     void setRfkitWindowPosition(const QPoint &pos);
+
+    // Mini view window position
+    QPoint miniViewWindowPosition() const;
+    void setMiniViewWindowPosition(const QPoint &pos);
     bool rfkitLowPowerEnabled() const;
     void setRfkitLowPowerEnabled(bool enabled);
     double rfkitMaxDrivePower() const;

@@ -38,6 +38,12 @@ void BottomMenuBar::setupUi() {
     // Add stretch after buttons to center them
     layout->addStretch();
 
+    // MINI button (switch to compact mini view)
+    m_miniBtn = createMenuButton("MINI");
+    layout->addWidget(m_miniBtn);
+
+    layout->addSpacing(10);
+
     // PTT button at far right (separated from main buttons)
     m_pttBtn = createMenuButton("PTT");
     layout->addWidget(m_pttBtn);
@@ -50,6 +56,7 @@ void BottomMenuBar::setupUi() {
     connect(m_mainRxBtn, &QPushButton::clicked, this, &BottomMenuBar::mainRxClicked);
     connect(m_subRxBtn, &QPushButton::clicked, this, &BottomMenuBar::subRxClicked);
     connect(m_txBtn, &QPushButton::clicked, this, &BottomMenuBar::txClicked);
+    connect(m_miniBtn, &QPushButton::clicked, this, &BottomMenuBar::miniClicked);
 
     // PTT uses press/release for momentary activation
     connect(m_pttBtn, &QPushButton::pressed, this, &BottomMenuBar::pttPressed);

@@ -63,6 +63,7 @@ private slots:
 
 private:
     void setupUi();
+    void ensurePageCreated(int index);
     void refreshCurrentPage();
     void refreshPage(int index);
     QWidget *createAboutPage();
