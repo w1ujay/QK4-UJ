@@ -4,6 +4,21 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.5.0-UJ.12] - 2026-03-05
+
+### Added
+
+- **ui: mini view mode** — compact horizontal strip showing VFO A/B frequencies, modes, and N1MM spots
+  - Toggle via MINI button in the bottom menu bar
+  - Always-on-top, draggable, position saved/restored across sessions
+  - Double-click or click restore button to return to full view
+  - Frequencies, modes, and spots update in real time while in mini view
+
+### Fixed
+
+- **ui: fix RFKit/KPA1500 windows going off-screen** — saved positions are now validated against available screens on restore; if off-screen, window resets to center of primary display
+
+
 ## [0.5.0-UJ.11] - 2026-03-04
 
 ### Added (from upstream v0.5.0-beta.2)
