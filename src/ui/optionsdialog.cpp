@@ -97,6 +97,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("N1MM Spots");
     m_tabList->addItem("KPA1500");
     m_tabList->addItem("RFKit Amp");
+    m_tabList->addItem("Mini View");
     m_tabList->setCurrentRow(0);
 
     // Right side: stacked pages — all created eagerly (dialog is persistent)
@@ -110,6 +111,7 @@ void OptionsDialog::setupUi() {
     m_pageStack->addWidget(createN1mmPage());
     m_pageStack->addWidget(createKpa1500Page());
     m_pageStack->addWidget(createRfkitPage());
+    m_pageStack->addWidget(createMiniViewPage());
     for (int i = 0; i < PageCount; ++i)
         m_pageCreated[i] = true;
 
@@ -152,6 +154,9 @@ void OptionsDialog::ensurePageCreated(int index) {
         break;
     case PageRfkit:
         page = createRfkitPage();
+        break;
+    case PageMiniView:
+        page = createMiniViewPage();
         break;
     default:
         return;
@@ -2335,4 +2340,76 @@ void OptionsDialog::updateRfkitStatus() {
                                               .arg(K4Styles::Colors::ErrorRed)
                                               .arg(K4Styles::Dimensions::FontSizePopup));
     }
+}
+
+QWidget *OptionsDialog::createMiniViewPage() {
+    auto *page = new QWidget;
+    auto *layout = new QVBoxLayout(page);
+    layout->setContentsMargins(K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin,
+                               K4Styles::Dimensions::DialogMargin, K4Styles::Dimensions::DialogMargin);
+    layout->setSpacing(K4Styles::Dimensions::PaddingMedium);
+
+    // Title
+    auto *titleLabel = new QLabel("Mini View", page);
+    titleLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                  .arg(K4Styles::Colors::AccentAmber)
+                                  .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(titleLabel);
+
+    // Description
+    auto *descLabel = new QLabel("Configure which elements are shown in the compact mini view strip.", page);
+    descLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    descLabel->setWordWrap(true);
+    layout->addWidget(descLabel);
+
+    // Separator
+    auto *line = new QFrame(page);
+    line->setFrameShape(QFrame::HLine);
+    line->setStyleSheet(QString("background-color: %1;").arg(K4Styles::Colors::DialogBorder));
+    line->setFixedHeight(K4Styles::Dimensions::SeparatorHeight);
+    layout->addWidget(line);
+
+    // Section title
+    auto *sectionLabel = new QLabel("Visible Elements", page);
+    sectionLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-weight: bold;")
+                                    .arg(K4Styles::Colors::AccentAmber)
+                                    .arg(K4Styles::Dimensions::FontSizeTitle));
+    layout->addWidget(sectionLabel);
+
+    auto *settings = RadioSettings::instance();
+
+    // Show Band button
+    auto *showBandCheck = new QCheckBox("Show BAND button", page);
+    showBandCheck->setChecked(settings->miniViewShowBand());
+    connect(showBandCheck, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setMiniViewShowBand(checked); });
+    layout->addWidget(showBandCheck);
+
+    // Show Mode button
+    auto *showModeCheck = new QCheckBox("Show MODE button", page);
+    showModeCheck->setChecked(settings->miniViewShowMode());
+    connect(showModeCheck, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setMiniViewShowMode(checked); });
+    layout->addWidget(showModeCheck);
+
+    // Show Spots
+    auto *showSpotsCheck = new QCheckBox("Show N1MM spots", page);
+    showSpotsCheck->setChecked(settings->miniViewShowSpots());
+    connect(showSpotsCheck, &QCheckBox::toggled, this,
+            [](bool checked) { RadioSettings::instance()->setMiniViewShowSpots(checked); });
+    layout->addWidget(showSpotsCheck);
+
+    // Help text
+    auto *helpLabel =
+        new QLabel("The panadapter can be toggled on and off using the arrow button on the mini view strip.", page);
+    helpLabel->setStyleSheet(QString("color: %1; font-size: %2px; font-style: italic;")
+                                 .arg(K4Styles::Colors::TextGray)
+                                 .arg(K4Styles::Dimensions::FontSizeLarge));
+    helpLabel->setWordWrap(true);
+    layout->addWidget(helpLabel);
+
+    layout->addStretch();
+    return page;
 }

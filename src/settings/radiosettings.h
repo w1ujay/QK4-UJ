@@ -159,6 +159,16 @@ public:
     // Mini view window position
     QPoint miniViewWindowPosition() const;
     void setMiniViewWindowPosition(const QPoint &pos);
+
+    // Mini view display options
+    bool miniViewShowBand() const;
+    void setMiniViewShowBand(bool show);
+    bool miniViewShowMode() const;
+    void setMiniViewShowMode(bool show);
+    bool miniViewShowSpots() const;
+    void setMiniViewShowSpots(bool show);
+    bool miniViewShowPanadapter() const;
+    void setMiniViewShowPanadapter(bool show);
     bool rfkitLowPowerEnabled() const;
     void setRfkitLowPowerEnabled(bool enabled);
     double rfkitMaxDrivePower() const;
@@ -215,6 +225,7 @@ signals:
     void audioOutputBufferChanged(int ms);
     void audioLatencyTargetChanged(int ms);
     void tcpNoDelayChanged(bool enabled);
+    void miniViewSettingsChanged();
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);

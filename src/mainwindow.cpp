@@ -3038,6 +3038,14 @@ void MainWindow::setupUi() {
         m_miniViewWindow->setModeA(m_modeALabel->text());
         m_miniViewWindow->setModeB(m_modeBLabel->text());
 
+        // Update panadapter state
+        QString modeStr = m_modeALabel->text();
+        m_miniViewWindow->setPanMode(modeStr);
+        m_miniViewWindow->setPanFilterBandwidth(m_radioState->filterBandwidth());
+        m_miniViewWindow->setPanIfShift(m_radioState->ifShift());
+        m_miniViewWindow->setPanCwPitch(m_radioState->cwPitch());
+        m_miniViewWindow->setPanNotchFilter(m_radioState->manualNotchEnabled(), m_radioState->manualNotchPitch());
+
         // Copy current spots
         if (m_n1mmListener) {
             m_miniViewWindow->clearSpots();
@@ -3563,6 +3571,41 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         showNormal();
         raise();
         activateWindow();
+    });
+
+    // Mini view BAND button → show band popup positioned above mini view
+    connect(m_miniViewWindow, &MiniViewWindow::bandClicked, this, [this]() {
+        if (m_bandPopup->isVisible()) {
+            m_bandPopup->hidePopup();
+        } else {
+            m_bandPopup->showAboveButton(m_miniViewWindow->bandButton());
+        }
+    });
+
+    // Mini view MODE button → show mode popup positioned above mini view
+    connect(m_miniViewWindow, &MiniViewWindow::modeClicked, this, [this]() {
+        if (m_modePopup->isVisible()) {
+            m_modePopup->hidePopup();
+        } else {
+            bool bSet = m_radioState->bSetEnabled();
+            if (bSet) {
+                m_modePopup->setFrequency(m_radioState->vfoB());
+                m_modePopup->setCurrentMode(static_cast<int>(m_radioState->modeB()));
+                m_modePopup->setCurrentDataSubMode(m_radioState->dataSubModeB());
+            } else {
+                m_modePopup->setFrequency(m_radioState->vfoA());
+                m_modePopup->setCurrentMode(static_cast<int>(m_radioState->mode()));
+                m_modePopup->setCurrentDataSubMode(m_radioState->dataSubMode());
+            }
+            m_modePopup->setBSetEnabled(bSet);
+            m_modePopup->showAboveButton(m_miniViewWindow->modeButton());
+        }
+    });
+
+    // Settings changes → update mini view visibility
+    connect(RadioSettings::instance(), &RadioSettings::miniViewSettingsChanged, this, [this]() {
+        if (m_miniViewWindow)
+            m_miniViewWindow->applySettings();
     });
 
     // Add the VFO row to main layout
@@ -4889,6 +4932,11 @@ void MainWindow::onMiniSpectrumData(int receiver, const QByteArray &data) {
         m_vfoA->updateMiniPan(data);
     } else if (receiver == 1 && m_vfoB->isMiniPanVisible()) {
         m_vfoB->updateMiniPan(data);
+    }
+
+    // Also route VFO A spectrum to mini view panadapter when visible
+    if (receiver == 0 && m_miniViewWindow && m_miniViewWindow->isVisible() && m_miniViewWindow->isPanadapterVisible()) {
+        m_miniViewWindow->updateSpectrum(data);
     }
 }
 

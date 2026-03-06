@@ -219,6 +219,45 @@ void RadioSettings::setMiniViewWindowPosition(const QPoint &pos) {
     m_settings.sync();
 }
 
+bool RadioSettings::miniViewShowBand() const {
+    return m_settings.value("miniview/showBand", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowBand(bool show) {
+    m_settings.setValue("miniview/showBand", show);
+    m_settings.sync();
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowMode() const {
+    return m_settings.value("miniview/showMode", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowMode(bool show) {
+    m_settings.setValue("miniview/showMode", show);
+    m_settings.sync();
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowSpots() const {
+    return m_settings.value("miniview/showSpots", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowSpots(bool show) {
+    m_settings.setValue("miniview/showSpots", show);
+    m_settings.sync();
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowPanadapter() const {
+    return m_settings.value("miniview/showPanadapter", false).toBool();
+}
+
+void RadioSettings::setMiniViewShowPanadapter(bool show) {
+    m_settings.setValue("miniview/showPanadapter", show);
+    m_settings.sync();
+}
+
 bool RadioSettings::rfkitLowPowerEnabled() const {
     return m_rfkitLowPowerEnabled;
 }

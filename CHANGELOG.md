@@ -4,6 +4,18 @@ All notable changes to QK4 will be documented in this file.
 This changelog is auto-generated from [conventional commits](https://www.conventionalcommits.org/) at release time.
 
 
+## [0.5.0-UJ.13] - 2026-03-06
+
+### Added
+
+- **ui: enhanced mini view** — expanded compact strip with band/mode controls and optional panadapter
+  - BAND and MODE buttons on the strip for quick selection without restoring full view
+  - Toggleable panadapter below the strip (arrow button) showing live VFO A spectrum
+  - New "Mini View" settings page in Options dialog to configure visible elements
+  - Configurable sections: BAND button, MODE button, N1MM spots (all on by default)
+  - Wider strip (780px) for better readability
+
+
 ## [0.5.0-UJ.12] - 2026-03-05
 
 ### Added

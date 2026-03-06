@@ -39,6 +39,7 @@ public:
         PageN1mm,
         PageKpa1500,
         PageRfkit,
+        PageMiniView,
         PageCount
     };
 
@@ -75,6 +76,7 @@ private:
     QWidget *createN1mmPage();
     QWidget *createRfkitPage();
     QWidget *createKpa1500Page();
+    QWidget *createMiniViewPage();
     void updateCatServerStatus();
     void updateN1mmStatus();
     void updateRfkitStatus();
