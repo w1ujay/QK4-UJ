@@ -699,9 +699,6 @@ bool SideControlPanel::eventFilter(QObject *watched, QEvent *event) {
             } else if (watched == m_voxBtn) {
                 emit qskClicked();
                 return true;
-            } else if (watched == m_antBtn) {
-                emit remAntClicked();
-                return true;
             } else if (watched == m_rxAntBtn) {
                 emit subAntClicked();
                 return true;

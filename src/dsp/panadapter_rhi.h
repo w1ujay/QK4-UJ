@@ -36,38 +36,36 @@ public:
     void setTunedFrequency(qint64 freq);
     void setFilterBandwidth(int bwHz);
     void setMode(const QString &mode);
+    void setDataSubMode(int subMode);
     void setIfShift(int shift);
     void setCwPitch(int pitchHz);
+    void setFskMarkTone(int toneHz);
     void clear();
 
     // Display settings
     void setGridEnabled(bool enabled);
-    void setPeakHoldEnabled(bool enabled);
     void setRefLevel(int level);
-    void setScale(int scale); // 25-150, affects display gain/range
+    void setScale(int scale); // 10-150, affects display gain/range
     void setSpan(int spanHz);
     void setWaterfallHeight(int percent); // 0-100: percentage of display for waterfall
     int span() const { return m_spanHz; }
     void setNotchFilter(bool enabled, int pitchHz);
     void setCursorVisible(bool visible);
     void setAmplitudeUnits(bool useSUnits); // false=dBm, true=S-units
+    void setAveraging(int level);           // 1-20: K4 #AVG display averaging
 
     // Secondary VFO (other receiver's passband)
-    void setSecondaryVfo(qint64 freq, int bwHz, const QString &mode, int ifShift, int cwPitch);
+    void setSecondaryVfo(qint64 freq, int bwHz, const QString &mode, int ifShift, int dataSubMode = 0);
     void setSecondaryVisible(bool visible);
     void setSecondaryPassbandColor(const QColor &color);
     void setSecondaryMarkerColor(const QColor &color);
 
-    // Color configuration (NEW: all colors configurable)
-    void setSpectrumBaseColor(const QColor &color);
-    void setSpectrumPeakColor(const QColor &color);
-    void setSpectrumLineColor(const QColor &color);
-    void setGridColor(const QColor &color);
-    void setPeakHoldColor(const QColor &color);
+    // Color configuration
     void setPassbandColor(const QColor &color);
     void setFrequencyMarkerColor(const QColor &color);
-    void setNotchColor(const QColor &color);
-    void setBackgroundGradient(const QColor &center, const QColor &edge);
+
+    // TX frequency marker (shows TX position when RIT/XIT splits TX from RX)
+    void setTxMarker(qint64 freq, bool visible);
 
     // Spot overlay
     SpotOverlayWidget *spotOverlay() const { return m_spotOverlay; }
@@ -117,9 +115,7 @@ private:
     float normalizeDb(float db);
     float freqToNormalized(qint64 freq);
     qint64 xToFreq(int x, int w);
-    QColor interpolateColor(const QColor &a, const QColor &b, float t);
-    QColor spectrumGradientColor(float t); // 5-stop teal-to-white gradient
-
+    int calculateGridInterval(int spanHz) const;
     // RHI resources
     QRhi *m_rhi = nullptr;
     std::unique_ptr<QRhiBuffer> m_waterfallVbo;
@@ -140,11 +136,11 @@ private:
     std::unique_ptr<QRhiGraphicsPipeline> m_overlayLinePipeline;
     std::unique_ptr<QRhiGraphicsPipeline> m_overlayTrianglePipeline;
     std::unique_ptr<QRhiBuffer> m_fullscreenQuadVbo; // Shared fullscreen quad for fragment-shader styles
-    // Spectrum amplitude style resources (LUT-based colors)
-    std::unique_ptr<QRhiGraphicsPipeline> m_spectrumBlueAmpPipeline;
-    std::unique_ptr<QRhiShaderResourceBindings> m_spectrumBlueAmpSrb;
-    std::unique_ptr<QRhiBuffer> m_spectrumBlueAmpUniformBuffer;
-    std::unique_ptr<QRhiTexture> m_spectrumColorLutTexture; // 256-entry color LUT
+    // Spectrum fill resources (LUT-based colors)
+    std::unique_ptr<QRhiGraphicsPipeline> m_spectrumFillPipeline;
+    std::unique_ptr<QRhiShaderResourceBindings> m_spectrumFillSrb;
+    std::unique_ptr<QRhiBuffer> m_spectrumFillUniformBuffer;
+    std::unique_ptr<QRhiTexture> m_spectrumFillLutTexture; // 256-entry color LUT for spectrum fill
     std::unique_ptr<QRhiShaderResourceBindings> m_waterfallSrb;
     std::unique_ptr<QRhiShaderResourceBindings> m_overlaySrb;
     std::unique_ptr<QRhiShaderResourceBindings> m_passbandSrb;
@@ -157,35 +153,51 @@ private:
     std::unique_ptr<QRhiBuffer> m_secondaryMarkerVbo;
     std::unique_ptr<QRhiBuffer> m_secondaryMarkerUniformBuffer;
     std::unique_ptr<QRhiShaderResourceBindings> m_secondaryMarkerSrb;
+    // TX marker buffers (shows TX position when RIT/XIT active)
+    std::unique_ptr<QRhiBuffer> m_txMarkerVbo;
+    std::unique_ptr<QRhiBuffer> m_txMarkerUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_txMarkerSrb;
+    // RTTY mark/space tone line buffers (primary VFO)
+    std::unique_ptr<QRhiBuffer> m_rttyMarkVbo;
+    std::unique_ptr<QRhiBuffer> m_rttyMarkUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_rttyMarkSrb;
+    std::unique_ptr<QRhiBuffer> m_rttySpaceVbo;
+    std::unique_ptr<QRhiBuffer> m_rttySpaceUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_rttySpaceSrb;
+    // RTTY mark/space tone line buffers (secondary VFO)
+    std::unique_ptr<QRhiBuffer> m_secRttyMarkVbo;
+    std::unique_ptr<QRhiBuffer> m_secRttyMarkUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_secRttyMarkSrb;
+    std::unique_ptr<QRhiBuffer> m_secRttySpaceVbo;
+    std::unique_ptr<QRhiBuffer> m_secRttySpaceUniformBuffer;
+    std::unique_ptr<QRhiShaderResourceBindings> m_secRttySpaceSrb;
     QRhiRenderPassDescriptor *m_rpDesc = nullptr;
 
     bool m_rhiInitialized = false;
     bool m_pipelinesCreated = false;
-    bool m_firstFrameRendered = false;
-
     // Shader stages (loaded from .qsb files)
-    QShader m_spectrumBlueVert;
-    QShader m_spectrumBlueAmpFrag;
+    QShader m_spectrumFillVert;
+    QShader m_spectrumFillFrag;
     QShader m_waterfallVert;
     QShader m_waterfallFrag;
     QShader m_overlayVert;
     QShader m_overlayFrag;
 
-    // Spectrum data
+    // Spectrum data (cropped to display span for live trace)
     QVector<float> m_currentSpectrum;
     QVector<float> m_rawSpectrum;
-    QVector<float> m_peakHold;
-
-    // K4 spectrum calibration: dBm = raw_byte - K4_DBM_OFFSET
-    // Calibrated by comparing peak signals with K4 display
-    static constexpr float K4_DBM_OFFSET = 146.0f;
-
+    // Full-tier spectrum data (all 1024 bins for waterfall storage)
+    QVector<float> m_tierSpectrum;
+    QVector<float> m_tierRawSpectrum;
+    qint32 m_lastTierSampleRate = 0; // Detect tier transitions to reset EMA
+    int m_waterfallTierBinCount = 0; // Bin count written to current waterfall row
+    float m_waterfallTierSpanHz = 0; // Tier span for current waterfall data
     // Waterfall data - sized for 4K/HiDPI displays
     // Memory: 4096 × 1024 × 1 byte = 4 MB (trivial for modern GPUs)
     static constexpr int BASE_WATERFALL_HISTORY = 1024;
     static constexpr int BASE_TEXTURE_WIDTH = 4096;
-    int m_textureWidth = BASE_TEXTURE_WIDTH;         // Scaled by devicePixelRatio
-    int m_waterfallHistory = BASE_WATERFALL_HISTORY; // Scaled by devicePixelRatio
+    int m_textureWidth = BASE_TEXTURE_WIDTH;
+    int m_waterfallHistory = BASE_WATERFALL_HISTORY;
     int m_waterfallWriteRow = 0;
     QVector<quint8> m_waterfallData;
     bool m_waterfallNeedsUpdate = false;
@@ -193,7 +205,7 @@ private:
 
     // Color LUT (256 RGBA entries) - for waterfall
     QVector<quint8> m_colorLUT;
-    // Spectrum color LUT (256 RGBA entries) - for BlueAmplitude style
+    // Spectrum color LUT (256 RGBA entries) for amplitude-based fill
     QVector<quint8> m_spectrumLUT;
 
     // Frequency info
@@ -203,8 +215,11 @@ private:
     qint64 m_tunedFreq = 0;
     int m_filterBw = 2400;
     QString m_mode = "USB";
+    int m_dataSubMode = 0;
     int m_ifShift = 50;
     int m_cwPitch = 500;
+    int m_fskMarkTone = 915; // FSK Mark-Tone (user-configurable from K4 front panel)
+    int m_rttyShift = 170;   // Fixed 170 Hz shift between Mark and Space
 
     // Display settings
     float m_minDb = -138.0f;
@@ -212,7 +227,6 @@ private:
     float m_spectrumRatio = 0.30f;
     float m_smoothedBaseline = 0.0f;
     bool m_gridEnabled = true;
-    bool m_peakHoldEnabled = true;
     int m_refLevel = -110;
     int m_scale = 75; // 10-150, default 75 (neutral)
     int m_spanHz = 10000;
@@ -229,32 +243,31 @@ private:
     qint64 m_secondaryTunedFreq = 0;
     int m_secondaryFilterBw = 0;
     QString m_secondaryMode = "";
+    int m_secondaryDataSubMode = 0;
     int m_secondaryIfShift = 50;
-    int m_secondaryCwPitch = 500;
     bool m_secondaryVisible = false;
     QColor m_secondaryPassbandColor{0, 255, 0, 64}; // Green 25% alpha
     QColor m_secondaryMarkerColor{0, 255, 0, 255};  // Green 100% alpha
 
-    // Colors (all configurable)
-    // Spectrum gradient uses spectrumGradientColor() for 5-stop lime-to-white
-    QColor m_spectrumBaseColor{20, 60, 20, 128};    // Visible dark lime (gradient stop 0.0)
-    QColor m_spectrumPeakColor{255, 255, 255, 255}; // Pure white peak (gradient stop 1.0)
-    QColor m_spectrumLineColor{50, 255, 50};        // Lime green line on top
-    QColor m_gridColor{160, 160, 160, 77};          // Light gray with 30% alpha
-    QColor m_peakHoldColor{255, 255, 255, 102};     // White with 40% alpha
-    QColor m_passbandColor{0, 191, 255, 64};        // Cyan with 25% alpha (VFO A default)
-    QColor m_frequencyMarkerColor{0, 140, 200};     // Darker cyan (VFO A default)
-    QColor m_notchColor{255, 0, 0};                 // Red
-    QColor m_bgCenterColor{56, 56, 56};             // Lighter gray at center
-    QColor m_bgEdgeColor{20, 20, 20};               // Darker at edges
+    // Colors
+    QColor m_gridColor{160, 160, 160, 77};      // Light gray with 30% alpha
+    QColor m_passbandColor{0, 191, 255, 64};    // Cyan with 25% alpha (VFO A default)
+    QColor m_frequencyMarkerColor{0, 140, 200}; // Darker cyan (VFO A default)
+    QColor m_notchColor{255, 0, 0};             // Red
 
-    // Peak hold decay
-    QTimer *m_peakDecayTimer = nullptr;
-    static constexpr float PEAK_DECAY_RATE = 0.5f;
+    // RTTY tone overlay colors
+    QColor m_rttyToneColor{255, 200, 0, 200};        // Yellow-orange for primary VFO
+    QColor m_secondaryRttyToneColor{0, 255, 0, 160}; // Green for secondary VFO
 
-    // Waterfall marker
-    QTimer *m_waterfallMarkerTimer = nullptr;
-    bool m_showWaterfallMarker = false;
+    // TX marker state
+    qint64 m_txFreq = 0;
+    bool m_txMarkerVisible = false;
+    QColor m_txMarkerColor{255, 60, 60, 160}; // Translucent red
+
+    // Display averaging (K4 #AVG control, 1-20)
+    int m_averagingLevel = 1;
+    float m_attackAlpha = 0.52f;
+    float m_decayAlpha = 0.34f;
 
     WheelAccumulator m_wheelAccumulator;
 

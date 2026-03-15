@@ -59,18 +59,6 @@ public slots:
     void setWaterfallHeightExt(int percent); // EXT: #HWFHxx;
 
 signals:
-    // Note: closed() signal is inherited from K4PopupBase
-
-    // Target toggle signals
-    void lcdToggled(bool enabled);
-    void extToggled(bool enabled);
-    void vfoAToggled(bool enabled);
-    void vfoBToggled(bool enabled);
-
-    // Menu item signals
-    void menuItemSelected(MenuItem item);
-    void alternateItemClicked(MenuItem item);
-
     // Span control signals
     void spanIncrementRequested();
     void spanDecrementRequested();
@@ -78,8 +66,6 @@ signals:
     // Ref level control signals
     void refLevelIncrementRequested();
     void refLevelDecrementRequested();
-    void autoRefLevelToggled(bool enabled);
-
     // Averaging control signals
     void averagingIncrementRequested();
     void averagingDecrementRequested();

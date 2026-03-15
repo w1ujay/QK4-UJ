@@ -5,7 +5,6 @@
 #include "../dsp/minipan_rhi.h"
 #include <QMouseEvent>
 #include <QKeyEvent>
-
 VFOWidget::VFOWidget(VFOType type, QWidget *parent)
     : QWidget(parent), m_type(type),
       m_primaryColor(type == VFO_A ? K4Styles::Colors::VfoACyan : K4Styles::Colors::VfoBGreen) {
@@ -268,23 +267,20 @@ void VFOWidget::showMiniPan() {
         m_stackedWidget->addWidget(m_miniPan); // Index 1
 
         // Apply pending configuration
-        if (m_pendingSpectrumColor.isValid()) {
-            m_miniPan->setSpectrumColor(m_pendingSpectrumColor);
-        } else {
-            // Default color based on VFO type
-            m_miniPan->setSpectrumColor(
-                QColor(m_type == VFO_A ? K4Styles::Colors::VfoACyan : K4Styles::Colors::VfoBGreen));
-        }
         if (m_pendingPassbandColor.isValid()) {
             m_miniPan->setPassbandColor(m_pendingPassbandColor);
         }
         if (!m_pendingMode.isEmpty()) {
             m_miniPan->setMode(m_pendingMode);
         }
+        m_miniPan->setDataSubMode(m_pendingDataSubMode);
         m_miniPan->setFilterBandwidth(m_pendingFilterBw);
         m_miniPan->setIfShift(m_pendingIfShift);
         m_miniPan->setCwPitch(m_pendingCwPitch);
         m_miniPan->setNotchFilter(m_pendingNotchEnabled, m_pendingNotchPitchHz);
+        if (m_pendingWaterfallHeight >= 0)
+            m_miniPan->setWaterfallHeight(m_pendingWaterfallHeight);
+        m_miniPan->setAveraging(m_pendingAveraging);
 
         // Connect mini-pan click to show normal view and emit signal
         connect(m_miniPan, &MiniPanRhiWidget::clicked, this, [this]() {
@@ -300,6 +296,12 @@ void VFOWidget::setMiniPanMode(const QString &mode) {
     m_pendingMode = mode;
     if (m_miniPan)
         m_miniPan->setMode(mode);
+}
+
+void VFOWidget::setMiniPanDataSubMode(int subMode) {
+    m_pendingDataSubMode = subMode;
+    if (m_miniPan)
+        m_miniPan->setDataSubMode(subMode);
 }
 
 void VFOWidget::setMiniPanFilterBandwidth(int bw) {
@@ -327,16 +329,22 @@ void VFOWidget::setMiniPanNotchFilter(bool enabled, int pitchHz) {
         m_miniPan->setNotchFilter(enabled, pitchHz);
 }
 
-void VFOWidget::setMiniPanSpectrumColor(const QColor &color) {
-    m_pendingSpectrumColor = color;
-    if (m_miniPan)
-        m_miniPan->setSpectrumColor(color);
-}
-
 void VFOWidget::setMiniPanPassbandColor(const QColor &color) {
     m_pendingPassbandColor = color;
     if (m_miniPan)
         m_miniPan->setPassbandColor(color);
+}
+
+void VFOWidget::setMiniPanWaterfallHeight(int percent) {
+    m_pendingWaterfallHeight = percent;
+    if (m_miniPan)
+        m_miniPan->setWaterfallHeight(percent);
+}
+
+void VFOWidget::setMiniPanAveraging(int level) {
+    m_pendingAveraging = level;
+    if (m_miniPan)
+        m_miniPan->setAveraging(level);
 }
 
 void VFOWidget::showNormal() {

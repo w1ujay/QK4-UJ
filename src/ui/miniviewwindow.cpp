@@ -255,7 +255,6 @@ void MiniViewWindow::togglePanadapter() {
             m_miniPan->setMinimumWidth(StripWidth - 4);
             m_miniPan->setMaximumWidth(StripWidth - 4);
             m_miniPan->setFixedHeight(PanHeight);
-            m_miniPan->setSpectrumColor(QColor(K4Styles::Colors::VfoACyan));
             m_mainLayout->addWidget(m_miniPan);
         }
         m_miniPan->setVisible(true);

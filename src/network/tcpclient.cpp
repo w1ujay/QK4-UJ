@@ -1,5 +1,6 @@
 #include "tcpclient.h"
 #include "../settings/radiosettings.h"
+#include <QDateTime>
 #include <QDebug>
 #include <QSslCipher>
 #include <QSslConfiguration>
@@ -47,7 +48,8 @@ TcpClient::TcpClient(QObject *parent)
 
             // Send initialization sequence
             // RDY triggers comprehensive state dump containing all radio state:
-            // FA, FB, MD, MD$, BW, BW$, IS, CW, KS, PC, SD (per mode), SQ, RG, SQ$, RG$,
+            // FA, FB, MD, MD$, BW, BW$, IS, IS$, CW, KS, PC, SD (per mode), SQ, RG, SQ$, RG$,
+            // RT, XT, RO, RT$, RO$, BS, AN, AR, AR$, PA, PA$, RA, RA$, NB, NB$, NR, NR$, NM, NM$,
             // #SPN, #REF, VXC, VXV, VXD, and all menu definitions (MEDF)
             sendCAT(K4Protocol::Commands::READY);              // Triggers comprehensive state dump
             sendCAT(K4Protocol::Commands::ENABLE_K4_MODE);     // Enable advanced K4 protocol mode
@@ -303,13 +305,17 @@ void TcpClient::onAuthTimeout() {
 
 void TcpClient::onPingTimer() {
     if (m_state == Connected) {
-        sendCAT(K4Protocol::Commands::PING);
+        qint64 epoch = QDateTime::currentSecsSinceEpoch();
+        sendCAT(QString("PING%1;").arg(epoch));
+        m_pingElapsed.start();
     }
 }
 
 void TcpClient::onCatResponse(const QString &response) {
-    Q_UNUSED(response);
-    // Verbose logging removed for performance
+    if (response.startsWith("PONG")) {
+        m_latencyMs = static_cast<int>(m_pingElapsed.elapsed());
+        emit latencyChanged(m_latencyMs);
+    }
 }
 
 void TcpClient::sendAuthentication() {

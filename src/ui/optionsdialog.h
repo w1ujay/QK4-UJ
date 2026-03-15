@@ -14,6 +14,7 @@
 #include <QHideEvent>
 #include <QSpinBox>
 #include <QDoubleSpinBox>
+#include <QMediaDevices>
 
 class RadioState;
 class AudioEngine;
@@ -65,8 +66,8 @@ private slots:
 private:
     void setupUi();
     void ensurePageCreated(int index);
-    void refreshCurrentPage();
     void refreshPage(int index);
+    void refreshAboutPage();
     QWidget *createAboutPage();
     QWidget *createKpodPage();
     QWidget *createAudioInputPage();
@@ -95,7 +96,14 @@ private:
     KPA1500Client *m_kpa1500Client;
     QListWidget *m_tabList;
     QStackedWidget *m_pageStack;
+    QMediaDevices *m_mediaDevices;
     bool m_pageCreated[PageCount] = {};
+
+    // About page elements (for live refresh on connect)
+    QLabel *m_aboutRadioIdLabel = nullptr;
+    QLabel *m_aboutRadioModelLabel = nullptr;
+    QWidget *m_aboutOptionsWidget = nullptr;
+    QWidget *m_aboutVersionsWidget = nullptr;
 
     // KPOD page elements (for real-time updates)
     QCheckBox *m_kpodEnableCheckbox = nullptr;
