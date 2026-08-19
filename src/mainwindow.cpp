@@ -377,6 +377,17 @@ void MainWindow::setupCatServer() {
     m_catServer->setTcpClient(m_connectionController->tcpClient());
 
     // Forward CAT commands from external apps to the real K4
+    // External CAT AG/AG$ drives QK4's own volume sliders — the slider's
+    // valueChanged handler then applies it to AudioController and persists it.
+    connect(m_catServer, &CatServer::volumeRequested, this, [this](int level) {
+        if (m_sideControlPanel)
+            m_sideControlPanel->setVolume(level);
+    });
+    connect(m_catServer, &CatServer::subVolumeRequested, this, [this](int level) {
+        if (m_sideControlPanel)
+            m_sideControlPanel->setSubVolume(level);
+    });
+
     connect(m_catServer, &CatServer::catCommandReceived, this, [this](const QString &command) {
         m_connectionController->sendCAT(command);
         // Optimistically update RadioState so the panadapter passband tracks immediately,

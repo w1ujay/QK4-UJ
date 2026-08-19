@@ -75,6 +75,11 @@ public:
     // Volume control
     int volume() const;
     int subVolume() const;
+    // Move the sliders programmatically (external CAT AG/AG$ control). These
+    // emit volumeChanged / subVolumeChanged so the normal handlers apply and
+    // persist the new level.
+    void setVolume(int value);
+    void setSubVolume(int value);
 
     // Monitor level (MON overlay)
     void updateMonitorLevel(int mode, int level);

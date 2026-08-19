@@ -8,10 +8,12 @@
 #include "catframes.h"
 #include "catpushbroadcaster.h"
 #include "models/radiostate.h"
+#include "settings/radiosettings.h"
 #include "protocol.h"
 #include "tcpclient.h"
 
 #include <QLoggingCategory>
+#include <QTimer>
 
 Q_LOGGING_CATEGORY(netCat, "net.cat")
 
@@ -180,25 +182,87 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         return QByteArray();
     }
 
-    // Extract command prefix (2-3 uppercase letters)
+    // Extract command prefix (2-3 uppercase letters, plus an optional '$' Sub-VFO
+    // suffix). The K4 uses '$' to address the sub receiver: MD$, BW$, RG$, AG$.
+    // Folding '$' into the prefix keeps those distinguishable from a SET value.
     QString prefix;
     QString args;
     for (int i = 0; i < command.length(); i++) {
         if (command[i].isLetter()) {
             prefix += command[i].toUpper();
+        } else if (command[i] == '$' && prefix.length() >= 2) {
+            prefix += '$';
         } else {
             args = command.mid(i);
             break;
         }
     }
 
-    // Handle VFO-B suffix GET queries (args == "$" means "query VFO B", no value to SET).
-    // The letter-only prefix extractor strips "$" into args, so "MD$;" arrives here as
-    // prefix="MD", args="$" and would otherwise fall through to the SET path.
-    if (args == "$") {
-        if (prefix == "MD") {
-            return CatFrames::modeB(m_radioState->modeB());
+    // TX/RX with no args — when QK4 owns the audio path, these gate the audio
+    // input rather than keying the K4 directly (the audio stream itself triggers
+    // K4 TX). CW/CW-R always forward: keying must reach the radio, and so must
+    // everything when QK4's audio is disabled. "TX/;" (toggle) carries args and
+    // falls through to the generic TX handler below.
+    if ((prefix == "TX" || prefix == "RX") && args.isEmpty()) {
+        const int mode = m_radioState->mode();
+        const bool forward =
+            !RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R;
+        if (forward) {
+            emit catCommandReceived(cmd);
+        } else {
+            emit pttRequested(prefix == "TX");
         }
+        if (prefix == "RX") {
+            m_cwPending = 0;
+        }
+        return QByteArray();
+    }
+
+    // RU/RD/RC (RIT up/down/clear) — the K4 doesn't echo RIT changes, so forward
+    // and then re-query offset and on/off state so the cache stays truthful.
+    if (prefix == "RU" || prefix == "RD" || prefix == "RC") {
+        emit catCommandReceived(cmd);
+        emit catCommandReceived(QStringLiteral("RT;"));
+        emit catCommandReceived(QStringLiteral("RO;"));
+        return QByteArray();
+    }
+
+    // UP/DN/UPB/DNB (VFO step) — forward verbatim.
+    if ((prefix == "UP" || prefix == "DN" || prefix == "UPB" || prefix == "DNB") && args.isEmpty()) {
+        emit catCommandReceived(cmd);
+        return QByteArray();
+    }
+
+    // RG+/RG-/RG/ and the RG$ sub-receiver variants (K4 firmware 2.x+). These
+    // suffixes look like SET values to the parser, so they're handled here.
+    // Optimistically apply, then re-query the K4 for the authoritative value.
+    if ((prefix == "RG" || prefix == "RG$") && (args == "+" || args == "-" || args == "/")) {
+        const bool sub = (prefix == "RG$");
+        const int current = sub ? m_radioState->rfGainB() : m_radioState->rfGain();
+        int &lastGain = sub ? m_lastRfGainB : m_lastRfGain;
+
+        emit catCommandReceived(cmd);
+
+        int next = current;
+        if (args == "+") {
+            next = qMax(0, current - 1);
+        } else if (args == "-") {
+            next = qMin(60, current + 1);
+        } else if (current > 0) {
+            lastGain = current;
+            next = 0;
+        } else {
+            next = lastGain > 0 ? lastGain : 20;
+        }
+
+        if (sub) {
+            m_radioState->setRfGainB(next);
+            emit catCommandReceived(QStringLiteral("RG$;"));
+        } else {
+            m_radioState->setRfGain(next);
+            emit catCommandReceived(QStringLiteral("RG;"));
+        }
+        return QByteArray();
     }
 
     // Handle GET commands (no args) - respond from RadioState
@@ -270,11 +334,41 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         if (prefix == "AI") {
             return CatFrames::aiMode(m_broadcaster->clientAiMode(client));
         }
-        if (prefix == "TB") {
-            return QByteArray("TB000;"); // No CW messages queued
+        if (prefix == "MD$") {
+            return CatFrames::modeB(m_radioState->modeB());
         }
+        if (prefix == "BW$") {
+            return QString("BW$%1;").arg(m_radioState->filterBandwidthB(), 4, 10, QChar('0')).toUtf8();
+        }
+        if (prefix == "RG") {
+            return QString("RG-%1;").arg(m_radioState->rfGain(), 2, 10, QChar('0')).toUtf8();
+        }
+        if (prefix == "RG$") {
+            return QString("RG$-%1;").arg(m_radioState->rfGainB(), 2, 10, QChar('0')).toUtf8();
+        }
+        // KY GET — keyer buffer space: KY0; = room available, KY1; = full.
+        // The K4's buffer holds ~60 characters; report full from 50 pending.
+        if (prefix == "KY") {
+            return QString("KY%1;").arg(m_cwPending >= 50 ? 1 : 0).toUtf8();
+        }
+        // TB — text buffer status: TBtaa; t=pending(0-9), aa=RX decode counts.
+        // NOTE: built by concatenation, not QString::arg — "TB%100;" makes Qt read
+        // "%10" as placeholder index 10 and silently drops a digit.
+        if (prefix == "TB") {
+            return QByteArray("TB") + QByteArray::number(qBound(0, m_cwPending, 9)) + "00;";
+        }
+        // SB — sub RX status: 3=diversity, 1=sub RX on, 0=off.
         if (prefix == "SB") {
-            return QByteArray("SB0;"); // Sub RX off by default
+            int subStatus = 0;
+            if (m_radioState->diversityEnabled()) {
+                subStatus = 3;
+            } else if (m_radioState->subReceiverEnabled()) {
+                subStatus = 1;
+            }
+            return QString("SB%1;").arg(subStatus).toUtf8();
+        }
+        if (prefix == "PB") {
+            return QByteArray("PB0;"); // Playback idle
         }
         if (prefix == "DV") {
             return CatFrames::diversity(m_radioState->diversityEnabled());
@@ -285,8 +379,15 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         if (prefix == "PCX") {
             return CatFrames::rfPowerExtended(m_radioState->rfPower(), m_radioState->isQrpMode());
         }
-        if (prefix == "AG") {
-            return QByteArray("AG000;");
+        // AG/AG$ — while QK4 owns the audio path these report QK4's own volume;
+        // otherwise the K4 is authoritative and the query is forwarded.
+        if (prefix == "AG" || prefix == "AG$") {
+            if (RadioSettings::instance()->audioEnabled()) {
+                const int vol = (prefix == "AG") ? m_mainVolume : m_subVolume;
+                return QString("%1%2;").arg(prefix).arg(vol, 3, 10, QChar('0')).toUtf8();
+            }
+            emit catCommandReceived(cmd);
+            return QByteArray();
         }
         if (prefix == "SQ") {
             return QByteArray("SQ000;");
@@ -327,6 +428,41 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         qCDebug(netCat) << "   PTT request: OFF";
         emit pttRequested(false);
         return QByteArray();
+    }
+
+    // KY SET — track how much CW text is outstanding so KY;/TB; can report
+    // buffer pressure to contest loggers, then forward the text to the K4.
+    if (prefix == "KY") {
+        if (args == "0") {
+            m_cwPending = 0; // KY0; aborts the pending message
+        } else {
+            m_cwPending = args.trimmed().length();
+            // The K4 drains the buffer at keyer speed; decay on that schedule.
+            const int wpm = qMax(1, m_radioState->keyerSpeed());
+            const int charsPerSec = qMax(1, wpm / 6);
+            const int clearMs = qMax(500, (m_cwPending * 1000) / charsPerSec);
+            QTimer::singleShot(clearMs, this, [this]() { m_cwPending = 0; });
+        }
+        emit catCommandReceived(cmd);
+        return QByteArray();
+    }
+
+    // AG/AG$ SET — drive QK4's own volume when it owns the audio path.
+    // The K4's AG range is 000-060, not 000-255.
+    if (prefix == "AG" || prefix == "AG$") {
+        if (RadioSettings::instance()->audioEnabled()) {
+            const int gain = qBound(0, args.toInt(), 60);
+            const int percent = (gain * 100 + 30) / 60; // 0-60 -> 0-100, rounded
+            if (prefix == "AG") {
+                m_mainVolume = gain;
+                emit volumeRequested(percent);
+            } else {
+                m_subVolume = gain;
+                emit subVolumeRequested(percent);
+            }
+            return QByteArray();
+        }
+        // Audio disabled — fall through and let the K4 handle it.
     }
 
     // SET commands (have args) - forward to real K4

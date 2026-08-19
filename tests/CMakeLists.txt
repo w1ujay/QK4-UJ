@@ -164,6 +164,7 @@ add_test(NAME ProtocolTests COMMAND test_protocol)
 
 # CatServer command handler tests
 add_executable(test_catserver test_catserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
     ${CMAKE_SOURCE_DIR}/src/network/catserver.cpp
     ${CMAKE_SOURCE_DIR}/src/network/catframes.cpp
     ${CMAKE_SOURCE_DIR}/src/network/catpushbroadcaster.cpp

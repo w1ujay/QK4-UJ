@@ -3,6 +3,8 @@
 #include <QTest>
 #include "models/radiostate.h"
 #include "network/catserver.h"
+#include "settings/radiosettings.h"
+#include <QSettings>
 
 class TestCatServer : public QObject {
     Q_OBJECT
@@ -50,6 +52,15 @@ private:
     }
 
 private slots:
+    void initTestCase() {
+        // Redirect QSettings to a throwaway org/app so these tests never touch
+        // the developer's real QK4 configuration (CatServer reads RadioSettings
+        // for the audio-enable gate).
+        QCoreApplication::setOrganizationName("QK4Test");
+        QCoreApplication::setApplicationName("CatServerTest");
+        QSettings().clear();
+    }
+
     // =========================================================================
     // GET command responses (answered from RadioState cache)
     // =========================================================================
@@ -556,6 +567,220 @@ private slots:
 
         QString response = sendCommand(server, "PCX;");
         QCOMPARE(response, QString("PCX005L;"));
+    }
+
+    // =========================================================================
+    // UJ fork extensions
+    // =========================================================================
+
+    void testSubVfoBandwidthQuery() {
+        RadioState rs;
+        rs.parseCATCommand("BW$0400;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        // Mirrors CatFrames::filterBandwidth: raw Hz, zero-padded to 4 digits.
+        QCOMPARE(sendCommand(server, "BW$;"), QString("BW$4000;"));
+    }
+
+    void testRfGainQuery() {
+        RadioState rs;
+        rs.parseCATCommand("RG-20;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "RG;"), QString("RG-20;"));
+    }
+
+    void testSubRfGainQuery() {
+        RadioState rs;
+        rs.parseCATCommand("RG$-15;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "RG$;"), QString("RG$-15;"));
+    }
+
+    void testRfGainIncrementForwardsAndRequeries() {
+        RadioState rs;
+        rs.parseCATCommand("RG-20;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        sendCommand(server, "RG+;");
+
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("RG+;"));
+        QCOMPARE(spy.at(1).at(0).toString(), QString("RG;"));
+    }
+
+    void testRfGainToggleZeroesThenRestores() {
+        RadioState rs;
+        rs.parseCATCommand("RG-20;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        sendCommand(server, "RG/;");
+        QCOMPARE(rs.rfGain(), 0);
+
+        sendCommand(server, "RG/;");
+        QCOMPARE(rs.rfGain(), 20);
+    }
+
+    void testRitUpRequeriesRitState() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        sendCommand(server, "RU;");
+
+        QCOMPARE(spy.count(), 3);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("RU;"));
+        QCOMPARE(spy.at(1).at(0).toString(), QString("RT;"));
+        QCOMPARE(spy.at(2).at(0).toString(), QString("RO;"));
+    }
+
+    void testVfoStepCommandsForward() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        sendCommand(server, "UP;");
+        sendCommand(server, "DNB;");
+
+        QCOMPARE(spy.count(), 2);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("UP;"));
+        QCOMPARE(spy.at(1).at(0).toString(), QString("DNB;"));
+    }
+
+    void testAudioGainSetEmitsVolumeRequest() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::volumeRequested);
+
+        sendCommand(server, "AG030;");
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 50); // 30 of 60 -> 50%
+    }
+
+    void testSubAudioGainSetEmitsSubVolumeRequest() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::subVolumeRequested);
+
+        sendCommand(server, "AG$060;");
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toInt(), 100);
+    }
+
+    void testAudioGainQueryReturnsLocalVolume() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        sendCommand(server, "AG030;");
+        QCOMPARE(sendCommand(server, "AG;"), QString("AG030;"));
+    }
+
+    void testAudioGainForwardedWhenAudioDisabled() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        sendCommand(server, "AG030;");
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("AG030;"));
+        RadioSettings::instance()->setAudioEnabled(true);
+    }
+
+    void testTxForwardedToK4InCwMode() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        rs.parseCATCommand("MD3;"); // CW
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
+        QSignalSpy pttSpy(&server, &CatServer::pttRequested);
+
+        sendCommand(server, "TX;");
+
+        // CW keying must reach the K4 directly, not gate the audio path.
+        QCOMPARE(catSpy.count(), 1);
+        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+        QCOMPARE(pttSpy.count(), 0);
+    }
+
+    void testSubReceiverStatus() {
+        RadioState rs;
+        rs.parseCATCommand("SB1;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "SB;"), QString("SB1;"));
+    }
+
+    void testDiversityReportedAsSubStatusThree() {
+        RadioState rs;
+        rs.parseCATCommand("DV1;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "SB;"), QString("SB3;"));
+    }
+
+    void testKeyerBufferEmptyByDefault() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY0;"));
+        QCOMPARE(sendCommand(server, "TB;"), QString("TB000;"));
+    }
+
+    void testKeyerTextTracksPendingAndForwards() {
+        RadioState rs;
+        rs.parseCATCommand("KS020;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+
+        sendCommand(server, "KY CQ TEST;");
+
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("KY CQ TEST;"));
+        // "CQ TEST" is 7 chars pending; KY still reports space available
+        QCOMPARE(sendCommand(server, "TB;"), QString("TB700;"));
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY0;"));
+    }
+
+    void testPlaybackStatus() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "PB;"), QString("PB0;"));
     }
 };
 
