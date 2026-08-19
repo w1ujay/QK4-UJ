@@ -18,7 +18,7 @@ class QVBoxLayout;
  * - Shows VFO A/B frequencies with mode indicators
  * - MODE and BAND buttons for quick selection
  * - Optional panadapter display below the strip
- * - Scrolling spot list from N1MM
+ * - Scrolling spot list from the DX cluster
  * - Draggable, position saved/restored
  * - Double-click to restore full view
  */
