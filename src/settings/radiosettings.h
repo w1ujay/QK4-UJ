@@ -3,6 +3,7 @@
 
 #include <QMap>
 #include <QObject>
+#include <QPoint>
 #include <QSettings>
 #include <QString>
 #include <QVector>
@@ -162,6 +163,40 @@ public:
     bool bandPlanOverlayEnabled() const;
     void setBandPlanOverlayEnabled(bool enabled);
 
+    // Audio master enable (fork-only): gates CatServer TX/RX and AG routing
+    bool audioEnabled() const;
+    void setAudioEnabled(bool enabled);
+
+    // RFKit Amplifier settings
+    QString rfkitHost() const;
+    void setRfkitHost(const QString &host);
+    quint16 rfkitPort() const;
+    void setRfkitPort(quint16 port);
+    bool rfkitEnabled() const;
+    void setRfkitEnabled(bool enabled);
+    int rfkitPollInterval() const;
+    void setRfkitPollInterval(int intervalMs);
+    QPoint rfkitWindowPosition() const;
+    void setRfkitWindowPosition(const QPoint &pos);
+    bool rfkitLowPowerEnabled() const;
+    void setRfkitLowPowerEnabled(bool enabled);
+    double rfkitMaxDrivePower() const;
+    void setRfkitMaxDrivePower(double watts);
+    bool rfkitTempFahrenheit() const;
+    void setRfkitTempFahrenheit(bool fahrenheit);
+
+    // Mini View window settings
+    QPoint miniViewWindowPosition() const;
+    void setMiniViewWindowPosition(const QPoint &pos);
+    bool miniViewShowBand() const;
+    void setMiniViewShowBand(bool show);
+    bool miniViewShowMode() const;
+    void setMiniViewShowMode(bool show);
+    bool miniViewShowSpots() const;
+    void setMiniViewShowSpots(bool show);
+    bool miniViewShowPanadapter() const;
+    void setMiniViewShowPanadapter(bool show);
+
 signals:
     void radiosChanged();
     void kpodEnabledChanged(bool enabled);
@@ -184,6 +219,13 @@ signals:
     void kpodPlusSettingsChanged();
     void iaruRegionChanged(int region);
     void bandPlanOverlayEnabledChanged(bool enabled);
+    void audioEnabledChanged(bool enabled);
+    void rfkitEnabledChanged(bool enabled);
+    void rfkitSettingsChanged();
+    void rfkitPollIntervalChanged(int intervalMs);
+    void rfkitLowPowerChanged();
+    void rfkitTempUnitChanged(bool fahrenheit);
+    void miniViewSettingsChanged();
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);
@@ -229,6 +271,18 @@ private:
     // KPOD+ encode mode (0=KZ, 1=KX). Keyer speed / CW pitch / iambic mode /
     // paddle orientation are not stored — the KPOD+ mirrors the K4.
     int m_kpodPlusEncodeMode = 0;
+
+    // Audio master enable
+    bool m_audioEnabled = true;
+
+    // RFKit Amplifier settings
+    QString m_rfkitHost;
+    quint16 m_rfkitPort = 8080;
+    bool m_rfkitEnabled = false;
+    int m_rfkitPollInterval = 1000; // Default: 1000ms for HTTP polling
+    bool m_rfkitLowPowerEnabled = false;
+    double m_rfkitMaxDrivePower = 1.5; // Default: 1.5W max K4 drive power
+    bool m_rfkitTempFahrenheit = false;
 
     QSettings m_settings;
 };

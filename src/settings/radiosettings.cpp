@@ -229,6 +229,168 @@ void RadioSettings::setBandPlanOverlayEnabled(bool enabled) {
     }
 }
 
+// ============== Audio Master Enable ==============
+
+bool RadioSettings::audioEnabled() const {
+    return m_audioEnabled;
+}
+
+void RadioSettings::setAudioEnabled(bool enabled) {
+    if (m_audioEnabled != enabled) {
+        m_audioEnabled = enabled;
+        save();
+        emit audioEnabledChanged(enabled);
+    }
+}
+
+// ============== RFKit Amplifier Settings ==============
+
+QString RadioSettings::rfkitHost() const {
+    return m_rfkitHost;
+}
+
+void RadioSettings::setRfkitHost(const QString &host) {
+    if (m_rfkitHost != host) {
+        m_rfkitHost = host;
+        save();
+        emit rfkitSettingsChanged();
+    }
+}
+
+quint16 RadioSettings::rfkitPort() const {
+    return m_rfkitPort;
+}
+
+void RadioSettings::setRfkitPort(quint16 port) {
+    if (m_rfkitPort != port) {
+        m_rfkitPort = port;
+        save();
+        emit rfkitSettingsChanged();
+    }
+}
+
+bool RadioSettings::rfkitEnabled() const {
+    return m_rfkitEnabled;
+}
+
+void RadioSettings::setRfkitEnabled(bool enabled) {
+    if (m_rfkitEnabled != enabled) {
+        m_rfkitEnabled = enabled;
+        save();
+        emit rfkitEnabledChanged(enabled);
+    }
+}
+
+int RadioSettings::rfkitPollInterval() const {
+    return m_rfkitPollInterval;
+}
+
+void RadioSettings::setRfkitPollInterval(int intervalMs) {
+    intervalMs = qBound(100, intervalMs, 10000);
+    if (m_rfkitPollInterval != intervalMs) {
+        m_rfkitPollInterval = intervalMs;
+        save();
+        emit rfkitPollIntervalChanged(intervalMs);
+    }
+}
+
+QPoint RadioSettings::rfkitWindowPosition() const {
+    int x = m_settings.value("rfkit/windowX", 0).toInt();
+    int y = m_settings.value("rfkit/windowY", 0).toInt();
+    return QPoint(x, y);
+}
+
+void RadioSettings::setRfkitWindowPosition(const QPoint &pos) {
+    m_settings.setValue("rfkit/windowX", pos.x());
+    m_settings.setValue("rfkit/windowY", pos.y());
+}
+
+bool RadioSettings::rfkitLowPowerEnabled() const {
+    return m_rfkitLowPowerEnabled;
+}
+
+void RadioSettings::setRfkitLowPowerEnabled(bool enabled) {
+    if (m_rfkitLowPowerEnabled != enabled) {
+        m_rfkitLowPowerEnabled = enabled;
+        save();
+        emit rfkitLowPowerChanged();
+    }
+}
+
+double RadioSettings::rfkitMaxDrivePower() const {
+    return m_rfkitMaxDrivePower;
+}
+
+void RadioSettings::setRfkitMaxDrivePower(double watts) {
+    watts = qBound(0.1, watts, 100.0);
+    if (!qFuzzyCompare(m_rfkitMaxDrivePower, watts)) {
+        m_rfkitMaxDrivePower = watts;
+        save();
+        emit rfkitLowPowerChanged();
+    }
+}
+
+bool RadioSettings::rfkitTempFahrenheit() const {
+    return m_rfkitTempFahrenheit;
+}
+
+void RadioSettings::setRfkitTempFahrenheit(bool fahrenheit) {
+    if (m_rfkitTempFahrenheit != fahrenheit) {
+        m_rfkitTempFahrenheit = fahrenheit;
+        save();
+        emit rfkitTempUnitChanged(fahrenheit);
+    }
+}
+
+// ============== Mini View Window Settings ==============
+
+QPoint RadioSettings::miniViewWindowPosition() const {
+    int x = m_settings.value("miniview/windowX", 0).toInt();
+    int y = m_settings.value("miniview/windowY", 0).toInt();
+    return QPoint(x, y);
+}
+
+void RadioSettings::setMiniViewWindowPosition(const QPoint &pos) {
+    m_settings.setValue("miniview/windowX", pos.x());
+    m_settings.setValue("miniview/windowY", pos.y());
+}
+
+bool RadioSettings::miniViewShowBand() const {
+    return m_settings.value("miniview/showBand", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowBand(bool show) {
+    m_settings.setValue("miniview/showBand", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowMode() const {
+    return m_settings.value("miniview/showMode", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowMode(bool show) {
+    m_settings.setValue("miniview/showMode", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowSpots() const {
+    return m_settings.value("miniview/showSpots", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowSpots(bool show) {
+    m_settings.setValue("miniview/showSpots", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowPanadapter() const {
+    return m_settings.value("miniview/showPanadapter", false).toBool();
+}
+
+void RadioSettings::setMiniViewShowPanadapter(bool show) {
+    m_settings.setValue("miniview/showPanadapter", show);
+    emit miniViewSettingsChanged();
+}
+
 int RadioSettings::micGain() const {
     return m_settings.value("audio/micGain", 25).toInt();
 }
@@ -622,6 +784,18 @@ void RadioSettings::load() {
             }
         }
     }
+
+    // Audio master enable
+    m_audioEnabled = m_settings.value("audio/enabled", true).toBool();
+
+    // RFKit Amplifier settings
+    m_rfkitHost = m_settings.value("rfkit/host", "").toString();
+    m_rfkitPort = m_settings.value("rfkit/port", 8080).toUInt();
+    m_rfkitEnabled = m_settings.value("rfkit/enabled", false).toBool();
+    m_rfkitPollInterval = m_settings.value("rfkit/pollInterval", 1000).toInt();
+    m_rfkitLowPowerEnabled = m_settings.value("rfkit/lowPowerEnabled", false).toBool();
+    m_rfkitMaxDrivePower = m_settings.value("rfkit/maxDrivePower", 1.5).toDouble();
+    m_rfkitTempFahrenheit = m_settings.value("rfkit/tempFahrenheit", false).toBool();
 }
 
 void RadioSettings::sortRadios() {
@@ -718,6 +892,18 @@ void RadioSettings::save() {
         }
         m_settings.setValue(prefix + "bands", bandsList.join(","));
     }
+
+    // Audio master enable
+    m_settings.setValue("audio/enabled", m_audioEnabled);
+
+    // RFKit Amplifier settings
+    m_settings.setValue("rfkit/host", m_rfkitHost);
+    m_settings.setValue("rfkit/port", m_rfkitPort);
+    m_settings.setValue("rfkit/enabled", m_rfkitEnabled);
+    m_settings.setValue("rfkit/pollInterval", m_rfkitPollInterval);
+    m_settings.setValue("rfkit/lowPowerEnabled", m_rfkitLowPowerEnabled);
+    m_settings.setValue("rfkit/maxDrivePower", m_rfkitMaxDrivePower);
+    m_settings.setValue("rfkit/tempFahrenheit", m_rfkitTempFahrenheit);
 
     m_settings.sync();
 }
