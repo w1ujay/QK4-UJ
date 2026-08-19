@@ -120,6 +120,7 @@ set(SOURCES
     src/network/catframes.cpp
     src/network/catpushbroadcaster.cpp
     src/network/k4discovery.cpp
+    src/network/rfkitclient.cpp
     src/audio/audioengine.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
@@ -202,6 +203,8 @@ set(SOURCES
     src/ui/overlays/monoverlay.cpp
     src/ui/overlays/baloverlay.cpp
     src/utils/wheelaccumulator.cpp
+    src/ui/rfkitpanel.cpp
+    src/ui/rfkitwindow.cpp
     src/hardware/kpoddevice.cpp
     src/hardware/kpodhidworker.cpp
     src/hardware/kpodplusdevice.cpp
@@ -260,6 +263,7 @@ set(HEADERS
     src/network/catframes.h
     src/network/catpushbroadcaster.h
     src/network/k4discovery.h
+    src/network/rfkitclient.h
     src/audio/audioengine.h
     src/audio/opusdecoder.h
     src/audio/opusencoder.h
@@ -334,6 +338,8 @@ set(HEADERS
     src/ui/overlays/monoverlay.h
     src/ui/overlays/baloverlay.h
     src/utils/wheelaccumulator.h
+    src/ui/rfkitpanel.h
+    src/ui/rfkitwindow.h
     src/hardware/kpoddevice.h
     src/hardware/kpodhidworker.h
     src/hardware/kpodplusdevice.h
