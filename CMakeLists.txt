@@ -207,6 +207,7 @@ set(SOURCES
     src/utils/wheelaccumulator.cpp
     src/ui/rfkitpanel.cpp
     src/ui/rfkitwindow.cpp
+    src/ui/miniviewwindow.cpp
     src/hardware/kpoddevice.cpp
     src/hardware/kpodhidworker.cpp
     src/hardware/kpodplusdevice.cpp
@@ -344,6 +345,7 @@ set(HEADERS
     src/utils/wheelaccumulator.h
     src/ui/rfkitpanel.h
     src/ui/rfkitwindow.h
+    src/ui/miniviewwindow.h
     src/hardware/kpoddevice.h
     src/hardware/kpodhidworker.h
     src/hardware/kpodplusdevice.h
