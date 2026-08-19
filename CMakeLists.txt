@@ -171,6 +171,7 @@ set(SOURCES
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
     src/ui/pages/kpa1500page.cpp
+    src/ui/pages/rfkitpage.cpp
     src/ui/pages/dxclusterpage.cpp
     src/ui/overlays/dxspotoverlay.cpp
     src/ui/widgets/rightsidepanel.cpp
@@ -310,6 +311,7 @@ set(HEADERS
     src/ui/pages/cwkeyerpage.h
     src/ui/pages/kpodpage.h
     src/ui/pages/kpa1500page.h
+    src/ui/pages/rfkitpage.h
     src/ui/pages/dxclusterpage.h
     src/ui/overlays/dxspotoverlay.h
     src/ui/widgets/rightsidepanel.h

@@ -7,6 +7,7 @@
 #include "ui/pages/cwkeyerpage.h"
 #include "ui/pages/kpodpage.h"
 #include "ui/pages/kpa1500page.h"
+#include "ui/pages/rfkitpage.h"
 #include "ui/pages/dxclusterpage.h"
 #include "ui/styling/k4constants.h"
 #include "controllers/audiocontroller.h"
@@ -15,10 +16,10 @@
 
 OptionsDialog::OptionsDialog(RadioState *radioState, AudioController *audioController,
                              HardwareController *hardwareController, CatServer *catServer, KPA1500Client *kpa1500Client,
-                             DxClusterController *dxClusterController, QWidget *parent)
+                             RFKitClient *rfkitClient, DxClusterController *dxClusterController, QWidget *parent)
     : QDialog(parent), m_radioState(radioState), m_audioController(audioController),
       m_hardwareController(hardwareController), m_catServer(catServer), m_kpa1500Client(kpa1500Client),
-      m_dxClusterController(dxClusterController) {
+      m_rfkitClient(rfkitClient), m_dxClusterController(dxClusterController) {
     setWindowModality(Qt::ApplicationModal);
     setupUi();
 }
@@ -59,6 +60,7 @@ void OptionsDialog::setupUi() {
     m_tabList->addItem("HaliKey");
     m_tabList->addItem("K-Pod");
     m_tabList->addItem("KPA1500");
+    m_tabList->addItem("RFKit");
     m_tabList->addItem("DX Cluster");
     m_tabList->setCurrentRow(0);
 
@@ -138,6 +140,10 @@ void OptionsDialog::ensurePageCreated(int index) {
         m_kpa1500Page = new Kpa1500Page(m_kpa1500Client, this);
         page = m_kpa1500Page;
         break;
+    case PageRfkit:
+        m_rfkitPage = new RfkitPage(m_rfkitClient, this);
+        page = m_rfkitPage;
+        break;
     case PageDxCluster:
         m_dxClusterPage = new DxClusterPage(m_dxClusterController, this);
         page = m_dxClusterPage;
@@ -183,6 +189,10 @@ void OptionsDialog::refreshPage(int index) {
     case PageKpa1500:
         if (m_kpa1500Page)
             m_kpa1500Page->refresh();
+        break;
+    case PageRfkit:
+        if (m_rfkitPage)
+            m_rfkitPage->refresh();
         break;
     case PageDxCluster:
         if (m_dxClusterPage)

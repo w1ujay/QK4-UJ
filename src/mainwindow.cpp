@@ -421,7 +421,8 @@ void MainWindow::setupMenuBar() {
     connect(optionsAction, &QAction::triggered, this, [this]() {
         if (!m_optionsDialog) {
             m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
-                                                m_kpa1500UiController->client(), m_dxClusterController, this);
+                                                m_kpa1500UiController->client(), m_rfkitUiController->client(),
+                                                m_dxClusterController, this);
         }
         m_optionsDialog->show();
         m_optionsDialog->raise();

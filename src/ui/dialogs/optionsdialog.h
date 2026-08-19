@@ -13,6 +13,7 @@ class AudioController;
 class HardwareController;
 class CatServer;
 class KPA1500Client;
+class RFKitClient;
 class DxClusterController;
 class AboutPage;
 class StationPage;
@@ -22,6 +23,7 @@ class RigControlPage;
 class CwKeyerPage;
 class KpodPage;
 class Kpa1500Page;
+class RfkitPage;
 class DxClusterPage;
 
 /**
@@ -42,13 +44,15 @@ public:
         PageCwKeyer,
         PageKpod,
         PageKpa1500,
+        PageRfkit,
         PageDxCluster,
         PageCount
     };
 
     explicit OptionsDialog(RadioState *radioState, AudioController *audioController,
                            HardwareController *hardwareController, CatServer *catServer, KPA1500Client *kpa1500Client,
-                           DxClusterController *dxClusterController, QWidget *parent = nullptr);
+                           RFKitClient *rfkitClient, DxClusterController *dxClusterController,
+                           QWidget *parent = nullptr);
     ~OptionsDialog();
 
 protected:
@@ -65,6 +69,7 @@ private:
     HardwareController *m_hardwareController;
     CatServer *m_catServer;
     KPA1500Client *m_kpa1500Client;
+    RFKitClient *m_rfkitClient;
     DxClusterController *m_dxClusterController;
     QListWidget *m_tabList;
     QStackedWidget *m_pageStack;
@@ -80,6 +85,7 @@ private:
     CwKeyerPage *m_cwKeyerPage = nullptr;
     KpodPage *m_kpodPage = nullptr;
     Kpa1500Page *m_kpa1500Page = nullptr;
+    RfkitPage *m_rfkitPage = nullptr;
     DxClusterPage *m_dxClusterPage = nullptr;
 };
 
