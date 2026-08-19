@@ -36,6 +36,7 @@
 #include "controllers/cwcontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include "controllers/kpa1500uicontroller.h"
+#include "controllers/miniviewcontroller.h"
 #include "controllers/rfkituicontroller.h"
 #include "network/catserver.h"
 #include "controllers/statusbarcontroller.h"
@@ -166,6 +167,25 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // RIT/XIT state change emitted by the controller.
     connect(m_ritXitController, &RitXitController::displayRefreshRequested, m_vfoFrequencyController,
             &VfoFrequencyController::refresh);
+
+    // Mini view — created last so every controller and widget it observes exists.
+    m_miniViewController = new MiniViewController(m_radioState, m_dxClusterController, m_vfoA, m_vfoB, this, this);
+    connect(m_bottomMenuBar, &BottomMenuBar::miniClicked, this, [this]() {
+        m_miniViewController->showMiniView();
+        hide();
+    });
+    connect(m_miniViewController, &MiniViewController::restoreRequested, this, [this]() {
+        show();
+        raise();
+        activateWindow();
+    });
+    connect(m_miniViewController, &MiniViewController::bandPopupRequested, this, [this]() { toggleBandPopup(); });
+    connect(m_miniViewController, &MiniViewController::modePopupRequested, this,
+            [this]() { m_modePopupController->toggleForVfoA(m_modeALabel); });
+    connect(m_connectionController, &ConnectionController::spectrumDataReceived, this,
+            [this](int receiver, const QByteArray &payload, int, int, qint64, int, int) {
+                m_miniViewController->onSpectrumData(receiver, payload);
+            });
 
     setupCatServer();
 }

@@ -46,6 +46,7 @@ class CwController;
 class DxClusterController;
 class KPA1500UiController;
 class RFKitUiController;
+class MiniViewController;
 class CatServer;
 class OptionsDialog;
 class NotificationWidget;
@@ -201,6 +202,9 @@ private:
 
     // RFKit amplifier UI controller (owns the RFKitClient and floating window)
     RFKitUiController *m_rfkitUiController;
+
+    // Mini view UI controller (owns the parentless MiniViewWindow)
+    MiniViewController *m_miniViewController;
 
     // DX Cluster controller
     DxClusterController *m_dxClusterController;
