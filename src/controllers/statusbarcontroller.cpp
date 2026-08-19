@@ -124,6 +124,14 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
     m_kpa1500StatusLabel->hide(); // Hidden when not enabled
     layout->addWidget(m_kpa1500StatusLabel);
 
+    // RFKit amplifier status (to left of K4 status, beside KPA1500)
+    m_rfkitStatusLabel = new QLabel("", m_container);
+    m_rfkitStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
+                                          .arg(K4Styles::Colors::InactiveGray)
+                                          .arg(K4Styles::Dimensions::FontSizeButton));
+    m_rfkitStatusLabel->hide(); // Hidden when not enabled
+    layout->addWidget(m_rfkitStatusLabel);
+
     // K4 connection status
     m_connectionStatusLabel = new QLabel("K4", m_container);
     m_connectionStatusLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
@@ -260,6 +268,16 @@ void StatusBarController::setKpa1500Status(const QString &text, const QString &s
     m_kpa1500StatusLabel->setText(text);
     if (!styleSheet.isEmpty())
         m_kpa1500StatusLabel->setStyleSheet(styleSheet);
+}
+
+void StatusBarController::setRfkitVisible(bool visible) {
+    m_rfkitStatusLabel->setVisible(visible);
+}
+
+void StatusBarController::setRfkitStatus(const QString &text, const QString &styleSheet) {
+    m_rfkitStatusLabel->setText(text);
+    if (!styleSheet.isEmpty())
+        m_rfkitStatusLabel->setStyleSheet(styleSheet);
 }
 
 void StatusBarController::onPowerButtonClicked() {

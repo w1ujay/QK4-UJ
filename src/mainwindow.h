@@ -45,6 +45,7 @@ class HardwareController;
 class CwController;
 class DxClusterController;
 class KPA1500UiController;
+class RFKitUiController;
 class CatServer;
 class OptionsDialog;
 class NotificationWidget;
@@ -197,6 +198,9 @@ private:
 
     // KPA1500 amplifier UI controller (owns the KPA1500Client)
     KPA1500UiController *m_kpa1500UiController;
+
+    // RFKit amplifier UI controller (owns the RFKitClient and floating window)
+    RFKitUiController *m_rfkitUiController;
 
     // DX Cluster controller
     DxClusterController *m_dxClusterController;

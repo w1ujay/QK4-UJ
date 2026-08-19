@@ -45,6 +45,8 @@ public:
     void clearReadings();
     void setKpa1500Visible(bool visible);
     void setKpa1500Status(const QString &text, const QString &styleSheet);
+    void setRfkitVisible(bool visible);
+    void setRfkitStatus(const QString &text, const QString &styleSheet);
 
     // Connection-state indicator transitions. Each sets the K4 status label
     // text and style appropriate for that state. Disconnected also resets
@@ -68,6 +70,7 @@ private:
     IconTextLabel *m_voltageField;
     QLabel *m_connectionStatusLabel;
     QLabel *m_kpa1500StatusLabel;
+    QLabel *m_rfkitStatusLabel;
     NetHealthWidget *m_netHealthWidget;
     PowerStatusButton *m_powerButton;
     QTimer *m_clockTimer;

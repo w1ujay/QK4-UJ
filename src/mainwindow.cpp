@@ -36,6 +36,7 @@
 #include "controllers/cwcontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include "controllers/kpa1500uicontroller.h"
+#include "controllers/rfkituicontroller.h"
 #include "network/catserver.h"
 #include "controllers/statusbarcontroller.h"
 #include "settings/radiosettings.h"
@@ -122,6 +123,7 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     setupHardwareController();
 
     m_kpa1500UiController = new KPA1500UiController(m_statusBarController, m_rightSidePanel, this);
+    m_rfkitUiController = new RFKitUiController(m_statusBarController, m_radioState, this);
 
     m_processingDisplayController = new ProcessingDisplayController(m_radioState, m_vfoA, m_vfoB, this);
 
@@ -1197,6 +1199,9 @@ void MainWindow::onRadioReady() {
     // KPA connectivity is gated on K4 connectivity — see KPA1500UiController.
     m_kpa1500UiController->connectIfEnabled();
 
+    // RFKit connectivity is gated on K4 connectivity — see RFKitUiController.
+    m_rfkitUiController->connectIfEnabled();
+
     // Auto-connect all DX cluster entries marked for auto-connect
     QString dxCall = RadioSettings::instance()->dxClusterCallsign();
     if (!dxCall.isEmpty()) {
@@ -1267,6 +1272,7 @@ void MainWindow::resetUiForDisconnect() {
     m_statusBarController->clearReadings();
     m_menuController->clearModel();
     m_kpa1500UiController->disconnectFromHost();
+    m_rfkitUiController->disconnectFromHost();
 
     m_modeLabelController->reset();
     m_antennaDisplayController->reset();

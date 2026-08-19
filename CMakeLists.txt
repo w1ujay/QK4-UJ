@@ -94,6 +94,7 @@ set(SOURCES
     src/controllers/featuremenucontroller.cpp
     src/controllers/popupmanager.cpp
     src/controllers/kpa1500uicontroller.cpp
+    src/controllers/rfkituicontroller.cpp
     src/controllers/modepopupcontroller.cpp
     src/controllers/bandnavigationcontroller.cpp
     src/controllers/buttonrowdispatcher.cpp
@@ -237,6 +238,7 @@ set(HEADERS
     src/controllers/featuremenucontroller.h
     src/controllers/popupmanager.h
     src/controllers/kpa1500uicontroller.h
+    src/controllers/rfkituicontroller.h
     src/controllers/modepopupcontroller.h
     src/controllers/bandnavigationcontroller.h
     src/controllers/buttonrowdispatcher.h
