@@ -1,0 +1,2 @@
+baseline: ba6e3d18c418979c4174dcb1e0a04f7c6ef95a87 Revert "ci(release): fetch release-notes history without the blobs"
+14/14 ctest pass
