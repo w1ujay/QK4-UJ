@@ -1,0 +1,57 @@
+name: Build Windows
+
+run-name: Build Windows ${{ github.ref_name }}
+
+# Fork-only (QK4-UJ) on-demand Windows build.
+#
+# WHY this file exists: the fork's default branch still carries an older
+# build-windows.yml, so the Actions UI lists "Build Windows" from there and then
+# runs this same path from whichever branch is selected. Unlike upstream's
+# build.yml it builds Windows only, so it needs no macOS signing secrets and a
+# fork run stays green. The build steps themselves live in _build-windows.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Optional suffix appended to "<branch>-<sha>" (e.g. "rc1"); leave blank for none.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Derive version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Derive version
+        id: derive
+        env:
+          SUFFIX: ${{ inputs.version_suffix }}
+        run: |
+          # Slashes are legal in ref names but not in filenames.
+          BRANCH=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${BRANCH}-${SHORT_SHA}"
+          if [ -n "$SUFFIX" ]; then
+            VERSION="${VERSION}-${SUFFIX}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Derived version: $VERSION"
+
+  windows:
+    needs: version
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
