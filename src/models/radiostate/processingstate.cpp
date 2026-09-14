@@ -140,7 +140,7 @@ void handleNRSub(ProcessingState &state, RadioState &owner, const QString &cmd) 
 }
 
 void handleNRS(ProcessingState &state, RadioState &owner, const QString &cmd) {
-    // NRSnnm : nn=level 00-10, m=on/off (peer to LMS NR, mutually exclusive on K4)
+    // NRSnnm : nn=level 00-20, m=on/off (peer to LMS NR, mutually exclusive on K4)
     if (cmd.length() < 4)
         return;
     const QString nrStr = cmd.mid(3);
