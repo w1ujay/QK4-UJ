@@ -177,4 +177,25 @@ void setTxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, con
         emit owner.txAntCfgChanged();
 }
 
+int nextRxAntenna(int currentAr, bool displayAll, const QVector<bool> &mask, int atuMode) {
+    // WHY: the K4 ignores the SW70/SW157 switch codes from network clients, so
+    // RX ANT / SUB ANT step AR/AR$ directly. Order follows the ACM/ACS bits:
+    // ANT1 ANT2 ANT3 RX1 RX2 =TX ANT. The 7th bit (=OPP TX ANT) has no AR value.
+    static const int arForMaskIndex[6] = {5, 6, 7, 4, 1, 2};
+
+    QVector<int> rotation;
+    for (int i = 0; i < 6; i++) {
+        const int ar = arForMaskIndex[i];
+        if (atuMode == 0 && ar >= 5)
+            continue; // AR5-7 route through the KAT4 ATU
+        if (displayAll || (i < mask.size() && mask[i]))
+            rotation.append(ar);
+    }
+    if (rotation.isEmpty())
+        return -1;
+
+    // indexOf returns -1 for a value outside the rotation, which starts at the first entry.
+    return rotation.at((rotation.indexOf(currentAr) + 1) % rotation.size());
+}
+
 } // namespace AntennaHandlers

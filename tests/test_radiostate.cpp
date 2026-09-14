@@ -1001,6 +1001,53 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
+    // --- RX ANT / SUB ANT rotation (nextRxAntenna) ---
+    // The K4 ignores SW70/SW157 from network clients, so QK4 steps AR/AR$ itself.
+    // Rotation follows ACM/ACS bit order: ANT1(AR5) ANT2(AR6) ANT3(AR7) RX1(AR4)
+    // RX2(AR1) =TX ANT(AR2). =OPP TX ANT has no AR value and is never selected.
+    void testNextRxAntennaDisplayAllCyclesInConfigOrder() {
+        const QVector<bool> none(7, false);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(5, true, none, 2), 6);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(6, true, none, 2), 7);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(7, true, none, 2), 4);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(4, true, none, 2), 1);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(1, true, none, 2), 2);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(2, true, none, 2), 5); // wraps
+    }
+
+    void testNextRxAntennaSubsetSkipsDisabled() {
+        // ANT1, RX1, RX2, =TX ANT enabled (the ACM1001110 example from the K4 reference)
+        const QVector<bool> mask = {true, false, false, true, true, true, false};
+        QCOMPARE(AntennaHandlers::nextRxAntenna(5, false, mask, 2), 4);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(4, false, mask, 2), 1);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(1, false, mask, 2), 2);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(2, false, mask, 2), 5);
+    }
+
+    void testNextRxAntennaWithoutAtuSkipsAtuAntennas() {
+        // AT0 = KAT4 not installed: AR5-7 are invalid per the K4 reference
+        const QVector<bool> none(7, false);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(4, true, none, 0), 1);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(1, true, none, 0), 2);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(2, true, none, 0), 4);
+    }
+
+    void testNextRxAntennaOutsideRotationStartsAtFirst() {
+        const QVector<bool> none(7, false);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(-1, true, none, 2), 5); // not yet known
+        QCOMPARE(AntennaHandlers::nextRxAntenna(0, true, none, 2), 5);  // disconnected
+        QCOMPARE(AntennaHandlers::nextRxAntenna(3, true, none, 2), 5);  // internal XVTR
+    }
+
+    void testNextRxAntennaEmptyRotationReturnsMinusOne() {
+        const QVector<bool> none(7, false);
+        QCOMPARE(AntennaHandlers::nextRxAntenna(2, false, none, 2), -1);
+        const QVector<bool> oppOnly = {false, false, false, false, false, false, true};
+        QCOMPARE(AntennaHandlers::nextRxAntenna(2, false, oppOnly, 2), -1);
+        const QVector<bool> atuOnly = {true, true, true, false, false, false, false};
+        QCOMPARE(AntennaHandlers::nextRxAntenna(5, false, atuOnly, 0), -1);
+    }
+
     // --- AT (ATU mode, 0-2) ---
     void testAtuModeBypass() {
         RadioState rs;

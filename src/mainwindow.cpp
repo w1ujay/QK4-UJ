@@ -610,10 +610,20 @@ void MainWindow::setupUi() {
             [this]() { m_connectionController->sendCAT("SW134;"); });
     connect(m_sideControlPanel, &SideControlPanel::antClicked, this,
             [this]() { m_connectionController->sendCAT("SW60;"); });
-    connect(m_sideControlPanel, &SideControlPanel::rxAntClicked, this,
-            [this]() { m_connectionController->sendCAT("SW70;"); });
-    connect(m_sideControlPanel, &SideControlPanel::subAntClicked, this,
-            [this]() { m_connectionController->sendCAT("SW157;"); });
+    // WHY: the K4 ignores the RX ANT / SUB ANT switch codes (SW70/SW157) from
+    // network clients, so step the AR/AR$ selection through the ACM/ACS rotation.
+    connect(m_sideControlPanel, &SideControlPanel::rxAntClicked, this, [this]() {
+        const int next = AntennaHandlers::nextRxAntenna(m_radioState->rxAntennaMain(), m_radioState->mainRxDisplayAll(),
+                                                        m_radioState->mainRxAntMask(), m_radioState->atuMode());
+        if (next >= 0)
+            m_connectionController->sendCAT(QString("AR%1;").arg(next));
+    });
+    connect(m_sideControlPanel, &SideControlPanel::subAntClicked, this, [this]() {
+        const int next = AntennaHandlers::nextRxAntenna(m_radioState->rxAntennaSub(), m_radioState->subRxDisplayAll(),
+                                                        m_radioState->subRxAntMask(), m_radioState->atuMode());
+        if (next >= 0)
+            m_connectionController->sendCAT(QString("AR$%1;").arg(next));
+    });
 
     // Connect MON/NORM/BAL SW commands
     connect(m_sideControlPanel, &SideControlPanel::swCommandRequested, this,

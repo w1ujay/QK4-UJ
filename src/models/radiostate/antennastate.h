@@ -53,6 +53,10 @@ void setMainRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll,
 void setSubRxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask);
 void setTxAntConfig(AntennaState &state, RadioState &owner, bool displayAll, const QVector<bool> &mask);
 
+// Next AR/AR$ value in the RX ANT / SUB ANT rotation, or -1 if nothing is
+// selectable. mask is the 7-entry ACM/ACS enable list; atuMode is AT (0 = no KAT4).
+int nextRxAntenna(int currentAr, bool displayAll, const QVector<bool> &mask, int atuMode);
+
 } // namespace AntennaHandlers
 
 #endif // MODELS_RADIOSTATE_ANTENNASTATE_H
