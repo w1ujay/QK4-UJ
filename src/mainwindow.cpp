@@ -509,23 +509,30 @@ void MainWindow::setupMenuBar() {
 
     // Help menu
     QMenu *helpMenu = menuBar()->addMenu("&Help");
-    QAction *aboutAction = new QAction("&About QK4", this);
+    QAction *aboutAction = new QAction("&About QK4-UJ", this);
     aboutAction->setMenuRole(QAction::AboutRole); // macOS: moves to app menu
     connect(aboutAction, &QAction::triggered, this, [this]() {
-        QMessageBox::about(this, "About QK4",
-                           QString("<h2>QK4</h2>"
+        QMessageBox::about(this, "About QK4-UJ",
+                           QString("<h2>QK4-UJ</h2>"
                                    "<p>Version %1</p>"
                                    "<p>Remote control application for Elecraft K4 radios.</p>"
                                    "<p>Copyright &copy; 2025-2026 Mike Garcia &mdash; KF5O</p>"
+                                   "<p>Fork modifications copyright &copy; 2026 Jay Corriveau &mdash; W1UJ</p>"
                                    "<p>Licensed under the GNU General Public License v3.0</p>"
-                                   "<p><a href='https://github.com/mikeg-dal/QK4'>github.com/mikeg-dal/QK4</a></p>")
+                                   "<p><a href='https://github.com/w1ujay/QK4-UJ'>"
+                                   "github.com/w1ujay/QK4-UJ</a><br>"
+                                   "Based on <a href='https://github.com/mikeg-dal/QK4'>"
+                                   "github.com/mikeg-dal/QK4</a></p>")
                                .arg(QCoreApplication::applicationVersion()));
     });
     helpMenu->addAction(aboutAction);
 }
 
 void MainWindow::setupUi() {
-    setWindowTitle("QK4");
+    // WHY: fork CI builds are versioned "<branch>-<sha>", which reads oddly after a "v".
+    const QString version = QCoreApplication::applicationVersion();
+    const bool numericVersion = !version.isEmpty() && version.front().isDigit();
+    setWindowTitle(QString(numericVersion ? "QK4-UJ v%1" : "QK4-UJ %1").arg(version));
     setMinimumSize(1340, 840);
     resize(1340, 840); // Default to minimum size on launch
 

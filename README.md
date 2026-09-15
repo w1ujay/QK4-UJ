@@ -1,10 +1,10 @@
-# QK4
+# QK4-UJ
 
-A cross-platform desktop application for remote control of Elecraft K4 radios over TCP/IP with real-time audio streaming and spectrum display.
+> **Fork of [QK4](https://github.com/mikeg-dal/QK4)** by Mike Garcia (KF5O) — a cross-platform desktop application for remote control of Elecraft K4 radios over TCP/IP with real-time audio streaming and spectrum display.
 
-[![Release](https://img.shields.io/github/v/release/mikeg-dal/QK4?include_prereleases)](https://github.com/mikeg-dal/QK4/releases)
-[![Build](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/release.yml)
-[![CI](https://github.com/mikeg-dal/QK4/actions/workflows/ci.yml/badge.svg)](https://github.com/mikeg-dal/QK4/actions/workflows/ci.yml)
+This fork (maintained by Jay Corriveau, W1UJ) adds RFKit amplifier support, a compact Mini View window, CatServer extensions for N1MM Logger+ and hardware controllers, and keyboard and mini-pan tuning. See [Fork Changes](#fork-changes-uj-branch) below and [CHANGELOG-UJ.md](CHANGELOG-UJ.md) for details.
+
+[![Build Windows](https://github.com/w1ujay/QK4-UJ/actions/workflows/build-windows.yml/badge.svg?branch=ujay-mods-v2)](https://github.com/w1ujay/QK4-UJ/actions/workflows/build-windows.yml)
 
 ## Supported Platforms
 
@@ -31,8 +31,9 @@ A cross-platform desktop application for remote control of Elecraft K4 radios ov
 
 ## Download
 
-Pre-built releases are available on the [Releases](https://github.com/mikeg-dal/QK4/releases) page.
+Upstream QK4 releases are on the [QK4 Releases](https://github.com/mikeg-dal/QK4/releases) page; they don't include this fork's changes.
 
+QK4-UJ Windows builds come from the on-demand [Build Windows](https://github.com/w1ujay/QK4-UJ/actions/workflows/build-windows.yml) workflow: run it on the `ujay-mods-v2` branch and download the artifact from the finished run. The window title shows the build's version, for example `QK4-UJ ujay-mods-v2-1a2b3c4`.
 
 ### Windows Prerequisite
 
@@ -227,10 +228,30 @@ src/
 └── hardware/             # KPOD, KPOD+, HaliKey USB device support
 ```
 
+## Fork Changes (UJ Branch)
+
+Key additions in this fork, rebuilt on upstream v0.7:
+
+- **RFKit Amplifier** — HTTP client with a readout panel and floating window, a status-bar indicator, and a drive-power lockout that puts the amplifier in standby when K4 power exceeds a set maximum. Settings page under Options.
+- **Mini View** — Compact dual-VFO window (MINI button) with an optional mini panadapter and DX spot strip. Tune with the arrow keys or the mouse wheel over a frequency.
+- **CatServer (port 9299)** — Extended for N1MM Logger+ and hardware controllers
+  - `$`-suffix commands (`MD$`, `BW$`, `RG$`, `AG$`) and RF gain adjust (`RG+`/`RG-`/`RG/`)
+  - RIT (`RU`/`RD`/`RC`) and VFO step (`UP`/`DN`/`UPB`/`DNB`) pass-through
+  - Keyer buffer (`KY;`, `TB;`), sub-receiver status (`SB;`), and `PB;`
+  - `AG`/`AG$` mapped to QK4's local volume sliders
+- **Keyboard Tuning** — Up/Down tunes the active VFO by the tuning step (VFO B with B SET), respecting VFO lock; Up/Down on a digit during frequency entry tunes by that digit's place value
+- **Mini-Pan Right-Click** — Right-click a VFO mini-pan or the Mini View pan to tune VFO B there, with CW pitch and RIT handled
+- **Tuning** — VFO and panadapter wheel tuning snap to the step grid and respect VFO lock
+- **Antenna** — RX ANT and SUB ANT buttons work over the network
+
+Full details in [CHANGELOG-UJ.md](CHANGELOG-UJ.md).
+
 ## License
 
 QK4 — Remote control application for Elecraft K4 radios
 Copyright (C) 2025-2026 Mike Garcia — KF5O
+
+QK4-UJ fork modifications Copyright (C) 2026 Jay Corriveau — W1UJ
 
 This program is free software: you can redistribute it and/or modify it under the terms of the
 [GNU General Public License](LICENSE) as published by the Free Software Foundation, either version 3
