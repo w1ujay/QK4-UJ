@@ -10,13 +10,14 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 
 | ID | Item | Type | Effort | Decision |
 |----|------|------|--------|----------|
-| B1 | Mini View pan blank + zero-padded frequencies | Bug (v2) | M | |
+| B1 | Mini View pan blank + zero-padded frequencies | Bug (v2) | M | Keep — done, on-air test pending |
 | B2 | Audio-enable UI + gating (inherited-off risk) | Port gap / bug risk | S–M | |
 | B3 | CAT `IF` data sub-mode (fldigi RTTY) | Port gap | S | |
 | N1 | Bundle BarnCat Sparks with the Windows distro | New | M | |
 | N2 | "Launch Sparks" button in the GUI | New | S | |
-| N3 | Tune up/down in Mini View | New | S | |
-| P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | |
+| N3 | Tune up/down in Mini View | New | S | Keep — done, on-air test pending |
+| N4 | Right-click a mini-pan to tune VFO B | New | S | Keep — done, on-air test pending |
+| P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | Keep — tuning done; Esc/KY0 dropped |
 | P2 | MON button double-toggle fix | Port gap | S | |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
 | P4 | RF gain "RF-n" indicator on VFO row | Port gap | S | |
@@ -59,7 +60,10 @@ Five separate causes, all verified in code except #5:
    window. Create the widget up front in `setupUi()`, and drop translucency (opaque background + `setMask()`
    for rounded corners) if still see-through.
 
-**Notes:**
+**Notes:** Done 2026-09-14. All five fixed. Kept lazy pan creation (a hidden QRhiWidget breaks QRhiWidget init,
+per `vfowidget.cpp`) and removed `WA_TranslucentBackground` instead; the window now has square corners. On-air
+check: pan draws, ±1.0 kHz in CW on first toggle, frequencies read `7.031.415`, VFO A mini-pan still works after
+returning to the main window.
 
 ### B2. Audio-enable UI + gating
 `RadioSettings::audioEnabled` and the CatServer checks were ported, but there's no checkbox and no gating of
@@ -108,7 +112,18 @@ when Sparks isn't found. Placement TBD (bottom menu bar, Fn popup, or Options).
 Mini View has no tuning. Options: up/down step buttons, arrow keys (shares code with P1), or mouse wheel on
 the mini pan. Reuse the step math from the main wheel handlers (`RadioUtils::tuningStepToHz`).
 
-**Notes:**
+**Notes:** Done 2026-09-14: Up/Down when Mini View has focus (active VFO per B SET), mouse wheel over the A or
+B frequency tunes that VFO. No new buttons.
+
+### N4. Right-click a mini-pan to tune VFO B
+Right-click on the VFO A or VFO B mini-pan, or on the Mini View pan, tunes VFO B to the clicked frequency,
+matching the main panadapter's L=A R=B rule. Uses the mini-pan span (2 kHz CW/FSK/AFSK, 10 kHz otherwise)
+and CW/CW-R pitch on both sides (`RadioUtils::miniPanClickToDialHz`), snaps to B's step, respects VFO B lock and
+Mouse QSY "Left Only". Left-click unchanged.
+
+**Notes:** Done 2026-09-14. RIT on the clicked VFO is included (the mini-pan is centered on the receive
+passband). On-air check: assumes the K4 centers MiniPAN on the passband like QK4 draws it (dial in SSB,
+dial ± pitch in CW) — confirm a right-clicked signal lands in VFO B's passband, also with RIT at +0.50.
 
 ---
 
@@ -121,7 +136,12 @@ DualControlButton and MonOverlay; Esc sends `KY0`. At HEAD, `MainWindow::keyPres
 lock checks (fork lacked them). Esc already closes popups/overlays, so a global `KY0` may surprise; route via
 `CwController` instead.
 
-**Notes:**
+**Notes:** Tuning done 2026-09-14: Up/Down tunes VFO A (VFO B with B SET) by the step, snapped like the pan
+wheel, respecting lock — also works when a button has focus (`ButtonTuneKeyFilter`). Up/Down on the cursor digit
+in frequency entry tunes by that digit's place value (sent as `FA…;FA;` with no local update, so a refused
+value can't stick; ignored once digits are typed). VFO A/B frequency wheel now also snaps and respects lock;
+stepping down from an off-grid frequency lands on the nearest grid point (panadapter wheel too).
+Esc → KY0 dropped by decision. DualControlButton/MonOverlay arrow keys not ported.
 
 ### P2. MON button double-toggle fix
 Fork 034642a: only send `SW128` when opening the MON overlay. At HEAD `sidecontrolpanel.cpp:166-174` sends
