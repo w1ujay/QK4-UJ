@@ -150,11 +150,30 @@ int miniPanOffsetHz(double x, double width, int spanHz) {
     return qRound((x / width - 0.5) * spanHz);
 }
 
-qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign,
-                            int cwPitchHz) {
-    // WHY: the mini-pan is centered on the passband, which in CW sits at dial + pitch (CW-R: dial - pitch).
-    const qint64 rfHz = sourceDialHz + sourcePitchSign * cwPitchHz + offsetHz;
-    return rfHz - targetPitchSign * cwPitchHz;
+qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz,
+                            int sourceRitHz, int targetRitHz) {
+    // WHY: the mini-pan is centered on the receive passband: dial + RIT, and in CW dial + pitch (CW-R: - pitch).
+    const qint64 rfHz = sourceDialHz + sourceRitHz + sourcePitchSign * cwPitchHz + offsetHz;
+    return rfHz - targetPitchSign * cwPitchHz - targetRitHz;
+}
+
+qint64 PendingTune::base(qint64 radioHz, qint64 nowMs) const {
+    return (m_active && nowMs - m_sentAtMs <= HOLD_MS) ? m_targetHz : radioHz;
+}
+
+void PendingTune::sent(qint64 targetHz, qint64 nowMs) {
+    m_targetHz = targetHz;
+    m_sentAtMs = nowMs;
+    m_active = true;
+}
+
+void PendingTune::radioReported(qint64 radioHz) {
+    if (m_active && radioHz == m_targetHz)
+        m_active = false;
+}
+
+void PendingTune::clear() {
+    m_active = false;
 }
 
 bool isValidIpv4(const QString &s) {

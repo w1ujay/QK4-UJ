@@ -12,6 +12,7 @@
 #include "settings/radiosettings.h"
 #include "models/radiostate.h"
 #include "ui/widgets/vfowidget.h"
+#include "utils/radioutils.h"
 
 class AudioController;
 class SpectrumController;
@@ -101,6 +102,9 @@ private:
     void tuneVfoByHz(bool vfoB, qint64 deltaHz);
     // Up/Down (no modifiers) tunes VFO A, or VFO B while B SET is on. Returns true if handled.
     bool handleTuneKey(QKeyEvent *event);
+    // Last un-echoed digit-tune target per VFO, so rapid Up/Down presses don't collapse into one step
+    RadioUtils::PendingTune m_pendingDigitTuneA;
+    RadioUtils::PendingTune m_pendingDigitTuneB;
     void setupCatServer();
 
     void updateConnectionState(TcpClient::ConnectionState state);

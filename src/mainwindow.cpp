@@ -783,6 +783,8 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // Connect VFO A wheel tuning and Up/Down digit tuning in frequency entry
     connect(m_vfoA, &VFOWidget::frequencyScrolled, this, [this](int steps) { tuneVfoBySteps(false, steps); });
     connect(m_vfoA, &VFOWidget::digitTuneRequested, this, [this](qint64 deltaHz) { tuneVfoByHz(false, deltaHz); });
+    connect(m_radioState, &RadioState::frequencyChanged, this,
+            [this](quint64 freq) { m_pendingDigitTuneA.radioReported(static_cast<qint64>(freq)); });
 
     // Set Mini-Pan A passband color to cyan (matching VFO A theme)
     QColor vfoAPassband(K4Styles::Colors::VfoACyan);
@@ -1116,6 +1118,8 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // Connect VFO B wheel tuning and Up/Down digit tuning in frequency entry
     connect(m_vfoB, &VFOWidget::frequencyScrolled, this, [this](int steps) { tuneVfoBySteps(true, steps); });
     connect(m_vfoB, &VFOWidget::digitTuneRequested, this, [this](qint64 deltaHz) { tuneVfoByHz(true, deltaHz); });
+    connect(m_radioState, &RadioState::frequencyBChanged, this,
+            [this](quint64 freq) { m_pendingDigitTuneB.radioReported(static_cast<qint64>(freq)); });
 
     m_vfoB->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(m_vfoB, 1);
@@ -1398,6 +1402,8 @@ void MainWindow::tuneVfoToFrequency(bool vfoB, qint64 freq) {
         return;
     if (vfoB ? m_radioState->lockB() : m_radioState->lockA())
         return;
+    // A direct tune updates RadioState below, so any pending digit-tune target is now stale
+    (vfoB ? m_pendingDigitTuneB : m_pendingDigitTuneA).clear();
     QString cmd = QString("%1%2;").arg(vfoB ? "FB" : "FA").arg(static_cast<quint64>(freq), 11, 10, QChar('0'));
     m_connectionController->sendCAT(cmd);
     // Optimistic update — the K4 doesn't echo frequency SETs
@@ -1416,14 +1422,20 @@ void MainWindow::tuneVfoByHz(bool vfoB, qint64 deltaHz) {
     // WHY no optimistic update: digit tuning can jump far (the entry cursor starts on the 1 GHz digit).
     // If the K4 refuses the value, a local update would leave RadioState stuck on it, so send the SET
     // plus a query (like typed frequency entry) and let the radio's reply set the display.
+    // Presses arriving before that reply build on the pending target instead of the stale radio value.
     if (!m_connectionController->isConnected())
         return;
     if (vfoB ? m_radioState->lockB() : m_radioState->lockA())
         return;
     const qint64 current = static_cast<qint64>(vfoB ? m_radioState->vfoB() : m_radioState->vfoA());
-    const qint64 freq = current + deltaHz;
-    if (current <= 0 || freq <= 0)
+    if (current <= 0)
         return;
+    RadioUtils::PendingTune &pending = vfoB ? m_pendingDigitTuneB : m_pendingDigitTuneA;
+    const qint64 now = QDateTime::currentMSecsSinceEpoch();
+    const qint64 freq = pending.base(current, now) + deltaHz;
+    if (freq <= 0)
+        return;
+    pending.sent(freq, now);
     const QString vfo = vfoB ? "FB" : "FA";
     m_connectionController->sendCAT(QString("%1%2;%1;").arg(vfo).arg(static_cast<quint64>(freq), 11, 10, QChar('0')));
 }

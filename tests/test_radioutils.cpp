@@ -248,12 +248,63 @@ private slots:
     void testMiniPanOffset_quarter() { QCOMPARE(RadioUtils::miniPanOffsetHz(195.0, 780.0, 2000), -500); }
     void testMiniPanOffset_zeroWidth() { QCOMPARE(RadioUtils::miniPanOffsetHz(10.0, 0.0, 2000), 0); }
 
-    // miniPanClickToDialHz — source mini-pan center is dial ± pitch in CW/CW-R; target dial is RF ∓ pitch
-    void testMiniPanDial_usbToUsb() { QCOMPARE(RadioUtils::miniPanClickToDialHz(14074000, 0, 1500, 0, 600), 14075500); }
-    void testMiniPanDial_cwToCw() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 1, 300, 1, 600), 7031300); }
-    void testMiniPanDial_usbToCw() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 0, 300, 1, 600), 7030700); }
-    void testMiniPanDial_cwToUsb() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 1, 0, 0, 600), 7031600); }
-    void testMiniPanDial_cwrToCw() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, -1, 0, 1, 600), 7029800); }
+    // miniPanClickToDialHz — source mini-pan center is dial + RIT ± pitch in CW/CW-R; target undoes pitch and RIT
+    void testMiniPanDial_usbToUsb() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(14074000, 0, 1500, 0, 600, 0, 0), 14075500);
+    }
+    void testMiniPanDial_cwToCw() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 1, 300, 1, 600, 0, 0), 7031300);
+    }
+    void testMiniPanDial_usbToCw() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 0, 300, 1, 600, 0, 0), 7030700);
+    }
+    void testMiniPanDial_cwToUsb() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 1, 0, 0, 600, 0, 0), 7031600); }
+    void testMiniPanDial_cwrToCw() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, -1, 0, 1, 600, 0, 0), 7029800);
+    }
+    void testMiniPanDial_sourceRitShiftsCenter() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 0, 0, 0, 600, 100, 0), 7031100);
+    }
+    void testMiniPanDial_centerOfOwnPanWithRitKeepsDial() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 0, 0, 0, 600, 100, 100), 7031000);
+    }
+    void testMiniPanDial_targetRitUndone() {
+        QCOMPARE(RadioUtils::miniPanClickToDialHz(14074000, 0, 1500, 0, 600, 0, -200), 14075700);
+    }
+
+    // PendingTune — rapid relative tunes build on the last target sent, not the last radio reply
+    void testPendingTune_nothingSentUsesRadio() {
+        RadioUtils::PendingTune p;
+        QCOMPARE(p.base(7031000, 0), qint64(7031000));
+    }
+    void testPendingTune_freshTargetUsed() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        QCOMPARE(p.base(7031000, 1100), qint64(7032000));
+    }
+    void testPendingTune_expiresAfterHold() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        QCOMPARE(p.base(7031000, 2001), qint64(7031000));
+    }
+    void testPendingTune_radioReportingTargetClears() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        p.radioReported(7032000);
+        QCOMPARE(p.base(7031500, 1100), qint64(7031500));
+    }
+    void testPendingTune_olderReplyKeepsTarget() {
+        RadioUtils::PendingTune p;
+        p.sent(7033000, 1000);
+        p.radioReported(7032000);
+        QCOMPARE(p.base(7032000, 1100), qint64(7033000));
+    }
+    void testPendingTune_clearUsesRadio() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        p.clear();
+        QCOMPARE(p.base(7031000, 1100), qint64(7031000));
+    }
 };
 
 QTEST_MAIN(TestRadioUtils)

@@ -123,9 +123,33 @@ qint64 stepTunedFrequency(qint64 freq, int steps, int stepHz);
 int miniPanOffsetHz(double x, double width, int spanHz);
 
 /// Dial frequency for a target VFO when a mini-pan is clicked `offsetHz` from its center.
-/// The mini-pan center is the source dial shifted by sourcePitchSign * cwPitchHz
-/// (+1 CW, -1 CW-R, 0 otherwise); the target dial undoes its own pitch the same way.
-qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz);
+/// The mini-pan center is the source receive frequency: dial + sourceRitHz, shifted by
+/// sourcePitchSign * cwPitchHz (+1 CW, -1 CW-R, 0 otherwise). The target dial undoes its own
+/// pitch and RIT the same way, so the target receives exactly at the clicked frequency.
+/// Pass 0 for a RIT offset that isn't enabled.
+qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz,
+                            int sourceRitHz, int targetRitHz);
+
+/// Remembers where an un-echoed relative tune (Up/Down on a frequency-entry digit) last sent a VFO,
+/// so rapid presses build on each other instead of all starting from the last radio reply.
+/// The pending target is used until the radio reports it, clear() is called, or HOLD_MS pass.
+class PendingTune {
+public:
+    static constexpr qint64 HOLD_MS = 1000;
+
+    /// Frequency the next relative tune should start from: the pending target while it is
+    /// active and younger than HOLD_MS, otherwise radioHz.
+    qint64 base(qint64 radioHz, qint64 nowMs) const;
+    void sent(qint64 targetHz, qint64 nowMs);
+    /// Clears the pending target once the radio reports that frequency.
+    void radioReported(qint64 radioHz);
+    void clear();
+
+private:
+    qint64 m_targetHz = 0;
+    qint64 m_sentAtMs = 0;
+    bool m_active = false;
+};
 
 } // namespace RadioUtils
 

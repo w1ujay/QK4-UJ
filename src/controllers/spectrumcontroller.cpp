@@ -866,18 +866,20 @@ void SpectrumController::tuneVfoBFromMiniPan(bool sourceVfoB, int offsetHz) {
         return;
     if (!m_connectionController->isConnected() || m_radioState->lockB())
         return;
-    qint64 sourceDial = static_cast<qint64>(sourceVfoB ? m_radioState->vfoB() : m_radioState->vfoA());
+    const qint64 sourceDial = static_cast<qint64>(sourceVfoB ? m_radioState->vfoB() : m_radioState->vfoA());
     if (sourceDial <= 0)
         return;
-    // The mini-pan is centered on the receive passband, so include RIT (as updatePanadapterPassbands does)
-    if (sourceVfoB ? m_radioState->ritEnabledB() : m_radioState->ritEnabled())
-        sourceDial += sourceVfoB ? m_radioState->ritXitOffsetB() : m_radioState->ritXitOffset();
     auto pitchSign = [](RadioState::Mode mode) {
         return mode == RadioState::CW ? 1 : (mode == RadioState::CW_R ? -1 : 0);
     };
     const int sourceSign = pitchSign(sourceVfoB ? m_radioState->modeB() : m_radioState->mode());
-    const qint64 dial = RadioUtils::miniPanClickToDialHz(sourceDial, sourceSign, offsetHz,
-                                                         pitchSign(m_radioState->modeB()), m_radioState->cwPitch());
+    // The mini-pan is centered on the receive passband (dial + RIT, as updatePanadapterPassbands draws it);
+    // VFO B's own RIT is undone on the target side so B receives exactly at the clicked frequency.
+    const int ritA = m_radioState->ritEnabled() ? m_radioState->ritXitOffset() : 0;
+    const int ritB = m_radioState->ritEnabledB() ? m_radioState->ritXitOffsetB() : 0;
+    const qint64 dial =
+        RadioUtils::miniPanClickToDialHz(sourceDial, sourceSign, offsetHz, pitchSign(m_radioState->modeB()),
+                                         m_radioState->cwPitch(), sourceVfoB ? ritB : ritA, ritB);
     const int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
     const qint64 snapped = RadioUtils::snapFreqToStep(dial, stepHz);
     if (snapped <= 0)
