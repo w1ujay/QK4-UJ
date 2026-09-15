@@ -783,8 +783,6 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // Connect VFO A wheel tuning and Up/Down digit tuning in frequency entry
     connect(m_vfoA, &VFOWidget::frequencyScrolled, this, [this](int steps) { tuneVfoBySteps(false, steps); });
     connect(m_vfoA, &VFOWidget::digitTuneRequested, this, [this](qint64 deltaHz) { tuneVfoByHz(false, deltaHz); });
-    connect(m_radioState, &RadioState::frequencyChanged, this,
-            [this](quint64 freq) { m_pendingDigitTuneA.radioReported(static_cast<qint64>(freq)); });
 
     // Set Mini-Pan A passband color to cyan (matching VFO A theme)
     QColor vfoAPassband(K4Styles::Colors::VfoACyan);
@@ -1118,8 +1116,6 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     // Connect VFO B wheel tuning and Up/Down digit tuning in frequency entry
     connect(m_vfoB, &VFOWidget::frequencyScrolled, this, [this](int steps) { tuneVfoBySteps(true, steps); });
     connect(m_vfoB, &VFOWidget::digitTuneRequested, this, [this](qint64 deltaHz) { tuneVfoByHz(true, deltaHz); });
-    connect(m_radioState, &RadioState::frequencyBChanged, this,
-            [this](quint64 freq) { m_pendingDigitTuneB.radioReported(static_cast<qint64>(freq)); });
 
     m_vfoB->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(m_vfoB, 1);
@@ -1301,6 +1297,15 @@ void MainWindow::onCatResponse(const QString &response) {
             continue;
 
         m_radioState->parseCATCommand(cmd + ";");
+
+        // WHY here and not RadioState::frequencyChanged: a rejected digit tune gets a query reply with the
+        // unchanged frequency, which RadioState swallows. PendingTune needs every FA/FB reply to reconcile.
+        if (cmd.startsWith("FA") || cmd.startsWith("FB")) {
+            bool ok = false;
+            const qint64 replyHz = cmd.mid(2).toLongLong(&ok);
+            if (ok)
+                (cmd.at(1) == 'B' ? m_pendingDigitTuneB : m_pendingDigitTuneA).radioReplied(replyHz);
+        }
 
         // Menu system routing — MenuController encapsulates the MenuModel.
         // BN / BN$ are parsed by BandNavigationController which subscribes

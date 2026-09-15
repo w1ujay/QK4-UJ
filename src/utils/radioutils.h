@@ -130,25 +130,26 @@ int miniPanOffsetHz(double x, double width, int spanHz);
 qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz,
                             int sourceRitHz, int targetRitHz);
 
-/// Remembers where an un-echoed relative tune (Up/Down on a frequency-entry digit) last sent a VFO,
-/// so rapid presses build on each other instead of all starting from the last radio reply.
-/// The pending target is used until the radio reports it, clear() is called, or HOLD_MS pass.
+/// Remembers where un-echoed relative tunes (Up/Down on a frequency-entry digit) sent a VFO, so rapid
+/// presses build on each other instead of all starting from the last radio reply.
+/// Each request is sent as SET + query, so exactly one frequency reply answers it, in order. A reply
+/// matching its request means accepted; any other reply means rejected (or the VFO moved elsewhere),
+/// which drops everything pending so the next press builds on the radio's real frequency.
 class PendingTune {
 public:
     static constexpr qint64 HOLD_MS = 1000;
 
-    /// Frequency the next relative tune should start from: the pending target while it is
-    /// active and younger than HOLD_MS, otherwise radioHz.
+    /// Frequency the next relative tune should start from: the newest in-flight target while
+    /// one is waiting and the last press is younger than HOLD_MS, otherwise radioHz.
     qint64 base(qint64 radioHz, qint64 nowMs) const;
     void sent(qint64 targetHz, qint64 nowMs);
-    /// Clears the pending target once the radio reports that frequency.
-    void radioReported(qint64 radioHz);
+    /// Feed every frequency reply for this VFO, including ones that leave the frequency unchanged.
+    void radioReplied(qint64 radioHz);
     void clear();
 
 private:
-    qint64 m_targetHz = 0;
-    qint64 m_sentAtMs = 0;
-    bool m_active = false;
+    QVector<qint64> m_inFlight; // targets still awaiting their reply, oldest first
+    qint64 m_lastSentMs = 0;
 };
 
 } // namespace RadioUtils

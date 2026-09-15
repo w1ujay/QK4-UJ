@@ -287,17 +287,36 @@ private slots:
         p.sent(7032000, 1000);
         QCOMPARE(p.base(7031000, 2001), qint64(7031000));
     }
-    void testPendingTune_radioReportingTargetClears() {
+    void testPendingTune_acceptedReplyForLatestClears() {
         RadioUtils::PendingTune p;
         p.sent(7032000, 1000);
-        p.radioReported(7032000);
+        p.radioReplied(7032000);
         QCOMPARE(p.base(7031500, 1100), qint64(7031500));
     }
-    void testPendingTune_olderReplyKeepsTarget() {
+    void testPendingTune_olderAcceptedReplyKeepsLatest() {
         RadioUtils::PendingTune p;
-        p.sent(7033000, 1000);
-        p.radioReported(7032000);
+        p.sent(7032000, 1000);
+        p.sent(7033000, 1050);
+        p.radioReplied(7032000);
         QCOMPARE(p.base(7032000, 1100), qint64(7033000));
+    }
+    void testPendingTune_rejectedReplyClears() {
+        // +1 GHz refused: the query reply comes back with the unchanged frequency
+        RadioUtils::PendingTune p;
+        p.sent(1007031415, 1000);
+        p.radioReplied(7031415);
+        QCOMPARE(p.base(7031415, 1100), qint64(7031415));
+    }
+    void testPendingTune_repeatedPressesRecoverAfterRejection() {
+        // Key repeat sent a second invalid target before the first rejection arrived
+        RadioUtils::PendingTune p;
+        p.sent(1007031415, 1000);
+        p.sent(1007031416, 1030);
+        p.radioReplied(7031415);                          // answer to the first request: rejected
+        QCOMPARE(p.base(7031415, 1040), qint64(7031415)); // still pressing, but back on the radio value
+        p.radioReplied(7031415);                          // answer to the second request, already abandoned
+        p.sent(7031416, 1050);
+        QCOMPARE(p.base(7031415, 1060), qint64(7031416));
     }
     void testPendingTune_clearUsesRadio() {
         RadioUtils::PendingTune p;

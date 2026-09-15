@@ -158,22 +158,26 @@ qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offset
 }
 
 qint64 PendingTune::base(qint64 radioHz, qint64 nowMs) const {
-    return (m_active && nowMs - m_sentAtMs <= HOLD_MS) ? m_targetHz : radioHz;
+    return (!m_inFlight.isEmpty() && nowMs - m_lastSentMs <= HOLD_MS) ? m_inFlight.last() : radioHz;
 }
 
 void PendingTune::sent(qint64 targetHz, qint64 nowMs) {
-    m_targetHz = targetHz;
-    m_sentAtMs = nowMs;
-    m_active = true;
+    // After HOLD_MS of silence, older requests' replies can no longer be trusted to line up — start fresh.
+    if (nowMs - m_lastSentMs > HOLD_MS)
+        m_inFlight.clear();
+    m_inFlight.append(targetHz);
+    m_lastSentMs = nowMs;
 }
 
-void PendingTune::radioReported(qint64 radioHz) {
-    if (m_active && radioHz == m_targetHz)
-        m_active = false;
+void PendingTune::radioReplied(qint64 radioHz) {
+    if (m_inFlight.isEmpty())
+        return; // unsolicited update, or the answer to an already-abandoned request
+    if (m_inFlight.takeFirst() != radioHz)
+        m_inFlight.clear(); // rejected, or the VFO moved elsewhere: rebuild on the radio's frequency
 }
 
 void PendingTune::clear() {
-    m_active = false;
+    m_inFlight.clear();
 }
 
 bool isValidIpv4(const QString &s) {
