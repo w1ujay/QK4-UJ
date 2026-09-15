@@ -122,7 +122,7 @@ and CW/CW-R pitch on both sides (`RadioUtils::miniPanClickToDialHz`), snaps to B
 Mouse QSY "Left Only". Left-click unchanged.
 
 **Notes:** Done 2026-09-14. RIT on the clicked VFO is included (the mini-pan is centered on the receive
-passband). On-air check: assumes the K4 centers MiniPAN on the passband like QK4 draws it (dial in SSB,
+passband), and VFO B's own RIT is subtracted so B receives exactly at the clicked frequency. On-air check: assumes the K4 centers MiniPAN on the passband like QK4 draws it (dial in SSB,
 dial ± pitch in CW) — confirm a right-clicked signal lands in VFO B's passband, also with RIT at +0.50.
 
 ---
@@ -139,7 +139,8 @@ lock checks (fork lacked them). Esc already closes popups/overlays, so a global 
 **Notes:** Tuning done 2026-09-14: Up/Down tunes VFO A (VFO B with B SET) by the step, snapped like the pan
 wheel, respecting lock — also works when a button has focus (`ButtonTuneKeyFilter`). Up/Down on the cursor digit
 in frequency entry tunes by that digit's place value (sent as `FA…;FA;` with no local update, so a refused
-value can't stick; ignored once digits are typed). VFO A/B frequency wheel now also snaps and respects lock;
+value can't stick; ignored once digits are typed; rapid presses build on the last target sent via
+`RadioUtils::PendingTune`, held up to 1 s or until the radio reports it). VFO A/B frequency wheel now also snaps and respects lock;
 stepping down from an off-grid frequency lands on the nearest grid point (panadapter wheel too).
 Esc → KY0 dropped by decision. DualControlButton/MonOverlay arrow keys not ported.
 
