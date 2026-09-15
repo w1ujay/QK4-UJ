@@ -141,7 +141,8 @@ wheel, respecting lock — also works when a button has focus (`ButtonTuneKeyFil
 in frequency entry tunes by that digit's place value (sent as `FA…;FA;` with no local update, so a refused
 value can't stick; ignored once digits are typed; rapid presses build on the last target sent via
 `RadioUtils::PendingTune`, reconciled against every FA/FB reply — a reply that doesn't match its request
-means the value was refused, so pending state is dropped and the next press builds on the radio's frequency). VFO A/B frequency wheel now also snaps and respects lock;
+means the value was refused, so pending state is dropped and the next press builds on the radio's frequency;
+replies still owed to abandoned requests are counted and skipped so they can't clear newer presses). VFO A/B frequency wheel now also snaps and respects lock;
 stepping down from an off-grid frequency lands on the nearest grid point (panadapter wheel too).
 Esc → KY0 dropped by decision. DualControlButton/MonOverlay arrow keys not ported.
 
