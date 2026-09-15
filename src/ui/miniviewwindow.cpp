@@ -5,14 +5,32 @@
 #include <QGuiApplication>
 #include <QHBoxLayout>
 #include <QKeyEvent>
+#include <QLoggingCategory>
 #include <QMouseEvent>
 #include <QPainter>
 #include <QPushButton>
 #include <QScreen>
+#include <QTimer>
 #include <QVBoxLayout>
 #include <QWheelEvent>
+#include <QWindow>
+
+Q_LOGGING_CATEGORY(uiMiniView, "ui.miniview")
 
 namespace {
+// Diagnostics for the blank Mini View pan: adding the first QRhiWidget to this already-shown window
+// can make Qt recreate it for GPU composition, which changes its native handle and surface type.
+void logWindowSurface(const QWidget *window, const char *when) {
+    const QWindow *handle = window->windowHandle();
+    if (!handle) {
+        qCDebug(uiMiniView) << "Mini View window" << when << "- no native window";
+        return;
+    }
+    qCDebug(uiMiniView) << "Mini View window" << when << "- winId" << handle->winId() << "surface"
+                        << handle->surfaceType() << "widget pos" << window->pos() << "frame" << window->frameGeometry()
+                        << "native pos" << handle->position();
+}
+
 const int StripHeight = 52;
 const int StripWidth = 780;
 const int PanHeight = 130;
@@ -28,8 +46,9 @@ const int BtnHeight = 24;
 
 MiniViewWindow::MiniViewWindow(QWidget *parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
-    // WHY no WA_TranslucentBackground: in a translucent top-level the QRhiWidget panadapter
-    // rendered nothing on Windows (the desktop showed through it). The window paints opaque.
+    // WHY no WA_TranslucentBackground: the pan used to render nothing here and the desktop showed
+    // through it. The real cause was the pan never getting a QRhi (see togglePanadapter), not
+    // translucency; the window stays opaque with square corners because that is what is tested.
     setFocusPolicy(Qt::StrongFocus); // receive Up/Down for tuning
     setupUi();
     restorePosition();
@@ -261,7 +280,15 @@ void MiniViewWindow::togglePanadapter() {
     if (m_panVisible) {
         // Lazily create MiniPanRhiWidget
         if (!m_miniPan) {
-            m_miniPan = new MiniPanRhiWidget(this);
+            logWindowSurface(this, "before pan created");
+            // WHY parentless until addWidget(): Qt switches an already-shown window to GPU composition
+            // only when a QRhiWidget is reparented into it. Constructed with `this` as parent, the
+            // window stayed on raster flush and the pan never got a QRhi ("QRhiWidget: No QRhi").
+            m_miniPan = new MiniPanRhiWidget(nullptr);
+            m_miniPan->setObjectName("MiniView");
+            connect(m_miniPan, &QRhiWidget::renderFailed, this,
+                    []() { qCWarning(uiMiniView) << "Mini View pan renderFailed() - QRhi could not be obtained"; });
+            QTimer::singleShot(500, this, [this]() { logWindowSurface(this, "500 ms after pan created"); });
             m_miniPan->setMinimumWidth(StripWidth - 4);
             m_miniPan->setMaximumWidth(StripWidth - 4);
             m_miniPan->setFixedHeight(PanHeight);

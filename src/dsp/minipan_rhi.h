@@ -115,6 +115,9 @@ private:
 
     bool m_rhiInitialized = false;
     bool m_pipelinesCreated = false;
+    bool m_loggedRenderPath = false;
+
+    void logRenderPathOnce(const char *path);
 
     // Shader stages (loaded from .qsb files - shared with panadapter)
     QShader m_spectrumVert;

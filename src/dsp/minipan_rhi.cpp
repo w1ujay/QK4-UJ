@@ -174,6 +174,15 @@ void MiniPanRhiWidget::initialize(QRhiCommandBuffer *cb) {
     cb->resourceUpdate(rub);
 
     m_rhiInitialized = true;
+    qCDebug(dspMiniPan) << "MiniPan" << objectName() << "initialized, backend" << m_rhi->backendName();
+}
+
+void MiniPanRhiWidget::logRenderPathOnce(const char *path) {
+    // Diagnostics for blank mini-pans: records which render() branch this widget takes first.
+    if (m_loggedRenderPath)
+        return;
+    m_loggedRenderPath = true;
+    qCDebug(dspMiniPan) << "MiniPan" << objectName() << path << renderTarget()->pixelSize();
 }
 
 void MiniPanRhiWidget::createPipelines() {
@@ -333,6 +342,7 @@ void MiniPanRhiWidget::createPipelines() {
 void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     // Always clear to black even if not initialized (prevents white/garbage showing)
     if (!m_rhiInitialized) {
+        logRenderPathOnce("render() before initialize (no QRhi), cleared black");
         cb->beginPass(renderTarget(), Qt::black, {1.0f, 0}, nullptr);
         cb->endPass();
         return;
@@ -342,11 +352,13 @@ void MiniPanRhiWidget::render(QRhiCommandBuffer *cb) {
     if (!m_pipelinesCreated) {
         createPipelines();
         if (!m_pipelinesCreated) {
+            logRenderPathOnce("render() without pipelines (shaders invalid), cleared black");
             cb->beginPass(renderTarget(), Qt::black, {1.0f, 0}, nullptr);
             cb->endPass();
             return;
         }
     }
+    logRenderPathOnce("render() drawing full frame");
 
     const QSize outputSize = renderTarget()->pixelSize();
     const float w = outputSize.width();
