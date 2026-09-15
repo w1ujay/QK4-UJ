@@ -162,21 +162,31 @@ qint64 PendingTune::base(qint64 radioHz, qint64 nowMs) const {
 }
 
 void PendingTune::sent(qint64 targetHz, qint64 nowMs) {
-    // After HOLD_MS of silence, older requests' replies can no longer be trusted to line up — start fresh.
-    if (nowMs - m_lastSentMs > HOLD_MS)
+    // After HOLD_MS of silence every outstanding reply should have arrived; any still missing were lost,
+    // so stop waiting for them and start a fresh run.
+    if (nowMs - m_lastSentMs > HOLD_MS) {
         m_inFlight.clear();
+        m_owedReplies = 0;
+    }
     m_inFlight.append(targetHz);
     m_lastSentMs = nowMs;
 }
 
 void PendingTune::radioReplied(qint64 radioHz) {
+    // Replies arrive in request order, so answers owed to abandoned requests come before newer requests'.
+    if (m_owedReplies > 0) {
+        --m_owedReplies;
+        return;
+    }
     if (m_inFlight.isEmpty())
-        return; // unsolicited update, or the answer to an already-abandoned request
+        return; // unsolicited update
     if (m_inFlight.takeFirst() != radioHz)
-        m_inFlight.clear(); // rejected, or the VFO moved elsewhere: rebuild on the radio's frequency
+        clear(); // rejected, or the VFO moved elsewhere: abandon the rest and rebuild on the radio's frequency
 }
 
 void PendingTune::clear() {
+    // The abandoned requests' replies are still coming — count them so they can't match newer presses.
+    m_owedReplies += m_inFlight.size();
     m_inFlight.clear();
 }
 

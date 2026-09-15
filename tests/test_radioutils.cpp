@@ -318,6 +318,31 @@ private slots:
         p.sent(7031416, 1050);
         QCOMPARE(p.base(7031415, 1060), qint64(7031416));
     }
+    void testPendingTune_lateRefusalForAbandonedRequestKeepsNewPress() {
+        RadioUtils::PendingTune p;
+        p.sent(1007031415, 1000);
+        p.sent(1007031416, 1030);
+        p.radioReplied(7031415); // first refusal: both requests abandoned
+        p.sent(7031416, 1040);   // valid press built on the radio value
+        p.radioReplied(7031415); // late refusal owed to the abandoned second request
+        QCOMPARE(p.base(7031415, 1050), qint64(7031416));
+    }
+    void testPendingTune_clearStillSkipsOwedReplies() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        p.clear();               // a wheel tune took over; this request's reply is still coming
+        p.sent(7033500, 1010);   // next digit press built on the wheel-tuned frequency
+        p.radioReplied(7032000); // owed reply for the cleared request
+        QCOMPARE(p.base(7032500, 1020), qint64(7033500));
+    }
+    void testPendingTune_silenceForgetsOwedReplies() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        p.clear();               // owed reply never arrives (e.g. lost)
+        p.sent(7033000, 3000);   // after HOLD_MS of silence, start fresh
+        p.radioReplied(7033000); // this is the new request's own reply: accepted
+        QCOMPARE(p.base(7033500, 3100), qint64(7033500));
+    }
     void testPendingTune_clearUsesRadio() {
         RadioUtils::PendingTune p;
         p.sent(7032000, 1000);

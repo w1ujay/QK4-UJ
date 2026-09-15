@@ -149,6 +149,7 @@ public:
 
 private:
     QVector<qint64> m_inFlight; // targets still awaiting their reply, oldest first
+    int m_owedReplies = 0;      // replies still due for abandoned requests; they arrive before newer ones
     qint64 m_lastSentMs = 0;
 };
 
