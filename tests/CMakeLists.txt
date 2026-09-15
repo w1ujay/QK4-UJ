@@ -256,6 +256,17 @@ target_link_libraries(test_frequencydisplaywidget Qt6::Widgets Qt6::Test)
 add_test(NAME FrequencyDisplayWidgetTests COMMAND test_frequencydisplaywidget)
 set_tests_properties(FrequencyDisplayWidgetTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# DualControlButton keyboard tests (Up/Down adjust the value for mouseless use) — offscreen widgets.
+add_executable(test_dualcontrolbutton test_dualcontrolbutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/dualcontrolbutton.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+)
+target_include_directories(test_dualcontrolbutton PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_dualcontrolbutton Qt6::Widgets Qt6::Test)
+add_test(NAME DualControlButtonTests COMMAND test_dualcontrolbutton)
+set_tests_properties(DualControlButtonTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

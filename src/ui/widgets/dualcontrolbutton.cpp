@@ -2,6 +2,7 @@
 #include "ui/styling/k4constants.h"
 #include <QPainter>
 #include <QPainterPath>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QWheelEvent>
 #include <QLinearGradient>
@@ -10,6 +11,10 @@ DualControlButton::DualControlButton(QWidget *parent) : QWidget(parent) {
     setFixedSize(K4Styles::Dimensions::MenuBarButtonWidth, K4Styles::Dimensions::ButtonHeightLarge);
     setCursor(Qt::PointingHandCursor);
     setMouseTracking(true);
+    // Click to focus, then Up/Down adjust the value — the only way to change WPM, PWR, BW and
+    // SHIFT without a mouse wheel. This is a QWidget, not a QAbstractButton, so MainWindow's
+    // ButtonTuneKeyFilter leaves these arrows alone and VFO tuning elsewhere is unaffected.
+    setFocusPolicy(Qt::ClickFocus);
 }
 
 void DualControlButton::setPrimaryLabel(const QString &label) {
@@ -186,6 +191,18 @@ void DualControlButton::wheelEvent(QWheelEvent *event) {
         emit valueScrolled(steps);
     }
     event->accept();
+}
+
+void DualControlButton::keyPressEvent(QKeyEvent *event) {
+    // Up/Down mirror a wheel step, including activating an inactive button first.
+    if (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down) {
+        if (!m_showIndicator)
+            emit becameActive();
+        emit valueScrolled(event->key() == Qt::Key_Up ? 1 : -1);
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
 }
 
 void DualControlButton::enterEvent(QEnterEvent *event) {
