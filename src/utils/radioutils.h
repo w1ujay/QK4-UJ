@@ -145,7 +145,11 @@ public:
     void sent(qint64 targetHz, qint64 nowMs);
     /// Feed every frequency reply for this VFO, including ones that leave the frequency unchanged.
     void radioReplied(qint64 radioHz);
+    /// Stop building on in-flight targets (e.g. a direct tune took over); their replies are still expected.
     void clear();
+    /// Forget everything, including replies still owed — only when the connection is dropped, since TCP
+    /// otherwise delivers every reply (possibly late).
+    void reset();
 
 private:
     QVector<qint64> m_inFlight; // targets still awaiting their reply, oldest first

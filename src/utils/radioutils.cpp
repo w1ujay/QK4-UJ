@@ -162,12 +162,10 @@ qint64 PendingTune::base(qint64 radioHz, qint64 nowMs) const {
 }
 
 void PendingTune::sent(qint64 targetHz, qint64 nowMs) {
-    // After HOLD_MS of silence every outstanding reply should have arrived; any still missing were lost,
-    // so stop waiting for them and start a fresh run.
-    if (nowMs - m_lastSentMs > HOLD_MS) {
-        m_inFlight.clear();
-        m_owedReplies = 0;
-    }
+    // After HOLD_MS without a press the target expires, but those requests' replies can still arrive
+    // late (TCP delivers them in order unless the connection drops) — keep counting them as owed.
+    if (nowMs - m_lastSentMs > HOLD_MS)
+        clear();
     m_inFlight.append(targetHz);
     m_lastSentMs = nowMs;
 }
@@ -182,6 +180,11 @@ void PendingTune::radioReplied(qint64 radioHz) {
         return; // unsolicited update
     if (m_inFlight.takeFirst() != radioHz)
         clear(); // rejected, or the VFO moved elsewhere: abandon the rest and rebuild on the radio's frequency
+}
+
+void PendingTune::reset() {
+    m_inFlight.clear();
+    m_owedReplies = 0;
 }
 
 void PendingTune::clear() {

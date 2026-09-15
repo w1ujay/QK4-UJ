@@ -335,13 +335,31 @@ private slots:
         p.radioReplied(7032000); // owed reply for the cleared request
         QCOMPARE(p.base(7032500, 1020), qint64(7033500));
     }
-    void testPendingTune_silenceForgetsOwedReplies() {
+    void testPendingTune_lateRefusalAfterPauseKeepsNewPress() {
+        // Delayed delivery: the owed refusal arrives after a pause longer than HOLD_MS and a new press
+        RadioUtils::PendingTune p;
+        p.sent(1007031415, 1000);
+        p.sent(1007031416, 1030);
+        p.radioReplied(7031415); // first refusal: the second request's reply is now owed
+        p.sent(7031416, 2100);   // press after a 1,070 ms pause, built on the radio value
+        p.radioReplied(7031415); // the owed refusal, delivered late
+        QCOMPARE(p.base(7031415, 2150), qint64(7031416));
+    }
+    void testPendingTune_expiredRequestReplyStillOwed() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);   // its reply is delayed
+        p.sent(7031100, 2500);   // target expired, so this press was built on the radio value
+        p.radioReplied(7032000); // late reply for the expired request
+        QCOMPARE(p.base(7031000, 2550), qint64(7031100));
+    }
+    void testPendingTune_resetForgetsOwedReplies() {
         RadioUtils::PendingTune p;
         p.sent(7032000, 1000);
-        p.clear();               // owed reply never arrives (e.g. lost)
-        p.sent(7033000, 3000);   // after HOLD_MS of silence, start fresh
-        p.radioReplied(7033000); // this is the new request's own reply: accepted
-        QCOMPARE(p.base(7033500, 3100), qint64(7033500));
+        p.clear(); // its reply is owed
+        p.reset(); // connection dropped: that reply will never come
+        p.sent(7033000, 1100);
+        p.radioReplied(7033000); // the new request's own reply: accepted
+        QCOMPARE(p.base(7033500, 1150), qint64(7033500));
     }
     void testPendingTune_clearUsesRadio() {
         RadioUtils::PendingTune p;

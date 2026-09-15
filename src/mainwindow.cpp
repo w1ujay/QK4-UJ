@@ -1337,6 +1337,9 @@ void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
 // Disconnect-path helper. Each owning controller's reset() absorbs the
 // label writes that used to live here directly.
 void MainWindow::resetUiForDisconnect() {
+    // Replies owed to in-flight digit tunes died with the connection
+    m_pendingDigitTuneA.reset();
+    m_pendingDigitTuneB.reset();
     m_audioController->stopAudio();
     m_spectrumController->clearDisplays();
     m_vfoA->resetToDefaults();
