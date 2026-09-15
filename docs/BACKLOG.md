@@ -140,7 +140,8 @@ lock checks (fork lacked them). Esc already closes popups/overlays, so a global 
 wheel, respecting lock — also works when a button has focus (`ButtonTuneKeyFilter`). Up/Down on the cursor digit
 in frequency entry tunes by that digit's place value (sent as `FA…;FA;` with no local update, so a refused
 value can't stick; ignored once digits are typed; rapid presses build on the last target sent via
-`RadioUtils::PendingTune`, held up to 1 s or until the radio reports it). VFO A/B frequency wheel now also snaps and respects lock;
+`RadioUtils::PendingTune`, reconciled against every FA/FB reply — a reply that doesn't match its request
+means the value was refused, so pending state is dropped and the next press builds on the radio's frequency). VFO A/B frequency wheel now also snaps and respects lock;
 stepping down from an off-grid frequency lands on the nearest grid point (panadapter wheel too).
 Esc → KY0 dropped by decision. DualControlButton/MonOverlay arrow keys not ported.
 
