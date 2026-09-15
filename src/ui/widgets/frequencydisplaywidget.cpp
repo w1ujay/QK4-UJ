@@ -235,14 +235,17 @@ void FrequencyDisplayWidget::exitEditMode(bool send) {
 
     releaseMouse(); // Release mouse grab
 
-    if (send) {
+    if (send && m_digits != m_originalDigits) {
+        // WHY the comparison: Up/Down digit tuning leaves the display untouched until the radio
+        // replies, so sending unchanged digits here would tune the radio back to the pre-tune
+        // frequency. Enter with nothing typed just leaves edit mode.
         // Remove leading zeros for the signal (but keep at least one digit)
         QString digits = m_digits;
         while (digits.length() > 1 && digits[0] == '0') {
             digits.remove(0, 1);
         }
         emit frequencyEntered(digits);
-    } else {
+    } else if (!send) {
         // Restore original frequency
         m_digits = m_originalDigits;
     }

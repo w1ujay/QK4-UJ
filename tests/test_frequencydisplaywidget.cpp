@@ -81,6 +81,30 @@ private slots:
         QCOMPARE(spy.count(), 0);
     }
 
+    // Up/Down leaves the digits alone until the radio replies. Enter in that window must not
+    // resend them — that would tune the radio back to where it was before the digit tune.
+    void testEnterWithoutTypingDoesNotResendFrequency() {
+        FrequencyDisplayWidget w;
+        enterEdit(w);
+        QSignalSpy spy(&w, &FrequencyDisplayWidget::frequencyEntered);
+        QTest::keyClick(&w, Qt::Key_End);
+        QTest::keyClick(&w, Qt::Key_Up); // digit tune sent; display still shows the old frequency
+        QTest::keyClick(&w, Qt::Key_Return);
+        QVERIFY(!w.isEditing());
+        QCOMPARE(spy.count(), 0);
+    }
+
+    void testEnterAfterTypingSendsTypedFrequency() {
+        FrequencyDisplayWidget w;
+        enterEdit(w);
+        QSignalSpy spy(&w, &FrequencyDisplayWidget::frequencyEntered);
+        QTest::keyClick(&w, Qt::Key_End);
+        QTest::keyClick(&w, Qt::Key_9); // ones place 5 -> 9
+        QTest::keyClick(&w, Qt::Key_Return);
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("7031419"));
+    }
+
     void testCancelAfterRadioUpdateKeepsLatestFrequency() {
         FrequencyDisplayWidget w;
         enterEdit(w);
