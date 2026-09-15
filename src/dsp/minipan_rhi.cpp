@@ -2,6 +2,7 @@
 #include "panadapter_constants.h"
 #include "rhi_utils.h"
 #include "ui/styling/k4constants.h"
+#include "utils/radioutils.h"
 #include <QLoggingCategory>
 #include <QMouseEvent>
 #include <QResizeEvent>
@@ -1026,6 +1027,9 @@ void MiniPanRhiWidget::setAveraging(int level) {
 void MiniPanRhiWidget::mousePressEvent(QMouseEvent *event) {
     if (event->button() == Qt::LeftButton) {
         emit clicked();
+        event->accept();
+    } else if (event->button() == Qt::RightButton) {
+        emit rightClicked(RadioUtils::miniPanOffsetHz(event->position().x(), width(), m_bandwidthHz));
         event->accept();
     } else {
         QRhiWidget::mousePressEvent(event);

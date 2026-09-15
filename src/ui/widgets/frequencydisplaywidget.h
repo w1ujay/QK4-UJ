@@ -68,6 +68,9 @@ signals:
     // Emitted when user scrolls mouse wheel over frequency (not in edit mode)
     void frequencyScrolled(int steps);
 
+    // Emitted on Up/Down in edit mode: tune by the cursor digit's place value (e.g. +1000 on the kHz digit)
+    void digitTuneRequested(qint64 deltaHz);
+
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;

@@ -57,8 +57,41 @@
 #include <QMoveEvent>
 #include <QCloseEvent>
 #include <QShortcut>
+#include <QAbstractButton>
+#include <QApplication>
+#include <functional>
 
 Q_LOGGING_CATEGORY(qk4Main, "qk4.main")
+
+namespace {
+// WHY: a focused QPushButton consumes Up/Down (it moves focus to the next widget), so once any
+// button has been clicked the arrows never reach MainWindow::keyPressEvent. This app-level filter
+// hands Up/Down aimed at a main-window button to the tuning handler — except inside overlays that
+// use the arrows for their own navigation (menu overlay, macro dialog).
+class ButtonTuneKeyFilter : public QObject {
+public:
+    ButtonTuneKeyFilter(QWidget *window, std::function<bool(QKeyEvent *)> handler, QObject *parent)
+        : QObject(parent), m_window(window), m_handler(std::move(handler)) {}
+
+protected:
+    bool eventFilter(QObject *watched, QEvent *event) override {
+        if (event->type() != QEvent::KeyPress)
+            return QObject::eventFilter(watched, event);
+        auto *button = qobject_cast<QAbstractButton *>(watched);
+        if (!button || button->window() != m_window)
+            return QObject::eventFilter(watched, event);
+        for (QWidget *w = button->parentWidget(); w && w != m_window; w = w->parentWidget()) {
+            if (w->inherits("MenuOverlayWidget") || w->inherits("MacroDialog"))
+                return QObject::eventFilter(watched, event);
+        }
+        return m_handler(static_cast<QKeyEvent *>(event));
+    }
+
+private:
+    QWidget *m_window;
+    std::function<bool(QKeyEvent *)> m_handler;
+};
+} // namespace
 
 // ============== MainWindow Implementation ==============
 MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new RadioState(this)) {
@@ -169,7 +202,8 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
             &VfoFrequencyController::refresh);
 
     // Mini view — created last so every controller and widget it observes exists.
-    m_miniViewController = new MiniViewController(m_radioState, m_dxClusterController, m_vfoA, m_vfoB, this, this);
+    m_miniViewController =
+        new MiniViewController(m_radioState, m_connectionController, m_dxClusterController, m_vfoA, m_vfoB, this, this);
     connect(m_bottomMenuBar, &BottomMenuBar::miniClicked, this, [this]() {
         m_miniViewController->showMiniView();
         hide();
@@ -182,10 +216,22 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     connect(m_miniViewController, &MiniViewController::bandPopupRequested, this, [this]() { toggleBandPopup(); });
     connect(m_miniViewController, &MiniViewController::modePopupRequested, this,
             [this]() { m_modePopupController->toggleForVfoA(m_modeALabel); });
-    connect(m_connectionController, &ConnectionController::spectrumDataReceived, this,
-            [this](int receiver, const QByteArray &payload, int, int, qint64, int, int) {
-                m_miniViewController->onSpectrumData(receiver, payload);
+    // The mini view's panadapter is a MiniPanRhiWidget: feed it MiniPAN (0x03) bins, header stripped.
+    // fromRawData is safe — MiniPanRhiWidget::updateSpectrum copies the bins before returning.
+    connect(m_connectionController, &ConnectionController::miniSpectrumDataReceived, this,
+            [this](int receiver, const QByteArray &payload, int binsOffset, int binCount) {
+                m_miniViewController->onSpectrumData(
+                    receiver, QByteArray::fromRawData(payload.constData() + binsOffset, binCount));
             });
+    connect(m_miniViewController, &MiniViewController::tuneStepsRequested, this, &MainWindow::tuneVfoBySteps);
+    connect(m_miniViewController, &MiniViewController::miniPanRightClicked, this,
+            [this](int offsetHz) { m_spectrumController->tuneVfoBFromMiniPan(false, offsetHz); });
+    connect(m_ritXitController, &RitXitController::displayRefreshRequested, m_miniViewController,
+            &MiniViewController::refreshFrequencies);
+
+    // Up/Down tune even when a main-window button has keyboard focus (see ButtonTuneKeyFilter)
+    qApp->installEventFilter(
+        new ButtonTuneKeyFilter(this, [this](QKeyEvent *event) { return handleTuneKey(event); }, this));
 
     setupCatServer();
 }
@@ -734,19 +780,9 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         m_connectionController->sendCAT(QString("FA%1;FA;").arg(freqString));
     });
 
-    // Connect VFO A wheel tuning - same pattern as panadapter wheel tuning
-    connect(m_vfoA, &VFOWidget::frequencyScrolled, this, [this](int steps) {
-        if (!m_connectionController->isConnected())
-            return;
-        quint64 currentFreq = m_radioState->vfoA();
-        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStep());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
-        if (newFreq > 0) {
-            QString cmd = QString("FA%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
-            m_connectionController->sendCAT(cmd);
-            m_radioState->parseCATCommand(cmd);
-        }
-    });
+    // Connect VFO A wheel tuning and Up/Down digit tuning in frequency entry
+    connect(m_vfoA, &VFOWidget::frequencyScrolled, this, [this](int steps) { tuneVfoBySteps(false, steps); });
+    connect(m_vfoA, &VFOWidget::digitTuneRequested, this, [this](qint64 deltaHz) { tuneVfoByHz(false, deltaHz); });
 
     // Set Mini-Pan A passband color to cyan (matching VFO A theme)
     QColor vfoAPassband(K4Styles::Colors::VfoACyan);
@@ -1077,19 +1113,9 @@ void MainWindow::setupVfoSection(QWidget *parent) {
         m_connectionController->sendCAT(QString("FB%1;FB;").arg(freqString));
     });
 
-    // Connect VFO B wheel tuning - same pattern as panadapter wheel tuning
-    connect(m_vfoB, &VFOWidget::frequencyScrolled, this, [this](int steps) {
-        if (!m_connectionController->isConnected())
-            return;
-        quint64 currentFreq = m_radioState->vfoB();
-        int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
-        qint64 newFreq = static_cast<qint64>(currentFreq) + static_cast<qint64>(steps) * stepHz;
-        if (newFreq > 0) {
-            QString cmd = QString("FB%1;").arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
-            m_connectionController->sendCAT(cmd);
-            m_radioState->parseCATCommand(cmd);
-        }
-    });
+    // Connect VFO B wheel tuning and Up/Down digit tuning in frequency entry
+    connect(m_vfoB, &VFOWidget::frequencyScrolled, this, [this](int steps) { tuneVfoBySteps(true, steps); });
+    connect(m_vfoB, &VFOWidget::digitTuneRequested, this, [this](qint64 deltaHz) { tuneVfoByHz(true, deltaHz); });
 
     m_vfoB->setSizePolicy(QSizePolicy::Expanding, QSizePolicy::Preferred);
     layout->addWidget(m_vfoB, 1);
@@ -1367,12 +1393,61 @@ void MainWindow::moveEvent(QMoveEvent *event) {
     closeAllPopups();
 }
 
+void MainWindow::tuneVfoToFrequency(bool vfoB, qint64 freq) {
+    if (!m_connectionController->isConnected() || freq <= 0)
+        return;
+    if (vfoB ? m_radioState->lockB() : m_radioState->lockA())
+        return;
+    QString cmd = QString("%1%2;").arg(vfoB ? "FB" : "FA").arg(static_cast<quint64>(freq), 11, 10, QChar('0'));
+    m_connectionController->sendCAT(cmd);
+    // Optimistic update — the K4 doesn't echo frequency SETs
+    m_radioState->parseCATCommand(cmd);
+}
+
+void MainWindow::tuneVfoBySteps(bool vfoB, int steps) {
+    const qint64 current = static_cast<qint64>(vfoB ? m_radioState->vfoB() : m_radioState->vfoA());
+    if (current <= 0)
+        return;
+    const int stepHz = RadioUtils::tuningStepToHz(vfoB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
+    tuneVfoToFrequency(vfoB, RadioUtils::stepTunedFrequency(current, steps, stepHz));
+}
+
+void MainWindow::tuneVfoByHz(bool vfoB, qint64 deltaHz) {
+    // WHY no optimistic update: digit tuning can jump far (the entry cursor starts on the 1 GHz digit).
+    // If the K4 refuses the value, a local update would leave RadioState stuck on it, so send the SET
+    // plus a query (like typed frequency entry) and let the radio's reply set the display.
+    if (!m_connectionController->isConnected())
+        return;
+    if (vfoB ? m_radioState->lockB() : m_radioState->lockA())
+        return;
+    const qint64 current = static_cast<qint64>(vfoB ? m_radioState->vfoB() : m_radioState->vfoA());
+    const qint64 freq = current + deltaHz;
+    if (current <= 0 || freq <= 0)
+        return;
+    const QString vfo = vfoB ? "FB" : "FA";
+    m_connectionController->sendCAT(QString("%1%2;%1;").arg(vfo).arg(static_cast<quint64>(freq), 11, 10, QChar('0')));
+}
+
+bool MainWindow::handleTuneKey(QKeyEvent *event) {
+    if (event->key() != Qt::Key_Up && event->key() != Qt::Key_Down)
+        return false;
+    if ((event->modifiers() & ~Qt::KeyboardModifiers(Qt::KeypadModifier)) != Qt::NoModifier)
+        return false;
+    tuneVfoBySteps(m_radioState->bSetEnabled(), event->key() == Qt::Key_Up ? 1 : -1);
+    return true;
+}
+
 void MainWindow::keyPressEvent(QKeyEvent *event) {
     // Handle F1-F12 for keyboard macros
     if (event->key() >= Qt::Key_F1 && event->key() <= Qt::Key_F12) {
         int fKeyNum = event->key() - Qt::Key_F1 + 1; // 1-12
         QString functionId = QString("Keyboard-F%1").arg(fKeyNum);
         m_macroController->executeMacro(functionId);
+        event->accept();
+        return;
+    }
+    // Up/Down arrows tune the active VFO by the current tuning step
+    if (handleTuneKey(event)) {
         event->accept();
         return;
     }

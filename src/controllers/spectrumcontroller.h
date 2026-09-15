@@ -40,6 +40,10 @@ public:
     void setMouseQsyMode(int mode);
     void setDxClusterController(DxClusterController *controller);
 
+    // Right-click on a mini-pan: tune VFO B to the clicked frequency. sourceVfoB picks whose
+    // mini-pan was clicked (its dial is the pan center); offsetHz is the click's distance from center.
+    void tuneVfoBFromMiniPan(bool sourceVfoB, int offsetHz);
+
     // Task-level setters that route to both panadapters. Prefer these over
     // reaching through panadapterA()/panadapterB() — CONVENTIONS Rule 2.
     void setAmplitudeUnits(bool useSUnits);

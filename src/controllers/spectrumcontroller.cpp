@@ -427,6 +427,12 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
     connect(m_radioState, &RadioState::ifShiftChanged, this, [this](int shift) { m_vfoA->setMiniPanIfShift(shift); });
     connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitch) { m_vfoA->setMiniPanCwPitch(pitch); });
 
+    // Right-click on either VFO mini-pan tunes VFO B (same L=A R=B rule as the panadapters)
+    connect(m_vfoA, &VFOWidget::miniPanRightClicked, this,
+            [this](int offsetHz) { tuneVfoBFromMiniPan(false, offsetHz); });
+    connect(m_vfoB, &VFOWidget::miniPanRightClicked, this,
+            [this](int offsetHz) { tuneVfoBFromMiniPan(true, offsetHz); });
+
     // Tuning rate indicator (VT command)
     connect(m_radioState, &RadioState::tuningStepChanged, this, [this](int step) { m_vfoA->setTuningRate(step); });
     connect(m_radioState, &RadioState::tuningStepBChanged, this, [this](int step) { m_vfoB->setTuningRate(step); });
@@ -483,8 +489,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
         int stepHz = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
-        qint64 newFreq =
-            RadioUtils::snapFreqToStep(static_cast<qint64>(currentFreq), stepHz) + static_cast<qint64>(steps) * stepHz;
+        qint64 newFreq = RadioUtils::stepTunedFrequency(static_cast<qint64>(currentFreq), steps, stepHz);
         if (newFreq > 0) {
             QString vfo = tuneB ? "FB" : "FA";
             QString cmd = QString("%1%2;").arg(vfo).arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
@@ -672,8 +677,7 @@ void SpectrumController::setupSpectrumUI(QWidget *parentWidget, VFOWidget *vfoA,
             return;
         quint64 currentFreq = tuneB ? m_radioState->vfoB() : m_radioState->vfoA();
         int stepHz = RadioUtils::tuningStepToHz(tuneB ? m_radioState->tuningStepB() : m_radioState->tuningStep());
-        qint64 newFreq =
-            RadioUtils::snapFreqToStep(static_cast<qint64>(currentFreq), stepHz) + static_cast<qint64>(steps) * stepHz;
+        qint64 newFreq = RadioUtils::stepTunedFrequency(static_cast<qint64>(currentFreq), steps, stepHz);
         if (newFreq > 0) {
             QString vfo = tuneB ? "FB" : "FA";
             QString cmd = QString("%1%2;").arg(vfo).arg(static_cast<quint64>(newFreq), 11, 10, QChar('0'));
@@ -855,6 +859,35 @@ qint64 SpectrumController::adjustClickFreqForMode(qint64 freq, bool vfoB) {
     if (mode == RadioState::CW_R)
         return freq + m_radioState->cwPitch();
     return freq;
+}
+
+void SpectrumController::tuneVfoBFromMiniPan(bool sourceVfoB, int offsetHz) {
+    if (m_mouseQsyMode == 0) // Left Only — right-click disabled
+        return;
+    if (!m_connectionController->isConnected() || m_radioState->lockB())
+        return;
+    qint64 sourceDial = static_cast<qint64>(sourceVfoB ? m_radioState->vfoB() : m_radioState->vfoA());
+    if (sourceDial <= 0)
+        return;
+    // The mini-pan is centered on the receive passband, so include RIT (as updatePanadapterPassbands does)
+    if (sourceVfoB ? m_radioState->ritEnabledB() : m_radioState->ritEnabled())
+        sourceDial += sourceVfoB ? m_radioState->ritXitOffsetB() : m_radioState->ritXitOffset();
+    auto pitchSign = [](RadioState::Mode mode) {
+        return mode == RadioState::CW ? 1 : (mode == RadioState::CW_R ? -1 : 0);
+    };
+    const int sourceSign = pitchSign(sourceVfoB ? m_radioState->modeB() : m_radioState->mode());
+    const qint64 dial = RadioUtils::miniPanClickToDialHz(sourceDial, sourceSign, offsetHz,
+                                                         pitchSign(m_radioState->modeB()), m_radioState->cwPitch());
+    const int stepHz = RadioUtils::tuningStepToHz(m_radioState->tuningStepB());
+    const qint64 snapped = RadioUtils::snapFreqToStep(dial, stepHz);
+    if (snapped <= 0)
+        return;
+    m_connectionController->sendCAT(QString("FB%1;").arg(snapped, 11, 10, QChar('0')));
+    m_connectionController->sendCAT("FB;");
+    // Set scroll wheel to control VFO B, matching panadapter right-click
+    m_scrollVfoB = true;
+    m_mouseVfoIndicatorA->setActiveVfo(true);
+    m_mouseVfoIndicatorB->setActiveVfo(true);
 }
 
 void SpectrumController::updatePanadapterPassbands() {

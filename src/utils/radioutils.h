@@ -114,6 +114,19 @@ bool isValidIpv4(const QString &s);
 /// "k4.local", "K4-SN00045.local"). Trims input; empty -> false.
 bool isValidHostOrIp(const QString &s);
 
+/// Frequency after moving `steps` tuning steps from `freq`: snap to the step grid first
+/// (like the panadapter wheel), then add steps * stepHz. Callers reject results <= 0.
+qint64 stepTunedFrequency(qint64 freq, int steps, int stepHz);
+
+/// Hz offset from the mini-pan center line for a click at `x` in a widget `width` wide
+/// that displays `spanHz`. Returns 0 when width <= 0.
+int miniPanOffsetHz(double x, double width, int spanHz);
+
+/// Dial frequency for a target VFO when a mini-pan is clicked `offsetHz` from its center.
+/// The mini-pan center is the source dial shifted by sourcePitchSign * cwPitchHz
+/// (+1 CW, -1 CW-R, 0 otherwise); the target dial undoes its own pitch the same way.
+qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz);
+
 } // namespace RadioUtils
 
 #endif // RADIOUTILS_H

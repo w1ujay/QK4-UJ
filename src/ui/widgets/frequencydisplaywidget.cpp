@@ -85,6 +85,10 @@ void FrequencyDisplayWidget::parseFrequency(const QString &freq) {
     }
 
     m_digits = digits;
+    // WHY: while editing, a radio update (e.g. the echo of an Up/Down digit tune) becomes the
+    // cancel target, so Escape doesn't snap the display back to a stale frequency.
+    if (m_cursorPosition >= 0)
+        m_originalDigits = digits;
 }
 
 int FrequencyDisplayWidget::displayStartIndex() const {
@@ -370,6 +374,15 @@ void FrequencyDisplayWidget::keyPressEvent(QKeyEvent *event) {
         if (m_cursorPosition < kMaxDigitIndex) {
             m_cursorPosition++;
             update();
+        }
+    } else if (key == Qt::Key_Up || key == Qt::Key_Down) {
+        // Tune by the cursor digit's place value; the radio echo then updates the digits.
+        // Ignored once digits have been typed but not sent, so the echo can't overwrite them.
+        if (m_digits == m_originalDigits) {
+            qint64 placeHz = 1;
+            for (int i = m_cursorPosition; i < kMaxDigitIndex; ++i)
+                placeHz *= 10;
+            emit digitTuneRequested(key == Qt::Key_Up ? placeHz : -placeHz);
         }
     } else if (key == Qt::Key_Home) {
         m_cursorPosition = 0;

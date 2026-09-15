@@ -85,6 +85,8 @@ signals:
     void miniPanClicked();                            // User clicked mini-pan → show normal view
     void frequencyEntered(const QString &freqString); // User entered new frequency
     void frequencyScrolled(int steps);                // User scrolled wheel over frequency
+    void digitTuneRequested(qint64 deltaHz);          // Up/Down on a digit while entering a frequency
+    void miniPanRightClicked(int offsetHz);           // Right-click on mini-pan, Hz from its center
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;

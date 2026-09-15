@@ -229,6 +229,31 @@ private slots:
     void testHost_whitespaceOnly() { QVERIFY(!RadioUtils::isValidHostOrIp("   ")); }
     void testHost_trimmed() { QVERIFY(RadioUtils::isValidHostOrIp("  k4.local  ")); }
     void testHost_tooLong() { QVERIFY(!RadioUtils::isValidHostOrIp(QString(254, 'a'))); }
+
+    // stepTunedFrequency — snap to the step grid, then move N steps (arrow keys / wheel)
+    void testStepTune_upSnapsFirst() { QCOMPARE(RadioUtils::stepTunedFrequency(7031415, 1, 1000), 7032000); }
+    void testStepTune_downFromOffGridLandsOnGridBelow() {
+        QCOMPARE(RadioUtils::stepTunedFrequency(7031415, -1, 1000), 7031000);
+    }
+    void testStepTune_downTwoFromOffGrid() { QCOMPARE(RadioUtils::stepTunedFrequency(7031415, -2, 1000), 7030000); }
+    void testStepTune_downFromAligned() { QCOMPARE(RadioUtils::stepTunedFrequency(7031000, -1, 1000), 7030000); }
+    void testStepTune_alignedMultipleSteps() { QCOMPARE(RadioUtils::stepTunedFrequency(7031000, 2, 100), 7031200); }
+    void testStepTune_tenHz() { QCOMPARE(RadioUtils::stepTunedFrequency(7031415, 3, 10), 7031440); }
+    void testStepTune_zeroSteps() { QCOMPARE(RadioUtils::stepTunedFrequency(7031415, 0, 1000), 7031000); }
+
+    // miniPanOffsetHz — click X on the mini-pan → Hz offset from the pan's center line
+    void testMiniPanOffset_center() { QCOMPARE(RadioUtils::miniPanOffsetHz(390.0, 780.0, 2000), 0); }
+    void testMiniPanOffset_leftEdge() { QCOMPARE(RadioUtils::miniPanOffsetHz(0.0, 780.0, 2000), -1000); }
+    void testMiniPanOffset_rightEdge() { QCOMPARE(RadioUtils::miniPanOffsetHz(780.0, 780.0, 10000), 5000); }
+    void testMiniPanOffset_quarter() { QCOMPARE(RadioUtils::miniPanOffsetHz(195.0, 780.0, 2000), -500); }
+    void testMiniPanOffset_zeroWidth() { QCOMPARE(RadioUtils::miniPanOffsetHz(10.0, 0.0, 2000), 0); }
+
+    // miniPanClickToDialHz — source mini-pan center is dial ± pitch in CW/CW-R; target dial is RF ∓ pitch
+    void testMiniPanDial_usbToUsb() { QCOMPARE(RadioUtils::miniPanClickToDialHz(14074000, 0, 1500, 0, 600), 14075500); }
+    void testMiniPanDial_cwToCw() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 1, 300, 1, 600), 7031300); }
+    void testMiniPanDial_usbToCw() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 0, 300, 1, 600), 7030700); }
+    void testMiniPanDial_cwToUsb() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, 1, 0, 0, 600), 7031600); }
+    void testMiniPanDial_cwrToCw() { QCOMPARE(RadioUtils::miniPanClickToDialHz(7031000, -1, 0, 1, 600), 7029800); }
 };
 
 QTEST_MAIN(TestRadioUtils)

@@ -2,6 +2,7 @@
 #define MINIVIEWWINDOW_H
 
 #include "network/dxclusterclient.h"
+#include "utils/wheelaccumulator.h"
 #include <QLabel>
 #include <QPoint>
 #include <QWidget>
@@ -17,7 +18,8 @@ class QVBoxLayout;
  * - Always-on-top frameless window
  * - Shows VFO A/B frequencies with mode indicators
  * - MODE and BAND buttons for quick selection
- * - Optional panadapter display below the strip
+ * - Optional panadapter display below the strip (right-click tunes VFO B)
+ * - Up/Down arrows tune the active VFO; mouse wheel over a frequency tunes that VFO
  * - Scrolling spot list from the DX cluster
  * - Draggable, position saved/restored
  * - Double-click to restore full view
@@ -40,10 +42,13 @@ public:
     // Panadapter
     void updateSpectrum(const QByteArray &data);
     void setPanMode(const QString &mode);
+    void setPanDataSubMode(int subMode);
     void setPanFilterBandwidth(int bwHz);
     void setPanIfShift(int shift);
     void setPanCwPitch(int pitchHz);
     void setPanNotchFilter(bool enabled, int pitchHz);
+    void setPanAveraging(int level);
+    void setPanWaterfallHeight(int percent);
     bool isPanadapterVisible() const;
 
     // Access to buttons for popup positioning
@@ -58,12 +63,19 @@ signals:
     void bandClicked();
     void modeClicked();
 
+    void tuneStepsRequested(int steps);             // Up/Down arrows: tune the active VFO
+    void frequencyScrolled(bool vfoB, int steps);   // Mouse wheel over the VFO A or B frequency
+    void panRightClicked(int offsetHz);             // Right-click on the panadapter, Hz from center
+    void panadapterVisibilityChanged(bool visible); // Panadapter shown or hidden
+
 protected:
     void paintEvent(QPaintEvent *event) override;
     void mousePressEvent(QMouseEvent *event) override;
     void mouseMoveEvent(QMouseEvent *event) override;
     void mouseReleaseEvent(QMouseEvent *event) override;
     void mouseDoubleClickEvent(QMouseEvent *event) override;
+    void keyPressEvent(QKeyEvent *event) override;
+    bool eventFilter(QObject *watched, QEvent *event) override;
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;
 
@@ -84,6 +96,10 @@ private:
     QLabel *m_modeALabel;
     QLabel *m_freqBLabel;
     QLabel *m_modeBLabel;
+
+    // Wheel tuning over the frequency labels
+    WheelAccumulator m_wheelA;
+    WheelAccumulator m_wheelB;
 
     // Band/Mode buttons
     QPushButton *m_bandBtn;

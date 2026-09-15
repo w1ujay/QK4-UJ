@@ -35,6 +35,7 @@ void VFOWidget::setupUi() {
     // Forward frequency entry signal
     connect(m_frequencyDisplay, &FrequencyDisplayWidget::frequencyEntered, this, &VFOWidget::frequencyEntered);
     connect(m_frequencyDisplay, &FrequencyDisplayWidget::frequencyScrolled, this, &VFOWidget::frequencyScrolled);
+    connect(m_frequencyDisplay, &FrequencyDisplayWidget::digitTuneRequested, this, &VFOWidget::digitTuneRequested);
 
     // VFO A: frequency on left, VFO B: frequency on right
     // Frequency container width matches stacked widget (270px) for vertical alignment
@@ -291,6 +292,7 @@ void VFOWidget::showMiniPan() {
             showNormal();
             emit miniPanClicked();
         });
+        connect(m_miniPan, &MiniPanRhiWidget::rightClicked, this, &VFOWidget::miniPanRightClicked);
     }
     m_stackedWidget->setCurrentIndex(1);
 }

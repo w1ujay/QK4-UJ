@@ -93,6 +93,14 @@ private:
     void setupRadioStateWiring();
     void setupSpectrumDataRouting();
     void setupHardwareController();
+
+    // VFO tuning shared by the wheel, arrow keys, digit tuning, and the mini view.
+    // All respect connection state and VFO lock; tuneVfoBySteps snaps to the step grid first.
+    void tuneVfoToFrequency(bool vfoB, qint64 freq);
+    void tuneVfoBySteps(bool vfoB, int steps);
+    void tuneVfoByHz(bool vfoB, qint64 deltaHz);
+    // Up/Down (no modifiers) tunes VFO A, or VFO B while B SET is on. Returns true if handled.
+    bool handleTuneKey(QKeyEvent *event);
     void setupCatServer();
 
     void updateConnectionState(TcpClient::ConnectionState state);

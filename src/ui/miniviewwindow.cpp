@@ -4,12 +4,13 @@
 #include "ui/styling/k4styles.h"
 #include <QGuiApplication>
 #include <QHBoxLayout>
+#include <QKeyEvent>
 #include <QMouseEvent>
 #include <QPainter>
-#include <QPainterPath>
 #include <QPushButton>
 #include <QScreen>
 #include <QVBoxLayout>
+#include <QWheelEvent>
 
 namespace {
 const int StripHeight = 52;
@@ -27,7 +28,9 @@ const int BtnHeight = 24;
 
 MiniViewWindow::MiniViewWindow(QWidget *parent)
     : QWidget(parent, Qt::Tool | Qt::FramelessWindowHint | Qt::WindowStaysOnTopHint) {
-    setAttribute(Qt::WA_TranslucentBackground);
+    // WHY no WA_TranslucentBackground: in a translucent top-level the QRhiWidget panadapter
+    // rendered nothing on Windows (the desktop showed through it). The window paints opaque.
+    setFocusPolicy(Qt::StrongFocus); // receive Up/Down for tuning
     setupUi();
     restorePosition();
 }
@@ -68,6 +71,7 @@ void MiniViewWindow::setupUi() {
 
     m_freqALabel = new QLabel("14.074.000", m_stripWidget);
     m_freqALabel->setStyleSheet(freqStyle);
+    m_freqALabel->installEventFilter(this); // wheel tunes VFO A
     layout->addWidget(m_freqALabel);
     layout->addSpacing(4);
 
@@ -94,6 +98,7 @@ void MiniViewWindow::setupUi() {
 
     m_freqBLabel = new QLabel("14.076.000", m_stripWidget);
     m_freqBLabel->setStyleSheet(freqBStyle);
+    m_freqBLabel->installEventFilter(this); // wheel tunes VFO B
     layout->addWidget(m_freqBLabel);
     layout->addSpacing(4);
 
@@ -133,6 +138,7 @@ void MiniViewWindow::setupUi() {
     m_bandBtn = new QPushButton("BAND", m_stripWidget);
     m_bandBtn->setFixedSize(BtnWidth, BtnHeight);
     m_bandBtn->setCursor(Qt::PointingHandCursor);
+    m_bandBtn->setFocusPolicy(Qt::NoFocus); // keep Up/Down for tuning
     m_bandBtn->setToolTip("Select band");
     m_bandBtn->setStyleSheet(btnStyle);
     connect(m_bandBtn, &QPushButton::clicked, this, &MiniViewWindow::bandClicked);
@@ -143,6 +149,7 @@ void MiniViewWindow::setupUi() {
     m_modeBtn = new QPushButton("MODE", m_stripWidget);
     m_modeBtn->setFixedSize(BtnWidth, BtnHeight);
     m_modeBtn->setCursor(Qt::PointingHandCursor);
+    m_modeBtn->setFocusPolicy(Qt::NoFocus);
     m_modeBtn->setToolTip("Select mode");
     m_modeBtn->setStyleSheet(btnStyle);
     connect(m_modeBtn, &QPushButton::clicked, this, &MiniViewWindow::modeClicked);
@@ -168,6 +175,7 @@ void MiniViewWindow::setupUi() {
     m_panToggleBtn = new QPushButton(QString::fromUtf8("\u25BC"), m_stripWidget); // Down arrow
     m_panToggleBtn->setFixedSize(24, 24);
     m_panToggleBtn->setCursor(Qt::PointingHandCursor);
+    m_panToggleBtn->setFocusPolicy(Qt::NoFocus);
     m_panToggleBtn->setToolTip("Toggle panadapter");
     m_panToggleBtn->setStyleSheet(QString("QPushButton { "
                                           "  background-color: transparent; "
@@ -189,6 +197,7 @@ void MiniViewWindow::setupUi() {
     m_restoreBtn = new QPushButton(QString::fromUtf8("\u25A1"), m_stripWidget); // Unicode square (maximize icon)
     m_restoreBtn->setFixedSize(24, 24);
     m_restoreBtn->setCursor(Qt::PointingHandCursor);
+    m_restoreBtn->setFocusPolicy(Qt::NoFocus);
     m_restoreBtn->setToolTip("Restore full view");
     m_restoreBtn->setStyleSheet(QString("QPushButton { "
                                         "  background-color: transparent; "
@@ -232,6 +241,7 @@ void MiniViewWindow::applySettings() {
         m_panVisible = false;
         if (m_miniPan)
             m_miniPan->setVisible(false);
+        emit panadapterVisibilityChanged(false);
     }
 
     updateWindowSize();
@@ -256,6 +266,17 @@ void MiniViewWindow::togglePanadapter() {
             m_miniPan->setMaximumWidth(StripWidth - 4);
             m_miniPan->setFixedHeight(PanHeight);
             m_mainLayout->addWidget(m_miniPan);
+
+            // Cyan passband, matching VFO A's mini-pan in the main window
+            QColor passband(K4Styles::Colors::VfoACyan);
+            passband.setAlpha(64);
+            m_miniPan->setPassbandColor(passband);
+            // Clicks on the pan don't reach this window's mousePressEvent, so take keyboard focus here too
+            connect(m_miniPan, &MiniPanRhiWidget::clicked, this, [this]() { activateWindow(); });
+            connect(m_miniPan, &MiniPanRhiWidget::rightClicked, this, [this](int offsetHz) {
+                activateWindow();
+                emit panRightClicked(offsetHz);
+            });
         }
         m_miniPan->setVisible(true);
         m_panToggleBtn->setText(QString::fromUtf8("\u25B2")); // Up arrow
@@ -271,6 +292,7 @@ void MiniViewWindow::togglePanadapter() {
     RadioSettings::instance()->setMiniViewShowPanadapter(m_panVisible);
 
     updateWindowSize();
+    emit panadapterVisibilityChanged(m_panVisible);
 }
 
 void MiniViewWindow::updateSpectrum(const QByteArray &data) {
@@ -301,6 +323,21 @@ void MiniViewWindow::setPanCwPitch(int pitchHz) {
 void MiniViewWindow::setPanNotchFilter(bool enabled, int pitchHz) {
     if (m_miniPan)
         m_miniPan->setNotchFilter(enabled, pitchHz);
+}
+
+void MiniViewWindow::setPanDataSubMode(int subMode) {
+    if (m_miniPan)
+        m_miniPan->setDataSubMode(subMode);
+}
+
+void MiniViewWindow::setPanAveraging(int level) {
+    if (m_miniPan)
+        m_miniPan->setAveraging(level);
+}
+
+void MiniViewWindow::setPanWaterfallHeight(int percent) {
+    if (m_miniPan)
+        m_miniPan->setWaterfallHeight(percent);
 }
 
 bool MiniViewWindow::isPanadapterVisible() const {
@@ -375,20 +412,15 @@ void MiniViewWindow::updateSpotDisplay() {
 void MiniViewWindow::paintEvent(QPaintEvent *event) {
     Q_UNUSED(event)
     QPainter painter(this);
-    painter.setRenderHint(QPainter::Antialiasing);
 
-    QColor bgColor(K4Styles::Colors::Background);
-    QColor borderColor(K4Styles::Colors::BorderNormal);
-
-    QPainterPath path;
-    path.addRoundedRect(QRectF(1, 1, width() - 2, height() - 2), 6, 6);
-    painter.fillPath(path, bgColor);
-
-    painter.setPen(QPen(borderColor, BorderWidth));
-    painter.drawPath(path);
+    // Opaque, square-cornered frame (rounded corners needed a translucent window — see constructor)
+    painter.fillRect(rect(), QColor(K4Styles::Colors::Background));
+    painter.setPen(QPen(QColor(K4Styles::Colors::BorderNormal), BorderWidth));
+    painter.drawRect(rect().adjusted(0, 0, -BorderWidth, -BorderWidth));
 }
 
 void MiniViewWindow::mousePressEvent(QMouseEvent *event) {
+    activateWindow(); // take keyboard focus so Up/Down tune
     if (event->button() == Qt::LeftButton) {
         // Only drag from the strip area, not from the panadapter
         if (event->position().y() <= StripHeight) {
@@ -419,6 +451,29 @@ void MiniViewWindow::mouseDoubleClickEvent(QMouseEvent *event) {
     if (event->position().y() <= StripHeight) {
         emit restoreRequested();
     }
+}
+
+void MiniViewWindow::keyPressEvent(QKeyEvent *event) {
+    // Up/Down arrows tune like the main window (VFO A, or VFO B while B SET is on)
+    const bool plain = (event->modifiers() & ~Qt::KeyboardModifiers(Qt::KeypadModifier)) == Qt::NoModifier;
+    if (plain && (event->key() == Qt::Key_Up || event->key() == Qt::Key_Down)) {
+        emit tuneStepsRequested(event->key() == Qt::Key_Up ? 1 : -1);
+        event->accept();
+        return;
+    }
+    QWidget::keyPressEvent(event);
+}
+
+bool MiniViewWindow::eventFilter(QObject *watched, QEvent *event) {
+    // Mouse wheel over a VFO frequency tunes that VFO by its tuning step
+    if (event->type() == QEvent::Wheel && (watched == m_freqALabel || watched == m_freqBLabel)) {
+        const bool vfoB = (watched == m_freqBLabel);
+        const int steps = (vfoB ? m_wheelB : m_wheelA).accumulate(static_cast<QWheelEvent *>(event));
+        if (steps != 0)
+            emit frequencyScrolled(vfoB, steps);
+        return true;
+    }
+    return QWidget::eventFilter(watched, event);
 }
 
 void MiniViewWindow::showEvent(QShowEvent *event) {

@@ -136,6 +136,27 @@ qint64 snapFreqToStep(qint64 freq, int stepHz) {
     return (stepHz > 0) ? (freq / stepHz) * stepHz : freq;
 }
 
+qint64 stepTunedFrequency(qint64 freq, int steps, int stepHz) {
+    const qint64 snapped = snapFreqToStep(freq, stepHz);
+    // WHY: snapping rounds down, so an off-grid frequency moving down starts from the grid point
+    // above it — one step down then lands on the nearest grid point instead of skipping it.
+    const qint64 base = (steps < 0 && snapped != freq) ? snapped + stepHz : snapped;
+    return base + static_cast<qint64>(steps) * stepHz;
+}
+
+int miniPanOffsetHz(double x, double width, int spanHz) {
+    if (width <= 0.0)
+        return 0;
+    return qRound((x / width - 0.5) * spanHz);
+}
+
+qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign,
+                            int cwPitchHz) {
+    // WHY: the mini-pan is centered on the passband, which in CW sits at dial + pitch (CW-R: dial - pitch).
+    const qint64 rfHz = sourceDialHz + sourcePitchSign * cwPitchHz + offsetHz;
+    return rfHz - targetPitchSign * cwPitchHz;
+}
+
 bool isValidIpv4(const QString &s) {
     const QStringList parts = s.split('.');
     if (parts.size() != 4)

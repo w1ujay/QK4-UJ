@@ -245,6 +245,17 @@ target_include_directories(test_kpodplususbworker PRIVATE
 target_link_libraries(test_kpodplususbworker Qt6::Core Qt6::Test ${LIBUSB_LIBRARIES})
 add_test(NAME KpodPlusUsbWorkerTests COMMAND test_kpodplususbworker)
 
+# FrequencyDisplayWidget edit-mode keyboard tests (Up/Down digit tuning, cancel) — offscreen widgets.
+add_executable(test_frequencydisplaywidget test_frequencydisplaywidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/widgets/frequencydisplaywidget.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+    ${CMAKE_SOURCE_DIR}/src/utils/wheelaccumulator.cpp
+)
+target_include_directories(test_frequencydisplaywidget PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_frequencydisplaywidget Qt6::Widgets Qt6::Test)
+add_test(NAME FrequencyDisplayWidgetTests COMMAND test_frequencydisplaywidget)
+set_tests_properties(FrequencyDisplayWidgetTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

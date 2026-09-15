@@ -43,7 +43,8 @@ public:
     void setAveraging(int level); // 1-20: K4 #AVG display averaging
 
 signals:
-    void clicked(); // Emitted when user clicks to toggle back to normal view
+    void clicked();                  // Emitted when user clicks to toggle back to normal view
+    void rightClicked(int offsetHz); // Right-click: Hz offset of the click from the pan's center line
 
 protected:
     // QRhiWidget overrides
