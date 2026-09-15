@@ -35,8 +35,21 @@ conflict with.
   Covered by 17 new cases in `tests/test_catserver.cpp`.
 - `RadioSettings`: RFKit and Mini View settings, plus the fork's `audioEnabled`
   master switch that gates CatServer's TX/RX and AG behaviour.
+- **Keyboard tuning** — Up/Down tunes the active VFO (VFO B with B SET) by the
+  tuning step, respecting VFO lock, even when a button has focus. Up/Down on a
+  digit during frequency entry tunes by that digit's place value.
+- **Mini View tuning** — arrow keys, or the mouse wheel over the A or B
+  frequency.
+- **Keyboard control values** — click a side-panel control button (WPM, PWR, BW,
+  SHIFT, RF, SQL), then Up/Down adjust it, so a laptop with no mouse can change
+  them. An inactive button activates on the first press, matching the wheel.
+- **Mini-pan right-click** — right-click a VFO mini-pan or the Mini View pan to
+  tune VFO B to that frequency, with CW pitch and RIT handled.
 
 ### Changed
+- Window title reads `QK4-UJ v<version>` (`QK4-UJ <branch>-<sha>` on CI branch
+  builds), and the About box credits the fork and links to QK4-UJ.
+- VFO and panadapter wheel tuning snap to the step grid and respect VFO lock.
 - Mini View spots now consume upstream's `DxSpot` from `DxClusterClient`
   instead of the fork's N1MM UDP listener.
 - Mini View's BAND / MODE buttons restore the main window before opening the
@@ -48,6 +61,21 @@ conflict with.
   `QString("TB%100;")`, which Qt reads as placeholder index 10 followed by a
   literal `0`, yielding `TB70;` instead of `TB700;`. Now built by
   concatenation.
+- Mini View's panadapter was blank: it now gets the MiniPAN stream, turns
+  `#MP` on and off as needed, and applies pan settings when it first appears.
+  The pan itself never rendered because Qt switches an already-shown window to
+  GPU composition only when a `QRhiWidget` is reparented into it — building the
+  pan parentless and letting the layout adopt it leaves the window on
+  `RasterSurface` no longer, so the widget gets a QRhi instead of failing every
+  frame with `QRhiWidget: No QRhi`. VFO frequencies are formatted (`7.031.415`,
+  not `0007031415`) and refresh on RIT/XIT changes.
+- Enter in the frequency entry resent the displayed digits even when nothing had
+  been typed. Up/Down digit tuning deliberately leaves the digits alone until the
+  radio replies, so pressing Enter in that window tuned the radio back to the
+  pre-tune frequency. Enter now just leaves edit mode unless digits were typed.
+- RX ANT and SUB ANT buttons did nothing over the network (the K4 ignores the
+  `SW70`/`SW157` switch codes from network clients). They now step `AR`/`AR$`
+  through the ACM/ACS rotation, skipping ATU antennas without a KAT4.
 
 ### Removed
 - N1MM UDP spot listener and the N1MM panadapter spot overlay — superseded by

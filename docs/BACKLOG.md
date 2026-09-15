@@ -11,7 +11,7 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | ID | Item | Type | Effort | Decision |
 |----|------|------|--------|----------|
 | B1 | Mini View pan blank + zero-padded frequencies | Bug (v2) | M | Keep — done, on-air test pending |
-| B2 | Audio-enable UI + gating (inherited-off risk) | Port gap / bug risk | S–M | |
+| B2 | Audio-enable UI + gating (inherited-off risk) | Port gap / bug risk | S–M | Skip |
 | B3 | CAT `IF` data sub-mode (fldigi RTTY) | Port gap | S | |
 | N1 | Bundle BarnCat Sparks with the Windows distro | New | M | |
 | N2 | "Launch Sparks" button in the GUI | New | S | |
@@ -21,9 +21,9 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | P2 | MON button double-toggle fix | Port gap | S | |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
 | P4 | RF gain "RF-n" indicator on VFO row | Port gap | S | |
-| P5 | QK4-UJ window title + W1UJ attribution | Port gap | S | |
+| P5 | QK4-UJ window title + W1UJ attribution | Port gap | S | Keep — done |
 | P6 | Mini View settings page | Port gap | S | |
-| P7 | RX noise filter (3.5 kHz LPF) | Port gap | S–M | |
+| P7 | RX noise filter (3.5 kHz LPF) | Port gap | S–M | Skip |
 | P8 | DATA-mode mic gain scaling | Port gap (uncertain) | S | |
 | P9 | N1MM UDP spots + overlay | Port gap | L | |
 | P10 | Fork release CI (`uj.*` tags) | Port gap | M | |
@@ -64,6 +64,20 @@ Five separate causes, all verified in code except #5:
 per `vfowidget.cpp`) and removed `WA_TranslucentBackground` instead; the window now has square corners. On-air
 check: pan draws, ±1.0 kHz in CW on first toggle, frequencies read `7.031.415`, VFO A mini-pan still works after
 returning to the main window.
+
+**Update 2026-09-15 — cause #5 was misdiagnosed.** Translucency was not it; the pan stayed blank (black once
+opaque). Qt only switches an already-shown top-level to RHI composition when a QRhiWidget is *reparented* into
+it: `QRhiWidget`'s constructor sets the render-to-texture flag after `QWidget` has already taken the parent, so
+`new MiniPanRhiWidget(this)` never triggered the switch. The Mini View window stayed `RasterSurface` and every
+frame failed with `QRhiWidget: No QRhi` + `renderFailed()`. Fixed by constructing the pan parentless and letting
+`m_mainLayout->addWidget()` reparent it. Verified under WSLg: winId changes, surface becomes `OpenGLSurface`,
+pan draws spectrum, waterfall, passband and center line. Diagnostics kept behind the `dsp.minipan` and
+`ui.miniview` debug categories (`QT_LOGGING_RULES="dsp.minipan.debug=true;ui.miniview.debug=true"`).
+
+**Open, WSLg only (verify on Windows):** the Mini View window can't be dragged — Qt reports it at `QPoint(0,0)`
+both before and after the pan exists, though `miniview/windowX|Y` hold 569,448, so the compositor places it and
+ignores `move()`. BAND / MODE also accept one click and then stop responding. Both match the WSLg `Qt::Tool`
+bug (microsoft/wslg#1094) that broke popup clicks before, and neither is caused by the pan fix.
 
 ### B2. Audio-enable UI + gating
 `RadioSettings::audioEnabled` and the CatServer checks were ported, but there's no checkbox and no gating of
@@ -145,7 +159,20 @@ means the value was refused, so pending state is dropped and the next press buil
 replies still owed to abandoned or expired requests are counted and skipped so they can't clear newer presses,
 and are only forgotten when the connection drops). VFO A/B frequency wheel now also snaps and respects lock;
 stepping down from an off-grid frequency lands on the nearest grid point (panadapter wheel too).
-Esc → KY0 dropped by decision. DualControlButton/MonOverlay arrow keys not ported.
+Esc → KY0 dropped by decision. DualControlButton arrow keys ported 2026-09-15 (click to focus, then Up/Down
+adjust; an inactive button activates first, as with the wheel). No conflict with `ButtonTuneKeyFilter`: that
+filter only intercepts `QAbstractButton`, and DualControlButton is a plain QWidget. Covered by
+`tests/test_dualcontrolbutton.cpp`. MonOverlay arrow keys still not ported.
+
+**Review follow-ups 2026-09-15:**
+- Fixed: Enter in the frequency entry resent the displayed digits when nothing was typed, undoing an
+  in-flight digit tune (`frequencydisplaywidget.cpp` `exitEditMode`). Covered by two new cases in
+  `tests/test_frequencydisplaywidget.cpp`.
+- Open: every `FA`/`FB` reply consumes a pending digit-tune entry (`mainwindow.cpp` `onCatResponse` →
+  `RadioUtils::PendingTune::radioReplied`), including replies to QK4's own bare `FA;`/`FB;` queries from
+  the seven `SpectrumController` sites (spot click, pan click). A click within the 1 s `HOLD_MS` window
+  before arrow presses drops the pending targets, losing rapid steps. CatServer answers `FA;`/`FB;` from
+  RadioState, so external loggers don't trigger it. Fix needs PendingTune to know about foreign queries.
 
 ### P2. MON button double-toggle fix
 Fork 034642a: only send `SW128` when opening the MON overlay. At HEAD `sidecontrolpanel.cpp:166-174` sends
@@ -172,7 +199,11 @@ width.
 Fork 69f9863, 74d6c87. Title at `mainwindow.cpp:482`. Don't edit LICENSE (verbatim GPL, breaks GitHub
 license detection); put attribution in README (`:233`) and/or About box (`mainwindow.cpp:473`).
 
-**Notes:**
+**Notes:** Done 2026-09-15. Title is `QK4-UJ v<version>`, or `QK4-UJ <branch>-<sha>` for CI branch builds (no
+"v" when the version doesn't start with a digit). About box credits W1UJ and links QK4-UJ and upstream. README
+restored the fork heading, intro, Build Windows badge (`ujay-mods-v2`; `ci.yml` doesn't run on the fork branch),
+fork download note, Fork Changes section rewritten for v2, and the fork copyright line. LICENSE untouched. The
+side panel version label still reads `QK4 V.<version>`.
 
 ### P6. Mini View settings page
 Fork cacccfa, 9a43414: Options tab with Show BAND / MODE / spots checkboxes. Settings exist
