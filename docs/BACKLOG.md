@@ -142,7 +142,8 @@ in frequency entry tunes by that digit's place value (sent as `FA…;FA;` with n
 value can't stick; ignored once digits are typed; rapid presses build on the last target sent via
 `RadioUtils::PendingTune`, reconciled against every FA/FB reply — a reply that doesn't match its request
 means the value was refused, so pending state is dropped and the next press builds on the radio's frequency;
-replies still owed to abandoned requests are counted and skipped so they can't clear newer presses). VFO A/B frequency wheel now also snaps and respects lock;
+replies still owed to abandoned or expired requests are counted and skipped so they can't clear newer presses,
+and are only forgotten when the connection drops). VFO A/B frequency wheel now also snaps and respects lock;
 stepping down from an off-grid frequency lands on the nearest grid point (panadapter wheel too).
 Esc → KY0 dropped by decision. DualControlButton/MonOverlay arrow keys not ported.
 
