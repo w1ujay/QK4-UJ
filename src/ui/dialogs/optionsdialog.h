@@ -55,6 +55,10 @@ public:
                            QWidget *parent = nullptr);
     ~OptionsDialog();
 
+    // Open the dialog with one page selected, for callers that know where the user needs to land
+    // (e.g. the status bar's HaliKey indicator when no port has been chosen yet).
+    void showPage(Page page);
+
 protected:
     void showEvent(QShowEvent *event) override;
     void hideEvent(QHideEvent *event) override;

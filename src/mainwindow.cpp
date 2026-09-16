@@ -1,5 +1,6 @@
 #include "mainwindow.h"
 #include "utils/radioutils.h"
+#include "hardware/halikeydevice.h"
 #include "ui/dialogs/radiomanagerdialog.h"
 #include "ui/widgets/sidecontrolpanel.h"
 #include "ui/widgets/rightsidepanel.h"
@@ -429,6 +430,43 @@ void MainWindow::setupHardwareController() {
 
     // Hardware-side errors (HaliKey port-open failures today) → notification overlay
     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
+
+    // HaliKey status-bar indicator — connect/disconnect without opening Options each session.
+    // A failed openPort emits hardwareError (above) and no connected(), so the indicator stays gray.
+    HalikeyDevice *halikey = m_hardwareController->halikeyDevice();
+    auto updateHalikeyStatus = [this, halikey]() {
+        const bool connected = halikey->isConnected();
+        m_statusBarController->setHalikeyStatus(connected, connected ? halikey->portName()
+                                                                     : RadioSettings::instance()->halikeyPortName());
+    };
+    connect(halikey, &HalikeyDevice::connected, this, updateHalikeyStatus);
+    connect(halikey, &HalikeyDevice::disconnected, this, updateHalikeyStatus);
+    connect(m_statusBarController, &StatusBarController::halikeyToggleRequested, this, [this, halikey]() {
+        if (halikey->isConnected()) {
+            halikey->closePort();
+            return;
+        }
+        const QString port = RadioSettings::instance()->halikeyPortName();
+        if (port.isEmpty()) {
+            openOptionsDialog(OptionsDialog::PageCwKeyer); // no port chosen yet — send the user there
+            return;
+        }
+        halikey->openPort(port);
+    });
+    updateHalikeyStatus();
+}
+
+void MainWindow::openOptionsDialog(int page) {
+    if (!m_optionsDialog) {
+        m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
+                                            m_kpa1500UiController->client(), m_rfkitUiController->client(),
+                                            m_dxClusterController, this);
+    }
+    if (page >= 0)
+        m_optionsDialog->showPage(static_cast<OptionsDialog::Page>(page));
+    m_optionsDialog->show();
+    m_optionsDialog->raise();
+    m_optionsDialog->activateWindow();
 }
 
 void MainWindow::setupCatServer() {
@@ -510,16 +548,7 @@ void MainWindow::setupMenuBar() {
     QMenu *toolsMenu = menuBar()->addMenu("&Tools");
     QAction *optionsAction = new QAction("&Settings...", this);
     optionsAction->setMenuRole(QAction::PreferencesRole); // macOS: moves to app menu as Preferences
-    connect(optionsAction, &QAction::triggered, this, [this]() {
-        if (!m_optionsDialog) {
-            m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
-                                                m_kpa1500UiController->client(), m_rfkitUiController->client(),
-                                                m_dxClusterController, this);
-        }
-        m_optionsDialog->show();
-        m_optionsDialog->raise();
-        m_optionsDialog->activateWindow();
-    });
+    connect(optionsAction, &QAction::triggered, this, [this]() { openOptionsDialog(); });
     toolsMenu->addAction(optionsAction);
 
     // Help menu

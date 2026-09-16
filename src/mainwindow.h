@@ -106,6 +106,9 @@ private:
     RadioUtils::PendingTune m_pendingDigitTuneA;
     RadioUtils::PendingTune m_pendingDigitTuneB;
     void setupCatServer();
+    // Show the Options dialog, creating it on first use. page is an OptionsDialog::Page, or -1 to
+    // leave the current page selected (int keeps OptionsDialog forward-declared here).
+    void openOptionsDialog(int page = -1);
 
     void updateConnectionState(TcpClient::ConnectionState state);
     // Disconnect-path helper — owners of their own state each implement a

@@ -94,6 +94,14 @@ void OptionsDialog::setupUi() {
     mainLayout->addWidget(m_pageStack, 1);
 }
 
+void OptionsDialog::showPage(Page page) {
+    if (page < 0 || page >= PageCount)
+        return;
+    ensurePageCreated(page);
+    // The row-changed handler switches the stack and refreshes the page.
+    m_tabList->setCurrentRow(page);
+}
+
 void OptionsDialog::showEvent(QShowEvent *event) {
     QDialog::showEvent(event);
     // Ensure current page is created (for first show)

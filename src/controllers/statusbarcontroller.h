@@ -29,6 +29,8 @@ class RadioState;
 // normal disconnected flow handles the cleanup.
 //
 // See PATTERNS.md → Controller Pattern.
+class QPushButton;
+
 class StatusBarController : public QObject {
     Q_OBJECT
 
@@ -47,6 +49,9 @@ public:
     void setKpa1500Status(const QString &text, const QString &styleSheet);
     void setRfkitVisible(bool visible);
     void setRfkitStatus(const QString &text, const QString &styleSheet);
+    // HaliKey CW paddle interface: green when the port is open, gray otherwise. The tooltip carries
+    // the port name so the one-word indicator stays narrow.
+    void setHalikeyStatus(bool connected, const QString &portName);
 
     // Connection-state indicator transitions. Each sets the K4 status label
     // text and style appropriate for that state. Disconnected also resets
@@ -56,6 +61,11 @@ public:
     void showConnected();                        // green bold
     void showError(const QString &errorMessage); // red bold — "Error: <message>"
     void showAuthFailed();                       // red bold — "Auth Failed"
+
+signals:
+    // The HaliKey indicator was clicked. MainWindow owns the device and decides what that means,
+    // keeping port/settings knowledge out of the status bar.
+    void halikeyToggleRequested();
 
 private:
     void onPowerButtonClicked();
@@ -69,6 +79,7 @@ private:
     IconTextLabel *m_paTempField;
     IconTextLabel *m_voltageField;
     QLabel *m_connectionStatusLabel;
+    QPushButton *m_halikeyButton;
     QLabel *m_kpa1500StatusLabel;
     QLabel *m_rfkitStatusLabel;
     NetHealthWidget *m_netHealthWidget;

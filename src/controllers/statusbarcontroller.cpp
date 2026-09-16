@@ -13,6 +13,7 @@
 #include <QDateTime>
 #include <QHBoxLayout>
 #include <QLabel>
+#include <QPushButton>
 #include <QTimer>
 #include <QWidget>
 
@@ -115,6 +116,16 @@ StatusBarController::StatusBarController(RadioState *radioState, ConnectionContr
     layout->addWidget(m_voltageField);
 
     layout->addStretch();
+
+    // HaliKey CW interface — clickable so the paddle can be connected without opening Options.
+    // Styled flat so it reads as one of the indicators rather than a button in the bar.
+    m_halikeyButton = new QPushButton("HALIKEY", m_container);
+    m_halikeyButton->setFlat(true);
+    m_halikeyButton->setCursor(Qt::PointingHandCursor);
+    m_halikeyButton->setFocusPolicy(Qt::NoFocus); // Up/Down stay with the VFO
+    connect(m_halikeyButton, &QPushButton::clicked, this, &StatusBarController::halikeyToggleRequested);
+    layout->addWidget(m_halikeyButton);
+    setHalikeyStatus(false, QString());
 
     // KPA1500 status (to left of K4 status)
     m_kpa1500StatusLabel = new QLabel("", m_container);
@@ -278,6 +289,20 @@ void StatusBarController::setRfkitStatus(const QString &text, const QString &sty
     m_rfkitStatusLabel->setText(text);
     if (!styleSheet.isEmpty())
         m_rfkitStatusLabel->setStyleSheet(styleSheet);
+}
+
+void StatusBarController::setHalikeyStatus(bool connected, const QString &portName) {
+    const QString color = connected ? QString(K4Styles::Colors::StatusGreen) : QString(K4Styles::Colors::InactiveGray);
+    m_halikeyButton->setStyleSheet(QString("QPushButton { background: transparent; border: none; padding: 0 4px; "
+                                           "color: %1; font-size: %2px; }")
+                                       .arg(color)
+                                       .arg(K4Styles::Dimensions::FontSizeButton));
+    if (connected)
+        m_halikeyButton->setToolTip(QString("HaliKey connected on %1 — click to disconnect").arg(portName));
+    else if (!portName.isEmpty())
+        m_halikeyButton->setToolTip(QString("HaliKey disconnected — click to connect on %1").arg(portName));
+    else
+        m_halikeyButton->setToolTip(QStringLiteral("HaliKey — click to choose a port in Options"));
 }
 
 void StatusBarController::onPowerButtonClicked() {
