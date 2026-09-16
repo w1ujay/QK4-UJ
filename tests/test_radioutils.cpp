@@ -352,6 +352,49 @@ private slots:
         p.radioReplied(7032000); // late reply for the expired request
         QCOMPARE(p.base(7031000, 2550), qint64(7031100));
     }
+    // Other code paths (pan click, spot click) send their own bare FA;/FB; queries. Their replies
+    // arrive in send order and must not be mistaken for answers to a digit tune.
+    void testPendingTune_foreignReplyDoesNotDiscardPendingTargets() {
+        RadioUtils::PendingTune p;
+        p.queryObserved();     // pan click queried the frequency first
+        p.sent(7032000, 1000); // two rapid digit presses follow
+        p.sent(7033000, 1050);
+        p.radioReplied(7031000); // the pan click's reply, with the old frequency
+        QCOMPARE(p.base(7031000, 1100), qint64(7033000));
+    }
+    void testPendingTune_foreignReplyThenTargetRepliesStillReconcile() {
+        RadioUtils::PendingTune p;
+        p.queryObserved();
+        p.sent(7032000, 1000);
+        p.radioReplied(7031000); // foreign
+        p.radioReplied(7032000); // this tune, accepted
+        QCOMPARE(p.base(7032000, 1100), qint64(7032000));
+    }
+    void testPendingTune_foreignQueryAfterTargetKeepsOrder() {
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        p.queryObserved();       // pan click queried after the press
+        p.radioReplied(7032000); // the tune's own reply: accepted
+        p.radioReplied(7032000); // the pan click's reply
+        p.sent(7032100, 1100);
+        QCOMPARE(p.base(7032000, 1150), qint64(7032100));
+    }
+    void testPendingTune_ownQueryNotCountedTwice() {
+        // Each digit tune sends SET + query, so the query hook fires for its own query too.
+        RadioUtils::PendingTune p;
+        p.sent(7032000, 1000);
+        p.queryObserved();       // the hook seeing this tune's own "FA;"
+        p.radioReplied(7032000); // accepted
+        QCOMPARE(p.base(7032000, 1100), qint64(7032000));
+    }
+    void testPendingTune_rejectionStillClearsWithForeignQueriesAround() {
+        RadioUtils::PendingTune p;
+        p.sent(1007031415, 1000); // refused: +1 GHz
+        p.queryObserved();
+        p.radioReplied(7031415); // answer to the tune: rejected
+        p.radioReplied(7031415); // the foreign query's reply
+        QCOMPARE(p.base(7031415, 1100), qint64(7031415));
+    }
     void testPendingTune_resetForgetsOwedReplies() {
         RadioUtils::PendingTune p;
         p.sent(7032000, 1000);

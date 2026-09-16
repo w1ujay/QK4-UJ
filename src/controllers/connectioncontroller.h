@@ -73,6 +73,10 @@ signals:
                               qint32 sampleRate, float noiseFloor);
     void miniSpectrumDataReceived(int receiver, const QByteArray &payload, int binsOffset, int binCount);
 
+    // A bare FA;/FB; query went out (vfoB false for FA). Emitted once per query in the command, from
+    // the caller's thread, so listeners see queries in the same order the K4 will answer them.
+    void frequencyQuerySent(bool vfoB);
+
 private slots:
     void onStateChanged(TcpClient::ConnectionState state);
 

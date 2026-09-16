@@ -229,6 +229,14 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     connect(m_ritXitController, &RitXitController::displayRefreshRequested, m_miniViewController,
             &MiniViewController::refreshFrequencies);
 
+    // Frequency queries from elsewhere (pan click, spot click) get a reply that looks exactly like a
+    // refused digit tune, so PendingTune counts them and matches replies by position instead.
+    // DirectConnection keeps that order: the queue is updated as the query is sent, not later.
+    connect(
+        m_connectionController, &ConnectionController::frequencyQuerySent, this,
+        [this](bool vfoB) { (vfoB ? m_pendingDigitTuneB : m_pendingDigitTuneA).queryObserved(); },
+        Qt::DirectConnection);
+
     // Up/Down tune even when a main-window button has keyboard focus (see ButtonTuneKeyFilter)
     qApp->installEventFilter(
         new ButtonTuneKeyFilter(this, [this](QKeyEvent *event) { return handleTuneKey(event); }, this));

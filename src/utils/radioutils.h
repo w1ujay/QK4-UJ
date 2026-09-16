@@ -143,6 +143,11 @@ public:
     /// one is waiting and the last press is younger than HOLD_MS, otherwise radioHz.
     qint64 base(qint64 radioHz, qint64 nowMs) const;
     void sent(qint64 targetHz, qint64 nowMs);
+    /// Account for a bare FA;/FB; query for this VFO. Other paths (pan click, spot click) send their
+    /// own, and the answer is indistinguishable by value from a refused tune — both carry the
+    /// unchanged frequency — so it is matched by position instead. A query this VFO's own tune sent
+    /// is already accounted for by sent() and is skipped here.
+    void queryObserved();
     /// Feed every frequency reply for this VFO, including ones that leave the frequency unchanged.
     void radioReplied(qint64 radioHz);
     /// Stop building on in-flight targets (e.g. a direct tune took over); their replies are still expected.
@@ -152,8 +157,21 @@ public:
     void reset();
 
 private:
-    QVector<qint64> m_inFlight; // targets still awaiting their reply, oldest first
-    int m_owedReplies = 0;      // replies still due for abandoned requests; they arrive before newer ones
+    // One reply is owed per entry, in send order, so each reply answers the head of the queue.
+    enum class Expect {
+        Target,    // a digit tune still waiting to be confirmed
+        Abandoned, // a tune given up on; its reply is still coming and means nothing now
+        Foreign    // someone else's query; its reply says nothing about a digit tune
+    };
+    struct Expected {
+        Expect kind;
+        qint64 targetHz; // only meaningful for Target
+    };
+
+    void abandonTargets();
+
+    QVector<Expected> m_expected; // replies still owed, oldest first
+    int m_selfQueries = 0;        // queries sent by our own tunes, not yet seen by queryObserved()
     qint64 m_lastSentMs = 0;
 };
 

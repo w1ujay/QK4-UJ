@@ -158,39 +158,59 @@ qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offset
 }
 
 qint64 PendingTune::base(qint64 radioHz, qint64 nowMs) const {
-    return (!m_inFlight.isEmpty() && nowMs - m_lastSentMs <= HOLD_MS) ? m_inFlight.last() : radioHz;
+    if (nowMs - m_lastSentMs > HOLD_MS)
+        return radioHz;
+    for (auto it = m_expected.crbegin(); it != m_expected.crend(); ++it) {
+        if (it->kind == Expect::Target)
+            return it->targetHz;
+    }
+    return radioHz;
 }
 
 void PendingTune::sent(qint64 targetHz, qint64 nowMs) {
     // After HOLD_MS without a press the target expires, but those requests' replies can still arrive
-    // late (TCP delivers them in order unless the connection drops) — keep counting them as owed.
+    // late (TCP delivers them in order unless the connection drops) — keep expecting them.
     if (nowMs - m_lastSentMs > HOLD_MS)
-        clear();
-    m_inFlight.append(targetHz);
+        abandonTargets();
+    m_expected.append({Expect::Target, targetHz});
+    // Each tune is sent as SET + query, so queryObserved() will see this tune's own query next.
+    ++m_selfQueries;
     m_lastSentMs = nowMs;
 }
 
-void PendingTune::radioReplied(qint64 radioHz) {
-    // Replies arrive in request order, so answers owed to abandoned requests come before newer requests'.
-    if (m_owedReplies > 0) {
-        --m_owedReplies;
+void PendingTune::queryObserved() {
+    if (m_selfQueries > 0) {
+        --m_selfQueries; // our own tune's query; sent() already queued its reply
         return;
     }
-    if (m_inFlight.isEmpty())
+    m_expected.append({Expect::Foreign, 0});
+}
+
+void PendingTune::radioReplied(qint64 radioHz) {
+    if (m_expected.isEmpty())
         return; // unsolicited update
-    if (m_inFlight.takeFirst() != radioHz)
-        clear(); // rejected, or the VFO moved elsewhere: abandon the rest and rebuild on the radio's frequency
+    const Expected expected = m_expected.takeFirst();
+    if (expected.kind != Expect::Target)
+        return; // answers someone else's query, or a tune already abandoned
+    if (expected.targetHz != radioHz)
+        abandonTargets(); // rejected, or the VFO moved: rebuild on the radio's frequency
 }
 
 void PendingTune::reset() {
-    m_inFlight.clear();
-    m_owedReplies = 0;
+    m_expected.clear();
+    m_selfQueries = 0;
 }
 
 void PendingTune::clear() {
-    // The abandoned requests' replies are still coming — count them so they can't match newer presses.
-    m_owedReplies += m_inFlight.size();
-    m_inFlight.clear();
+    abandonTargets();
+}
+
+void PendingTune::abandonTargets() {
+    // Their replies are still coming — keep the queue positions so they can't answer newer presses.
+    for (Expected &expected : m_expected) {
+        if (expected.kind == Expect::Target)
+            expected.kind = Expect::Abandoned;
+    }
 }
 
 bool isValidIpv4(const QString &s) {

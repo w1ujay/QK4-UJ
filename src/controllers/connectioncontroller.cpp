@@ -85,6 +85,13 @@ void ConnectionController::disconnectFromRadio() {
 
 void ConnectionController::sendCAT(const QString &command) {
     m_tcpClient->sendCAT(command);
+    // WHY here: every frequency query in the app goes through this one call, so PendingTune can be
+    // told about queries it didn't send without each call site remembering to. A SET carries digits
+    // ("FA07031415;") and so doesn't match the bare query text.
+    for (int i = command.count(QLatin1String("FA;")); i > 0; --i)
+        emit frequencyQuerySent(false);
+    for (int i = command.count(QLatin1String("FB;")); i > 0; --i)
+        emit frequencyQuerySent(true);
 }
 
 void ConnectionController::sendRawPacket(const QByteArray &packet) {
