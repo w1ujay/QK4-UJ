@@ -43,6 +43,12 @@ conflict with.
 - **Keyboard control values** — click a side-panel control button (WPM, PWR, BW,
   SHIFT, RF, SQL), then Up/Down adjust it, so a laptop with no mouse can change
   them. An inactive button activates on the first press, matching the wheel.
+- **HaliKey status-bar indicator** — a HALIKEY item in the top status bar,
+  gray when disconnected and green when connected, with the port in its
+  tooltip. Clicking connects on the remembered port or disconnects, so the
+  paddle no longer has to be reconnected through Options each session; with no
+  port chosen yet it opens Options at the CW Keyer page. `OptionsDialog` gained
+  `showPage()` for that.
 - **Mini-pan right-click** — right-click a VFO mini-pan or the Mini View pan to
   tune VFO B to that frequency, with CW pitch and RIT handled.
 

@@ -17,6 +17,7 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | N2 | "Launch Sparks" button in the GUI | New | S | |
 | N3 | Tune up/down in Mini View | New | S | Keep — done, on-air test pending |
 | N4 | Right-click a mini-pan to tune VFO B | New | S | Keep — done, on-air test pending |
+| N5 | HaliKey connect indicator in the status bar | New | S | Keep — done, HaliKey test pending |
 | P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | Keep — tuning done; Esc/KY0 dropped |
 | P2 | MON button double-toggle fix | Port gap | S | |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
@@ -138,6 +139,19 @@ Mouse QSY "Left Only". Left-click unchanged.
 **Notes:** Done 2026-09-14. RIT on the clicked VFO is included (the mini-pan is centered on the receive
 passband), and VFO B's own RIT is subtracted so B receives exactly at the clicked frequency. On-air check: assumes the K4 centers MiniPAN on the passband like QK4 draws it (dial in SSB,
 dial ± pitch in CW) — confirm a right-clicked signal lands in VFO B's passband, also with RIT at +0.50.
+
+### N5. HaliKey connect indicator in the status bar
+Reconnecting the HaliKey meant opening Options → CW Keyer every session. A `HALIKEY` item now sits in the top
+status bar left of the KPA1500 / RFKIT / K4 group: gray disconnected, green connected, port in the tooltip.
+Click toggles `openPort()` on the remembered `halikey/portName` (both device types use a port name) /
+`closePort()`; with no port saved it opens Options at the CW Keyer page via the new `OptionsDialog::showPage()`.
+Port-open failures already surface on the notification overlay through `HardwareController::hardwareError`, and
+the indicator stays gray. `StatusBarController` emits `halikeyToggleRequested` rather than knowing about
+devices or settings; MainWindow owns that wiring in `setupHardwareController()`.
+
+**Notes:** Done 2026-09-16. Verified building and running under WSL; the no-port path opens the CW Keyer page.
+Not yet exercised against real HaliKey hardware — check on Windows that one click connects, the indicator turns
+green, the tooltip names the port, and a second click disconnects.
 
 ---
 
