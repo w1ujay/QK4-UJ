@@ -373,11 +373,39 @@ private slots:
     void testPendingTune_foreignQueryAfterTargetKeepsOrder() {
         RadioUtils::PendingTune p;
         p.sent(7032000, 1000);
+        p.queryObserved();       // the tune's own "FA;" — consumes the self-query marker
         p.queryObserved();       // pan click queried after the press
         p.radioReplied(7032000); // the tune's own reply: accepted
         p.radioReplied(7032000); // the pan click's reply
         p.sent(7032100, 1100);
         QCOMPARE(p.base(7032000, 1150), qint64(7032100));
+    }
+
+    // Bare FA;/FB; queries must be told apart from SETs and from CW text that merely ends in
+    // those letters — a logger's "KY CQ DE W1FA;" reaches sendCAT through CatServer, and user
+    // macro text reaches it through MacroController.
+    void testFrequencyQueryCount_bareQuery() {
+        QCOMPARE(RadioUtils::frequencyQueryCount("FA;", false), 1);
+        QCOMPARE(RadioUtils::frequencyQueryCount("FB;", true), 1);
+    }
+    void testFrequencyQueryCount_setCarriesNoQuery() {
+        QCOMPARE(RadioUtils::frequencyQueryCount("FA07031415;", false), 0);
+    }
+    void testFrequencyQueryCount_setThenQuery() {
+        QCOMPARE(RadioUtils::frequencyQueryCount("FA07031415;FA;", false), 1);
+    }
+    void testFrequencyQueryCount_cwTextIsNotAQuery() {
+        QCOMPARE(RadioUtils::frequencyQueryCount("KY CQ CQ DE W1FA;", false), 0);
+        QCOMPARE(RadioUtils::frequencyQueryCount("KY DE W1FB;", true), 0);
+    }
+    void testFrequencyQueryCount_otherVfoNotCounted() {
+        QCOMPARE(RadioUtils::frequencyQueryCount("FB;", false), 0);
+        QCOMPARE(RadioUtils::frequencyQueryCount("FA;", true), 0);
+    }
+    void testFrequencyQueryCount_countsEachQuery() { QCOMPARE(RadioUtils::frequencyQueryCount("FA;FA;", false), 2); }
+    void testFrequencyQueryCount_ignoresSubReceiverForm() {
+        // FA$; is not a thing on the K4, but a stray token must not count as FA.
+        QCOMPARE(RadioUtils::frequencyQueryCount("FA$;", false), 0);
     }
     void testPendingTune_ownQueryNotCountedTwice() {
         // Each digit tune sends SET + query, so the query hook fires for its own query too.

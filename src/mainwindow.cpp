@@ -49,6 +49,7 @@
 #include <QLoggingCategory>
 #include <QMessageBox>
 #include <QDateTime>
+#include <QThread>
 #include <QFrame>
 #include <QEvent>
 #include <QResizeEvent>
@@ -234,7 +235,13 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // DirectConnection keeps that order: the queue is updated as the query is sent, not later.
     connect(
         m_connectionController, &ConnectionController::frequencyQuerySent, this,
-        [this](bool vfoB) { (vfoB ? m_pendingDigitTuneB : m_pendingDigitTuneA).queryObserved(); },
+        [this](bool vfoB) {
+            // DirectConnection runs this on the sender's thread. Every caller that sends a frequency
+            // query is a main-thread UI path (CW keying goes straight to TcpClient), and PendingTune
+            // is not thread-safe — so make that assumption fail loudly if it ever stops holding.
+            Q_ASSERT(QThread::currentThread() == thread());
+            (vfoB ? m_pendingDigitTuneB : m_pendingDigitTuneA).queryObserved();
+        },
         Qt::DirectConnection);
 
     // Up/Down tune even when a main-window button has keyboard focus (see ButtonTuneKeyFilter)

@@ -3,6 +3,7 @@
 #include "network/protocol.h"
 #include "models/radiostate.h"
 #include "utils/macroids.h"
+#include "utils/radioutils.h"
 #include <QLoggingCategory>
 
 Q_LOGGING_CATEGORY(qk4Connection, "qk4.connection")
@@ -86,11 +87,11 @@ void ConnectionController::disconnectFromRadio() {
 void ConnectionController::sendCAT(const QString &command) {
     m_tcpClient->sendCAT(command);
     // WHY here: every frequency query in the app goes through this one call, so PendingTune can be
-    // told about queries it didn't send without each call site remembering to. A SET carries digits
-    // ("FA07031415;") and so doesn't match the bare query text.
-    for (int i = command.count(QLatin1String("FA;")); i > 0; --i)
+    // told about queries it didn't send without each call site remembering to. Whole tokens only —
+    // macros and forwarded logger commands carry arbitrary CW text through here ("KY CQ DE W1FA;").
+    for (int i = RadioUtils::frequencyQueryCount(command, false); i > 0; --i)
         emit frequencyQuerySent(false);
-    for (int i = command.count(QLatin1String("FB;")); i > 0; --i)
+    for (int i = RadioUtils::frequencyQueryCount(command, true); i > 0; --i)
         emit frequencyQuerySent(true);
 }
 

@@ -157,6 +157,18 @@ qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offset
     return rfHz - targetPitchSign * cwPitchHz - targetRitHz;
 }
 
+int frequencyQueryCount(const QString &commands, bool vfoB) {
+    // WHY whole tokens: a substring search for "FA;" also matches a SET's trailing text and, worse,
+    // CW text a macro or logger sends through the same path ("KY CQ DE W1FA;").
+    const QLatin1String query(vfoB ? "FB" : "FA");
+    int count = 0;
+    for (const QStringView token : QStringView(commands).split(u';', Qt::SkipEmptyParts)) {
+        if (token.trimmed() == query)
+            ++count;
+    }
+    return count;
+}
+
 qint64 PendingTune::base(qint64 radioHz, qint64 nowMs) const {
     if (nowMs - m_lastSentMs > HOLD_MS)
         return radioHz;

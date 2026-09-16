@@ -130,6 +130,12 @@ int miniPanOffsetHz(double x, double width, int spanHz);
 qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz,
                             int sourceRitHz, int targetRitHz);
 
+/// Number of bare frequency queries for one VFO ("FA;" for VFO A, "FB;" for VFO B) in a CAT command
+/// string, which may hold several commands. Tokens are matched whole, so a SET ("FA07031415;") and CW
+/// text ending in those letters ("KY CQ DE W1FA;", which reaches the radio via a macro or a logger)
+/// are not counted.
+int frequencyQueryCount(const QString &commands, bool vfoB);
+
 /// Remembers where un-echoed relative tunes (Up/Down on a frequency-entry digit) sent a VFO, so rapid
 /// presses build on each other instead of all starting from the last radio reply.
 /// Each request is sent as SET + query, so exactly one frequency reply answers it, in order. A reply
