@@ -89,6 +89,13 @@ void ConnectionController::sendCAT(const QString &command) {
     // WHY here: every frequency query in the app goes through this one call, so PendingTune can be
     // told about queries it didn't send without each call site remembering to. Whole tokens only —
     // macros and forwarded logger commands carry arbitrary CW text through here ("KY CQ DE W1FA;").
+    //
+    // WHY the guard: TcpClient drops the command unless it is Connected (its m_connected mirrors
+    // that same state), and a dropped command is never answered. Announcing it anyway would leave an
+    // expected reply that outlives the disconnect reset and swallows a real one later. The state can
+    // still change before the queued write lands; the disconnect path clears the queue for that.
+    if (!m_tcpClient->isConnected())
+        return;
     for (int i = RadioUtils::frequencyQueryCount(command, false); i > 0; --i)
         emit frequencyQuerySent(false);
     for (int i = RadioUtils::frequencyQueryCount(command, true); i > 0; --i)

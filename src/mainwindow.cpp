@@ -827,6 +827,10 @@ void MainWindow::setupVfoSection(QWidget *parent) {
 
     // Connect VFO A frequency entry - send FA command then query to refresh display
     connect(m_vfoA, &VFOWidget::frequencyEntered, this, [this](const QString &freqString) {
+        // Guarded like tuneVfoByHz: offline the command is dropped unsent, so there is nothing to
+        // send and no reply to expect.
+        if (!m_connectionController->isConnected())
+            return;
         // FA accepts 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
         m_connectionController->sendCAT(QString("FA%1;FA;").arg(freqString));
     });
@@ -1160,6 +1164,10 @@ void MainWindow::setupVfoSection(QWidget *parent) {
 
     // Connect VFO B frequency entry - send FB command then query to refresh display
     connect(m_vfoB, &VFOWidget::frequencyEntered, this, [this](const QString &freqString) {
+        // Guarded like tuneVfoByHz: offline the command is dropped unsent, so there is nothing to
+        // send and no reply to expect.
+        if (!m_connectionController->isConnected())
+            return;
         // FB accepts 1-11 digits: 1-2 = MHz, 3-5 = kHz, 6+ = Hz
         m_connectionController->sendCAT(QString("FB%1;FB;").arg(freqString));
     });
@@ -1274,6 +1282,12 @@ void MainWindow::onHardwareError(const QString &error) {
 
 void MainWindow::onRadioReady() {
     qCDebug(qk4Main) << "Successfully authenticated with K4 radio";
+
+    // A new session answers none of the old one's queries. Senders already refuse to register a
+    // reply for a command the link dropped, and the disconnect path clears the queue; this makes a
+    // fresh link start empty regardless, so a stale entry can never consume a real reply.
+    m_pendingDigitTuneA.reset();
+    m_pendingDigitTuneB.reset();
 
     // WHY we send SL here and also call parseCATCommand optimistically:
     // The K4 does NOT echo `SL` (streaming latency) responses — it silently applies the new tier
