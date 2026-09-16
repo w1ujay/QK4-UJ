@@ -168,11 +168,15 @@ filter only intercepts `QAbstractButton`, and DualControlButton is a plain QWidg
 - Fixed: Enter in the frequency entry resent the displayed digits when nothing was typed, undoing an
   in-flight digit tune (`frequencydisplaywidget.cpp` `exitEditMode`). Covered by two new cases in
   `tests/test_frequencydisplaywidget.cpp`.
-- Open: every `FA`/`FB` reply consumes a pending digit-tune entry (`mainwindow.cpp` `onCatResponse` →
-  `RadioUtils::PendingTune::radioReplied`), including replies to QK4's own bare `FA;`/`FB;` queries from
-  the seven `SpectrumController` sites (spot click, pan click). A click within the 1 s `HOLD_MS` window
-  before arrow presses drops the pending targets, losing rapid steps. CatServer answers `FA;`/`FB;` from
-  RadioState, so external loggers don't trigger it. Fix needs PendingTune to know about foreign queries.
+- Fixed 2026-09-16: every `FA`/`FB` reply used to consume a pending digit-tune entry, including replies
+  to QK4's own bare `FA;`/`FB;` queries from the seven `SpectrumController` sites (spot click, pan click),
+  so a click within the 1 s `HOLD_MS` window before arrow presses dropped the pending targets. Value
+  comparison can't separate the cases — a refused tune and a foreign query both reply with the unchanged
+  frequency — so `PendingTune` now keeps one queue of expected replies (tune / abandoned tune / foreign
+  query) and matches by position. `ConnectionController::sendCAT` emits `frequencyQuerySent` for every
+  bare query it sends (DirectConnection, so the queue updates in send order), and `sent()` skips the
+  query its own tune issued. Five cases added to `tests/test_radioutils.cpp`. CatServer answers `FA;`/`FB;`
+  from RadioState, so external loggers never triggered this.
 
 ### P2. MON button double-toggle fix
 Fork 034642a: only send `SW128` when opening the MON overlay. At HEAD `sidecontrolpanel.cpp:166-174` sends

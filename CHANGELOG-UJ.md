@@ -69,6 +69,12 @@ conflict with.
   `RasterSurface` no longer, so the widget gets a QRhi instead of failing every
   frame with `QRhiWidget: No QRhi`. VFO frequencies are formatted (`7.031.415`,
   not `0007031415`) and refresh on RIT/XIT changes.
+- A frequency query from elsewhere (pan click, spot click) discarded pending
+  digit tunes, so rapid arrow presses lost steps. Its reply carries the
+  unchanged frequency, exactly like a refused tune, so `PendingTune` now matches
+  replies by position: one queue of expected replies, each marked as a tune, an
+  abandoned tune or another path's query. `ConnectionController::sendCAT` is the
+  single place that spots those queries, so a new call site can't drift.
 - Enter in the frequency entry resent the displayed digits even when nothing had
   been typed. Up/Down digit tuning deliberately leaves the digits alone until the
   radio replies, so pressing Enter in that window tuned the radio back to the
