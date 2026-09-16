@@ -81,6 +81,12 @@ conflict with.
   replies by position: one queue of expected replies, each marked as a tune, an
   abandoned tune or another path's query. `ConnectionController::sendCAT` is the
   single place that spots those queries, so a new call site can't drift.
+- Queries sent while disconnected are no longer expected back. `TcpClient`
+  discards a command unless the link is up, so announcing one left an expected
+  reply that outlived the disconnect and swallowed a real reply after
+  reconnecting — a refused digit tune could then keep its invalid target.
+  Typed frequency entry is also guarded now, like the arrow-key path, and a
+  fresh link starts with an empty queue.
 - Enter in the frequency entry resent the displayed digits even when nothing had
   been typed. Up/Down digit tuning deliberately leaves the digits alone until the
   radio replies, so pressing Enter in that window tuned the radio back to the

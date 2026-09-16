@@ -191,6 +191,12 @@ filter only intercepts `QAbstractButton`, and DualControlButton is a plain QWidg
   bare query it sends (DirectConnection, so the queue updates in send order), and `sent()` skips the
   query its own tune issued. Five cases added to `tests/test_radioutils.cpp`. CatServer answers `FA;`/`FB;`
   from RadioState, so external loggers never triggered this.
+- Fixed 2026-09-16: `sendCAT` announced a frequency query even when `TcpClient` dropped the command for
+  being offline (`m_connected` mirrors the same `Connected` state the send checks), so entries queued
+  while disconnected survived `resetUiForDisconnect()` and consumed real replies after reconnecting.
+  The emit is now guarded, the typed-entry lambdas got the `isConnected()` check that `tuneVfoByHz`
+  already had, and `onRadioReady()` resets both queues so a fresh link always starts empty. The
+  remaining window — link drops between the check and the queued write — is covered by that reset.
 
 ### P2. MON button double-toggle fix
 Fork 034642a: only send `SW128` when opening the MON overlay. At HEAD `sidecontrolpanel.cpp:166-174` sends
