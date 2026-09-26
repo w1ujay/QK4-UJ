@@ -1,4 +1,6 @@
 #include "mainwindow.h"
+
+#include <QTimer>
 #include "utils/radioutils.h"
 #include "hardware/halikeydevice.h"
 #include "ui/dialogs/radiomanagerdialog.h"
@@ -6,6 +8,7 @@
 #include "ui/widgets/rightsidepanel.h"
 #include "ui/widgets/bottommenubar.h"
 #include "controllers/featuremenucontroller.h"
+#include "controllers/tcicontroller.h"
 #include "controllers/modepopupcontroller.h"
 #include "controllers/bandnavigationcontroller.h"
 #include "controllers/buttonrowdispatcher.h"
@@ -35,6 +38,7 @@
 #include "controllers/spectrumcontroller.h"
 #include "controllers/audiocontroller.h"
 #include "controllers/cwcontroller.h"
+#include "controllers/transmitcontroller.h"
 #include "controllers/hardwarecontroller.h"
 #include "controllers/kpa1500uicontroller.h"
 #include "controllers/miniviewcontroller.h"
@@ -143,10 +147,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // Clears both the K4 TX state (RX;) and QK4's internal PTT/audio state so the UI unlocks too.
     auto *escShortcut = new QShortcut(Qt::Key_Escape, this);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
-        if (m_connectionController->isConnected())
-            m_connectionController->sendCAT("RX;");
-        m_audioController->setPttActive(false);
-        m_bottomMenuBar->setPttActive(false);
+        // Unconditional, whoever holds it. This is the operator's last resort, so it releases
+        // rather than asking, and the arbiter sends whatever unkey the engage actually needs.
+        m_transmitController->releaseAll();
     });
 
     setupNotificationWidget();
@@ -174,7 +177,9 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
 
     m_modeLabelController = new ModeLabelController(m_radioState, m_modeALabel, m_modeBLabel, this);
 
-    m_vfoFrequencyController = new VfoFrequencyController(m_radioState, m_vfoA, m_vfoB, this);
+    m_vfoFrequencyController = new VfoFrequencyController(m_radioState, m_connectionController, m_vfoA, m_vfoB, this);
+    connect(m_rightSideController, &RightSideController::frequencyEntryRequested, m_vfoFrequencyController,
+            &VfoFrequencyController::toggleFrequencyEntry);
 
     m_subDivIndicatorController = new SubDivIndicatorController(m_radioState, m_spectrumController, m_vfoB, m_subLabel,
                                                                 m_divLabel, m_modeBLabel, this);
@@ -195,6 +200,10 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     // pure-forwarding thin shell and has been deleted.
     m_filterAWidget->observe(m_radioState, FilterIndicatorWidget::Vfo::A);
     m_filterBWidget->observe(m_radioState, FilterIndicatorWidget::Vfo::B);
+    connect(m_filterAWidget, &FilterIndicatorWidget::clicked, m_rightSideController,
+            [this]() { m_rightSideController->cycleFilterPreset(false); });
+    connect(m_filterBWidget, &FilterIndicatorWidget::clicked, m_rightSideController,
+            [this]() { m_rightSideController->cycleFilterPreset(true); });
 
     m_ritXitController = new RitXitController(m_radioState, m_connectionController, m_spectrumController, m_ritLabel,
                                               m_xitLabel, m_ritXitValueLabel, this);
@@ -259,11 +268,32 @@ void MainWindow::closeEvent(QCloseEvent *event) {
     // pw_stream_dequeue_buffer. Stopping the sinks here — while the audio and
     // sidetone thread event loops are still servicing BlockingQueuedConnection
     // — guarantees no live QAudioSink/QAudioSource remains at process exit.
+    // BEFORE the audio teardown below: a TCI client may be holding the transmitter, and handing it
+    // back needs a live AudioController. This used to live in ~TciController, which runs after
+    // AudioController has already been destroyed - see TciController::shutdown().
+    if (m_tciController) {
+        m_tciController->shutdown();
+    }
+
+    // CONC-001. Producers stop before consumers, and before anything they read is destroyed.
+    //
+    // This used to happen only in ~HardwareController, which Qt runs LATE: children are destroyed
+    // in CONSTRUCTION order, and ConnectionController is constructed first (setupControllers), so
+    // it was already freed while the HaliKey worker and the sidetone thread were still running -
+    // and both reach CwController::kpodPlusActive(), which dereferences it. Quitting with a paddle
+    // touched read freed memory: ASAN aborts, release builds read garbage.
+    //
+    // Running it here, explicitly and in order, is the fix. The destructor still calls it for the
+    // paths that never reach closeEvent, but by then it is a no-op.
+    //
+    // 8f17c0e was the same root cause in different code (~TciController reaching an
+    // already-destroyed AudioController), which is why the ordering is stated here rather than
+    // left to Qt's child order to arrange correctly by luck.
+    if (m_hardwareController) {
+        m_hardwareController->shutdownDevices();
+    }
     if (m_audioController) {
         m_audioController->shutdown();
-    }
-    if (m_hardwareController) {
-        m_hardwareController->shutdownSidetone();
     }
     QMainWindow::closeEvent(event);
 }
@@ -293,6 +323,13 @@ void MainWindow::setupControllers() {
     // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
     m_audioController = new AudioController(m_connectionController, m_radioState, this);
 
+    // The single owner of "are we transmitting". Constructed here, directly after the two
+    // controllers it drives, so Qt's child destruction order tears it down after them and its
+    // disconnect(this) has already run by the time anything it references is gone.
+    m_transmitController = new TransmitController(m_radioState, m_connectionController, m_audioController, this);
+    connect(m_transmitController, &TransmitController::transmittingChanged, this,
+            [this](bool transmitting) { m_bottomMenuBar->setPttActive(transmitting); });
+
     // Spectrum controller owns panadapters, span buttons, and all spectrum wiring
     m_spectrumController = new SpectrumController(m_connectionController, m_radioState, this);
 
@@ -312,7 +349,6 @@ void MainWindow::setupConnectionWiring() {
             &MainWindow::onConnectionStateChanged);
     connect(m_connectionController, &ConnectionController::connectionError, this, &MainWindow::onConnectionError);
     connect(m_connectionController, &ConnectionController::radioReady, this, &MainWindow::onRadioReady);
-    connect(m_connectionController, &ConnectionController::authFailed, this, &MainWindow::onAuthFailed);
 
     // Protocol CAT responses -> RadioState (via ConnectionController re-emitted signal)
     connect(m_connectionController, &ConnectionController::catResponseReceived, this, &MainWindow::onCatResponse);
@@ -416,17 +452,15 @@ void MainWindow::setupHardwareController() {
                                       m_hardwareController->sidetoneGenerator(), m_hardwareController->halikeyDevice(),
                                       m_hardwareController->kpodPlusDevice(), this);
 
+    // Who owns CW keying. HardwareController decides it from the device lifecycle policy — plugged
+    // in AND switched on AND about to run — and CwController acts on it by suppressing QK4's own
+    // keyer. Wired here rather than inside CwController because that would mean a second reader of
+    // the device state, which is the arrangement USB-002 and USB-003 both came out of.
+    connect(m_hardwareController, &HardwareController::kpodPlusOwnsCw, m_cwController, &CwController::setKpodPlusGate);
+
     // KPOD button presses → macro execution
     connect(m_hardwareController, &HardwareController::macroRequested, m_macroController,
             &MacroController::executeMacro);
-
-    // HaliKey footswitch PTT → TX audio + UI indicator
-    connect(m_cwController, &CwController::pttRequested, this, [this](bool active) {
-        if (m_connectionController->isConnected()) {
-            m_audioController->setPttActive(active);
-            m_bottomMenuBar->setPttActive(active);
-        }
-    });
 
     // Hardware-side errors (HaliKey port-open failures today) → notification overlay
     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
@@ -459,8 +493,8 @@ void MainWindow::setupHardwareController() {
 void MainWindow::openOptionsDialog(int page) {
     if (!m_optionsDialog) {
         m_optionsDialog = new OptionsDialog(m_radioState, m_audioController, m_hardwareController, m_catServer,
-                                            m_kpa1500UiController->client(), m_rfkitUiController->client(),
-                                            m_dxClusterController, this);
+                                            m_tciController, m_kpa1500UiController->client(),
+                                            m_rfkitUiController->client(), m_dxClusterController, this);
     }
     if (page >= 0)
         m_optionsDialog->showPage(static_cast<OptionsDialog::Page>(page));
@@ -501,11 +535,14 @@ void MainWindow::setupCatServer() {
     connect(m_catServer, &CatServer::errorOccurred, this,
             [this](const QString &error) { qWarning() << "CAT server:" << error; });
 
-    // TX;/RX; from external apps controls audio input gate
-    // Audio stream itself triggers K4 TX - timing-critical for FT8/FT4
+    // TX;/RX; from external apps. StreamedFromHere, not RadioLocal: CatServer deliberately does
+    // not forward TX;/RX; to the K4 because the audio stream itself keys it, which is
+    // timing-critical for FT8/FT4. The arbiter now records that rather than leaving it implied.
     connect(m_catServer, &CatServer::pttRequested, this, [this](bool on) {
-        m_audioController->setPttActive(on);
-        m_bottomMenuBar->setPttActive(on);
+        if (on)
+            m_transmitController->engage(TransmitOwner::Owner::CatClient, TransmitOwner::Route::StreamedFromHere);
+        else
+            m_transmitController->release(TransmitOwner::Owner::CatClient);
     });
 
     // Connect to settings for CAT server enable/disable
@@ -527,6 +564,69 @@ void MainWindow::setupCatServer() {
     if (RadioSettings::instance()->catServerEnabled()) {
         m_catServer->start(RadioSettings::instance()->catServerPort());
     }
+
+    // TCI server: a second, independent route for external apps, carrying audio as well as CAT so
+    // WSJT-X needs no loopback sound card. It does NOT go through CatServer - both reach the same
+    // primitives directly. See docs/tci-server-design.md.
+    //
+    // Created unconditionally but started only when enabled, so the listener is genuinely
+    // runtime-toggleable rather than needing a restart.
+    m_tciController = new TciController(m_audioController, m_connectionController, m_radioState, m_transmitController,
+                                        m_menuController, this);
+
+    // No PTT-indicator wiring here any more. A TCI client now keys through TransmitController like
+    // every other producer, so the indicator already follows it from one place. Writing it here as
+    // well left two writers whose agreement depended on how quickly the K4's TX echo came back.
+
+    // The enable/port/audio settings are TciController's own business and it listens to
+    // RadioSettings itself - see TciController::wireSettings. Nothing about which port the TCI
+    // listener uses belongs in the main window.
+
+    // Auto-connect, if a radio is flagged for it.
+    //
+    // WHY QUEUED RATHER THAN A DIRECT CALL: this is still the constructor, so the window is not
+    // shown and the controllers' signal wiring is only just complete. Connecting here would race
+    // the first connection-state change against a UI that cannot display it yet, and a failure
+    // would surface before there is a status bar to report it in. A zero-timer defers this to the
+    // first pass of the event loop, by which point the window is up.
+    QTimer::singleShot(0, this, &MainWindow::connectToStartupRadio);
+}
+
+void MainWindow::connectToStartupRadio() {
+    const auto radios = RadioSettings::instance()->radios();
+    int index = -1;
+
+    if (!m_startupRadioOverride.isEmpty()) {
+        index = RadioSettings::instance()->indexOfRadioNamed(m_startupRadioOverride);
+        if (index < 0) {
+            // FAIL CLOSED, and do NOT fall back to the flagged radio. The name came from a
+            // shortcut that asked for one specific K4; quietly opening a different one is worse
+            // than opening none. Said in a dialog rather than the log because the shortcut this
+            // came from was double-clicked, and on Windows there is no console to read.
+            QStringList known;
+            for (const RadioEntry &entry : radios) {
+                known << entry.name;
+            }
+            qWarning() << "No saved radio named" << m_startupRadioOverride << "- known:" << known;
+            QMessageBox::warning(
+                this, "Radio Not Found",
+                QString("No saved radio is named \"%1\".\n\nSaved radios: %2")
+                    .arg(m_startupRadioOverride, known.isEmpty() ? QStringLiteral("(none)") : known.join(", ")));
+            return;
+        }
+        qInfo() << "Connecting to" << radios[index].name << "from the command line";
+    } else {
+        index = RadioSettings::instance()->connectAtStartupIndex();
+        if (index < 0) {
+            return;
+        }
+        qInfo() << "Auto-connecting to" << radios[index].name << "at startup";
+    }
+
+    if (index >= radios.size()) {
+        return; // settings and list disagree; do nothing rather than connect to the wrong radio
+    }
+    connectToRadio(radios[index]);
 }
 
 void MainWindow::setupMenuBar() {
@@ -659,6 +759,10 @@ void MainWindow::setupUi() {
     connect(m_sideControlPanel, &SideControlPanel::volumeChanged, this, [this](int value) {
         m_audioController->setMainVolume(value / 100.0f);
         RadioSettings::instance()->setVolume(value); // Persist setting
+        // TCI reports QK4's mix as rx_volume, and no radio state changes when a slider moves.
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
     });
 
     // Connect sub volume slider to AudioController (Sub RX / VFO B)
@@ -678,6 +782,9 @@ void MainWindow::setupUi() {
             m_audioController->setSubVolume(value / 100.0f);
         }
         RadioSettings::instance()->setSubVolume(value); // Persist setting
+        if (m_tciController) {
+            m_tciController->audioLevelsChanged();
+        }
     });
 
     // SideControlPanel scroll signals are owned by SideControlScrollController
@@ -690,10 +797,18 @@ void MainWindow::setupUi() {
     connect(m_sideControlPanel, &SideControlPanel::tuneLpClicked, this,
             [this]() { m_connectionController->sendCAT("SW131;"); });
     connect(m_sideControlPanel, &SideControlPanel::xmitClicked, this, [this]() {
-        bool goTx = !m_radioState->isTransmitting();
-        m_connectionController->sendCAT(goTx ? "TX;" : "RX;");
-        m_audioController->setPttActive(goTx);
-        m_bottomMenuBar->setPttActive(goTx);
+        // CatKeyedAndStreamed reproduces exactly what XMIT has always done - TX; AND the audio
+        // gate. Whether that is right is an open bench question: TX; may put the K4 into
+        // "transmit from my own input" while QK4 streams over the tunnel. Naming the combination
+        // keeps today's behaviour while making the question a one-word change later.
+        //
+        // The toggle now reads the arbiter rather than RadioState::isTransmitting(). Same answer
+        // whenever the radio has echoed, and a better one before it has: XMIT used to be able to
+        // unkey a transmission it had just started, because the echo had not arrived yet.
+        if (m_transmitController->isTransmitting())
+            m_transmitController->release(m_transmitController->owner());
+        else
+            m_transmitController->engage(TransmitOwner::Owner::Xmit, TransmitOwner::Route::CatKeyedAndStreamed);
     });
     connect(m_sideControlPanel, &SideControlPanel::testClicked, this,
             [this]() { m_connectionController->sendCAT("SW132;"); });
@@ -784,14 +899,23 @@ void MainWindow::setupUi() {
 
     // PTT button connections
     connect(m_bottomMenuBar, &BottomMenuBar::pttPressed, this, [this]() {
-        if (m_connectionController->isConnected()) {
-            m_audioController->setPttActive(true);
-            m_bottomMenuBar->setPttActive(true);
-        }
+        m_transmitController->engage(TransmitOwner::Owner::PttButton, TransmitOwner::Route::StreamedFromHere);
     });
-    connect(m_bottomMenuBar, &BottomMenuBar::pttReleased, this, [this]() {
-        m_audioController->setPttActive(false);
-        m_bottomMenuBar->setPttActive(false);
+    connect(m_bottomMenuBar, &BottomMenuBar::pttReleased, this,
+            [this]() { m_transmitController->release(TransmitOwner::Owner::PttButton); });
+
+    // The right-click latch. engage() returns whether it was granted, and that answer - not the
+    // click - is what establishes the latch. Without this the widget latched on a refused request
+    // and then "unlatched" out of a transmission it never owned, greying its own button while XMIT
+    // was still keyed.
+    connect(m_bottomMenuBar, &BottomMenuBar::pttLatchRequested, this, [this](bool wantLatched) {
+        if (wantLatched) {
+            m_bottomMenuBar->setPttLatched(
+                m_transmitController->engage(TransmitOwner::Owner::PttButton, TransmitOwner::Route::StreamedFromHere));
+        } else {
+            m_transmitController->release(TransmitOwner::Owner::PttButton);
+            m_bottomMenuBar->setPttLatched(false);
+        }
     });
 
     // WHY: no audio flush on mode/filter change. AudioEngine runs on a dedicated thread with
@@ -1271,6 +1395,11 @@ void MainWindow::onConnectionStateChanged(TcpClient::ConnectionState state) {
 }
 
 void MainWindow::onConnectionError(const QString &error) {
+    // Same themed banner the device notifications use, rather than red text in the status bar.
+    // Held longer than a device message because it is usually actionable - a host, a port, or a
+    // password to go and correct.
+    if (m_notificationWidget)
+        m_notificationWidget->showMessage(error, 8000);
     m_statusBarController->showError(error);
 }
 
@@ -1320,7 +1449,7 @@ void MainWindow::onRadioReady() {
 
     // Sync element length with K4 server (sent in RDY dump as KZLnn)
     if (m_radioState->keyerSpeed() > 0) {
-        int ditMs = 1200 / m_radioState->keyerSpeed();
+        int ditMs = RadioUtils::ditMsForWpm(m_radioState->keyerSpeed());
         m_connectionController->sendCAT(QString("KZL%1;").arg(ditMs, 2, 10, QChar('0')));
     }
 
@@ -1345,11 +1474,6 @@ void MainWindow::onRadioReady() {
             }
         }
     }
-}
-
-void MainWindow::onAuthFailed() {
-    qCDebug(qk4Main) << "Authentication failed";
-    m_statusBarController->showAuthFailed();
 }
 
 void MainWindow::onCatResponse(const QString &response) {
@@ -1384,6 +1508,14 @@ void MainWindow::onCatResponse(const QString &response) {
 }
 
 void MainWindow::updateConnectionState(TcpClient::ConnectionState state) {
+    // Keep an open Radio Manager honest about which radio is live. It stays open across a
+    // disconnect now, so its Connect/Disconnect button has to follow the connection rather than
+    // the click that started it.
+    if (m_radioManager) {
+        m_radioManager->setConnectedHost(state == TcpClient::Connected ? m_connectionController->currentRadio().host
+                                                                       : QString());
+    }
+
     switch (state) {
     case TcpClient::Disconnected:
         m_statusBarController->showDisconnected();

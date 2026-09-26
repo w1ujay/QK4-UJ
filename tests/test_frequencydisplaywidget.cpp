@@ -8,12 +8,14 @@ class TestFrequencyDisplayWidget : public QObject {
     Q_OBJECT
 
 private:
-    // Show the widget and click it to enter edit mode (cursor starts at digit 0).
+    // Show the widget and open entry the way FREQ ENT does (cursor starts at digit 0).
+    // A click no longer opens entry; it picks the tuning rate instead.
     static void enterEdit(FrequencyDisplayWidget &w) {
         w.setFrequency("7.031.415");
         w.show();
         QVERIFY(QTest::qWaitForWindowExposed(&w));
-        QTest::mouseClick(&w, Qt::LeftButton, Qt::NoModifier, QPoint(2, w.height() / 2));
+        w.setFocus();
+        w.beginEntry();
         QVERIFY(w.isEditing());
     }
 

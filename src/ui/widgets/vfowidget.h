@@ -80,6 +80,10 @@ public:
     // Check if frequency entry is active (in edit mode)
     bool isFrequencyEntryActive() const;
 
+    // Open or cancel direct frequency entry on this VFO's display.
+    void beginFrequencyEntry();
+    void cancelFrequencyEntry();
+
 signals:
     void normalContentClicked();                      // User clicked normal view → show mini-pan
     void miniPanClicked();                            // User clicked mini-pan → show normal view
@@ -87,6 +91,7 @@ signals:
     void frequencyScrolled(int steps);                // User scrolled wheel over frequency
     void digitTuneRequested(qint64 deltaHz);          // Up/Down on a digit while entering a frequency
     void miniPanRightClicked(int offsetHz);           // Right-click on mini-pan, Hz from its center
+    void tuningDigitClicked(int digitFromRight);      // User clicked a digit to make it the tuning rate
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
