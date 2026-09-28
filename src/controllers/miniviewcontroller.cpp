@@ -59,6 +59,13 @@ MiniViewController::MiniViewController(RadioState *radioState, ConnectionControl
         updateMiniPanStream();
     });
 
+    // WHY: the K4 reports #MP0 when the operator turns the mini-pan off on the radio. The stream we
+    // started is gone then, so stop owning it rather than sending #MP1 again against their choice.
+    connect(m_radioState, &RadioState::miniPanAEnabledChanged, this, [this](bool enabled) {
+        if (!enabled)
+            m_ownsMiniPanStream = false;
+    });
+
     // === Live state → mini view (all guarded on visibility) ===
     // VfoFrequencyController is created before this controller, so the VFO displays
     // (with any RIT/XIT offset applied) are already updated when these run.
@@ -184,16 +191,18 @@ void MiniViewController::hideWindow() {
 }
 
 void MiniViewController::updateMiniPanStream() {
-    // WHY: VFO A's mini-pan in the main window owns #MP via RadioState::miniPanAEnabled.
-    // Only turn the stream on if nothing else has, and only undo what this controller did.
+    // WHY: one #MP stream feeds both VFO A's mini-pan and the mini view's pan. Only turn it on if
+    // nothing else has, and only undo what this controller did. The K4 may echo our #MP1, which sets
+    // miniPanAEnabled and opens VFO A's mini-pan (SpectrumController follows the radio), so while we
+    // own the stream that flag is ours too: releasing sends #MP0 and clears it, closing VFO A again.
     const bool wanted = m_window->isVisible() && m_window->isPanadapterVisible();
     // Only claim the stream while connected — sendCAT drops commands otherwise; radioReady re-runs this.
     if (wanted && !m_ownsMiniPanStream && !m_radioState->miniPanAEnabled() && m_connection->isConnected()) {
         m_connection->sendCAT("#MP1;");
         m_ownsMiniPanStream = true;
     } else if (!wanted && m_ownsMiniPanStream) {
-        if (!m_radioState->miniPanAEnabled())
-            m_connection->sendCAT("#MP0;");
         m_ownsMiniPanStream = false;
+        m_radioState->setMiniPanAEnabled(false);
+        m_connection->sendCAT("#MP0;");
     }
 }

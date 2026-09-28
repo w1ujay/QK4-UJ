@@ -80,6 +80,12 @@ both before and after the pan exists, though `miniview/windowX|Y` hold 569,448, 
 ignores `move()`. BAND / MODE also accept one click and then stop responding. Both match the WSLg `Qt::Tool`
 bug (microsoft/wslg#1094) that broke popup clicks before, and neither is caused by the pan fix.
 
+**Update 2026-09-28 — upstream mini-pan follow.** Upstream now opens/closes VFO A's mini-pan from the radio's
+`#MP` reports. If the K4 echoes Mini View's `#MP1;`, VFO A would open too and the old release check (skip `#MP0`
+while `miniPanAEnabled`) would leave the stream on. Mini View now always sends `#MP0;` and clears the flag when it
+releases a stream it started, and stops owning it if the radio reports `#MP0` first. On-air check pending:
+open/close Mini View with VFO A's mini-pan closed, then open, and confirm VFO A's state is unchanged afterwards.
+
 ### B2. Audio-enable UI + gating
 `RadioSettings::audioEnabled` and the CatServer checks were ported, but there's no checkbox and no gating of
 audio start/Opus decode. **Risk:** both branches share `QSettings("QK4","QK4")` key `audio/enabled`. If audio

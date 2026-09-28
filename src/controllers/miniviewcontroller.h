@@ -18,7 +18,8 @@ class VFOWidget;
 //
 // The K4 only streams MiniPAN after #MP1. While the mini view's panadapter is
 // showing, the controller sends #MP1 unless VFO A's mini-pan already turned the
-// stream on, and sends #MP0 afterwards only if it was the one that turned it on.
+// stream on, and sends #MP0 afterwards only if it was the one that turned it on
+// (and the radio hasn't turned it off meanwhile).
 //
 // The window is deliberately parentless so it survives MainWindow::hide()
 // — the controller therefore deletes it explicitly in its destructor.
