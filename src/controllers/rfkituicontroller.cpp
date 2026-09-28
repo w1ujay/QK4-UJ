@@ -38,6 +38,8 @@ RFKitUiController::RFKitUiController(StatusBarController *statusBar, RadioState 
             [this](double a) { m_window->panel()->setCurrent(static_cast<float>(a)); });
     connect(m_client, &RFKitClient::operatingStateChanged, this, [this](RFKitClient::OperatingState state) {
         m_window->panel()->setMode(state == RFKitClient::StateOperate);
+        // WHY: the amplifier can enter OPERATE on its own front panel or web UI, not just from ours.
+        checkDrivePower();
     });
     connect(m_client, &RFKitClient::antennaChanged, this,
             [this](int number, const QString &name) { m_window->panel()->setAntenna(number, name); });
@@ -49,8 +51,14 @@ RFKitUiController::RFKitUiController(StatusBarController *statusBar, RadioState 
             [this](const QString &status) { m_window->panel()->setStatus(status); });
 
     // === Panel button signals → amplifier commands ===
-    connect(m_window->panel(), &RFKitPanel::modeToggled, this,
-            [this](bool operate) { m_client->setOperateMode(operate); });
+    connect(m_window->panel(), &RFKitPanel::modeToggled, this, [this](bool operate) {
+        if (operate && drivePowerOverLimit()) {
+            qCWarning(qk4Rfkit) << "RFKit: OPERATE refused - K4 drive power over the limit";
+            checkDrivePower();
+            return;
+        }
+        m_client->setOperateMode(operate);
+    });
     connect(m_window->panel(), &RFKitPanel::wakeUpRequested, this, [this]() { m_client->setOperateMode(false); });
     connect(m_window->panel(), &RFKitPanel::antennaChanged, this, [this](int number) { m_client->setAntenna(number); });
     connect(m_window->panel(), &RFKitPanel::errorResetRequested, this, [this]() { m_client->resetError(); });
@@ -104,6 +112,8 @@ void RFKitUiController::onConnected() {
     const int pollInterval = RadioSettings::instance()->rfkitPollInterval();
     m_client->startPolling(pollInterval);
     updateStatus();
+    // WHY: the panel drops its lock on disconnect, and the K4 power may not change again for a while.
+    checkDrivePower();
 }
 
 void RFKitUiController::onDisconnected() {
@@ -140,21 +150,19 @@ void RFKitUiController::onSettingsChanged() {
     updateStatus();
 }
 
-void RFKitUiController::checkDrivePower() {
+bool RFKitUiController::drivePowerOverLimit() const {
     RadioSettings *settings = RadioSettings::instance();
-    if (!settings->rfkitEnabled() || !settings->rfkitLowPowerEnabled()) {
-        m_window->panel()->setOperateLocked(false);
-        return;
-    }
+    return settings->rfkitEnabled() && settings->rfkitLowPowerEnabled() &&
+           m_radioState->rfPower() > settings->rfkitMaxDrivePower();
+}
 
-    const double maxDrive = settings->rfkitMaxDrivePower();
-    const double currentPower = m_radioState->rfPower();
-    const bool overLimit = currentPower > maxDrive;
+void RFKitUiController::checkDrivePower() {
+    const bool overLimit = drivePowerOverLimit();
     m_window->panel()->setOperateLocked(overLimit);
 
     if (overLimit && m_client->isConnected() && m_client->operatingState() == RFKitClient::StateOperate) {
-        qCWarning(qk4Rfkit) << "RFKit: K4 drive power" << currentPower << "W exceeds limit" << maxDrive
-                            << "W - forcing standby";
+        qCWarning(qk4Rfkit) << "RFKit: K4 drive power" << m_radioState->rfPower() << "W exceeds limit"
+                            << RadioSettings::instance()->rfkitMaxDrivePower() << "W - forcing standby";
         m_client->setOperateMode(false);
     }
 }

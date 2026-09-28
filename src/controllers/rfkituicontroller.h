@@ -55,6 +55,7 @@ private:
     void onError(const QString &error);
     void onEnabledChanged(bool enabled);
     void onSettingsChanged();
+    bool drivePowerOverLimit() const;
     void checkDrivePower();
     void updateStatus();
 };
