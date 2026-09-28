@@ -222,6 +222,40 @@ mono; K4-Companion duplicates to stereo and its author notes the K4 requires it)
 
 ---
 
+## 12. Mini-pan state `#MP` / `#MP$` is pushed by the radio
+
+The mini-pan can be toggled on the radio itself, so QK4 cannot treat its own clicks as the only
+source of truth. A capture of the front-panel buttons (2026-09-27, Main then Sub) shows the radio
+sends the toggle, then re-sends `SB` and the `#MP` / `#MP$` pair:
+
+```
+#MP1;                           Main on
+#MP0;SB1;#MP0;#MP$-1;           Main off, then the SB + pair dump
+#MP$1;SB3;#MP0;#MP$1;           Sub on
+#MP$0;SB1;#MP0;#MP$0;           Sub off
+SB0;#MP0;#MP$-1;                Sub RX off
+```
+
+The same pair also arrives in the `RDY;` dump and after `#DPM` changes.
+
+**`SB3` is the Sub mini-pan, not diversity.** The K4 needs `SB3` for the Sub mini-pan to run and
+switches `SB1` ↔ `SB3` itself when `#MP$` toggles. QK4 reads any non-zero `SB` as Sub RX on, and the
+DIV badge follows `DV` only, so neither misreads it.
+
+**Main and Sub mini-pans are independent.** Both can run at once (`#MP1;#MP$1;SB3;`). Turning the Sub
+mini-pan on with Sub RX off is refused with `ER105:Operation requires SUB RX to be ON.`
+
+**`-1` is not "can never be turned on".** The radio reported `#MP$-1` just after `SB1`, then
+accepted `#MP$1` moments later. QK4 therefore treats `-1` as *off* (closing an open mini-pan) and
+does not use it to refuse the operator's click.
+
+**Where QK4 relies on it:** `SpectrumController::setupSpectrumUI` connects `miniPanAEnabledChanged`
+/ `miniPanBEnabledChanged` to the VFO widgets' `showMiniPan()` / `showNormal()`; the click handlers in
+`MainWindow` only update `RadioState` and send the CAT. `SpectrumController::clearDisplays` closes
+both on disconnect, because `SpectrumDisplayState::reset()` clears the flags without emitting.
+
+---
+
 ## How to extend this document
 
 Add a new section only when a behavior satisfies **all** of:

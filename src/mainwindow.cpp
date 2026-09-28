@@ -939,13 +939,13 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_vfoA = new VFOWidget(VFOWidget::VFO_A, parent);
 
     // Connect VFO A click to toggle mini-pan (send CAT to enable Mini-Pan streaming)
+    // The VFO view itself follows miniPanAEnabledChanged (SpectrumController).
     connect(m_vfoA, &VFOWidget::normalContentClicked, this, [this]() {
-        m_vfoA->showMiniPan();
-        m_radioState->setMiniPanAEnabled(true);   // Set state BEFORE sending CAT (K4 doesn't echo)
+        m_radioState->setMiniPanAEnabled(true);
         m_connectionController->sendCAT("#MP1;"); // Enable Mini-Pan A streaming
     });
     connect(m_vfoA, &VFOWidget::miniPanClicked, this, [this]() {
-        m_radioState->setMiniPanAEnabled(false);  // Set state BEFORE sending CAT
+        m_radioState->setMiniPanAEnabled(false);
         m_connectionController->sendCAT("#MP0;"); // Disable Mini-Pan A streaming
     });
 
@@ -1267,22 +1267,19 @@ void MainWindow::setupVfoSection(QWidget *parent) {
     m_vfoB->setMiniPanPassbandColor(vfoBPassband);
 
     // Connect VFO B click to toggle mini-pan (send CAT to enable Mini-Pan streaming)
-    // Only allow mini pan B if SUB RX is on or VFOs are on the same band
     connect(m_vfoB, &VFOWidget::normalContentClicked, this, [this]() {
-        // Block mini pan B if VFOs are on different bands and SUB RX is off
-        // (K4 cannot provide separate Sub RX spectrum without SUB RX enabled)
-        if (RadioUtils::getBandFromFrequency(m_radioState->vfoA()) !=
-                RadioUtils::getBandFromFrequency(m_radioState->vfoB()) &&
-            !m_radioState->subReceiverEnabled()) {
-            qCDebug(qk4Main) << "Mini-Pan B blocked: VFOs on different bands and SUB RX is off";
+        // WHY: the K4 refuses the Sub mini-pan while Sub RX is off
+        // (ER105 "Operation requires SUB RX to be ON"), whatever band VFO B is on.
+        if (!m_radioState->subReceiverEnabled()) {
+            qCDebug(qk4Main) << "Mini-Pan B blocked: SUB RX is off";
             return;
         }
-        m_vfoB->showMiniPan();
-        m_radioState->setMiniPanBEnabled(true);    // Set state BEFORE sending CAT (K4 doesn't echo)
+        // The VFO view itself follows miniPanBEnabledChanged (SpectrumController).
+        m_radioState->setMiniPanBEnabled(true);
         m_connectionController->sendCAT("#MP$1;"); // Enable Mini-Pan B (Sub RX) streaming
     });
     connect(m_vfoB, &VFOWidget::miniPanClicked, this, [this]() {
-        m_radioState->setMiniPanBEnabled(false);   // Set state BEFORE sending CAT
+        m_radioState->setMiniPanBEnabled(false);
         m_connectionController->sendCAT("#MP$0;"); // Disable Mini-Pan B streaming
     });
 
