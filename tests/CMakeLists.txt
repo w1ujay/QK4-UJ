@@ -306,6 +306,14 @@ target_include_directories(test_kpa1500antennas PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_kpa1500antennas Qt6::Core Qt6::Test)
 add_test(NAME Kpa1500AntennasTests COMMAND test_kpa1500antennas)
 
+# RFKit REST client against a local fake amplifier: stale replies across reconnects, antenna refresh
+add_executable(test_rfkitclient test_rfkitclient.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/rfkitclient.cpp
+)
+target_include_directories(test_rfkitclient PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_rfkitclient Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME RfkitClientTests COMMAND test_rfkitclient)
+
 # Band-plan strip layout: blocks, tag, sticky labels, marker collisions (QColor via bandplan.cpp)
 add_executable(test_bandplanstrip test_bandplanstrip.cpp
     ${CMAKE_SOURCE_DIR}/src/dsp/bandplanstrip.cpp

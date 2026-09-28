@@ -4,7 +4,10 @@
 #include <QJsonArray>
 #include <QNetworkAccessManager>
 #include <QObject>
+#include <QSet>
 #include <QTimer>
+
+#include <functional>
 
 class RFKitClient : public QObject {
     Q_OBJECT
@@ -20,6 +23,10 @@ public:
         int id = 0;
         int number = 0;
         QString name;
+
+        bool operator==(const AntennaInfo &other) const {
+            return id == other.id && number == other.number && name == other.name;
+        }
     };
 
     explicit RFKitClient(QObject *parent = nullptr);
@@ -80,6 +87,11 @@ private:
     void setState(ConnectionState state);
     QString buildUrl(const QString &endpoint) const;
     QNetworkRequest makeRequest(const QString &endpoint) const;
+    enum RequestKind { Poll, Command };
+    // Runs onFinished when the reply completes, unless the connection it was sent on has since ended.
+    void track(QNetworkReply *reply, RequestKind kind, std::function<void(QNetworkReply *)> onFinished);
+    // Ends the current connection's requests: later replies are ignored and pending polls aborted.
+    void endSession();
 
     // Poll endpoint handlers
     void pollPower();
@@ -100,6 +112,8 @@ private:
     QNetworkAccessManager *m_networkManager;
     QTimer *m_pollTimer;
     int m_consecutiveErrors = 0;
+    quint64 m_session = 0;                // bumped per connect/disconnect; stale replies are dropped
+    QSet<QNetworkReply *> m_pendingPolls; // polls in flight on the current session
 
     QString m_host;
     quint16 m_port = 8080;

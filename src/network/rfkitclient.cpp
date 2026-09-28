@@ -18,6 +18,8 @@ void RFKitClient::connectToHost(const QString &host, quint16 port) {
     if (m_state != Disconnected) {
         disconnectFromHost();
     }
+    // WHY: a reply from an earlier attempt that never reached Connected must not complete this one.
+    endSession();
 
     m_host = host;
     m_port = port;
@@ -31,8 +33,38 @@ void RFKitClient::connectToHost(const QString &host, quint16 port) {
 
 void RFKitClient::disconnectFromHost() {
     stopPolling();
+    endSession();
     m_consecutiveErrors = 0;
     setState(Disconnected);
+}
+
+void RFKitClient::endSession() {
+    ++m_session;
+    // WHY: only polls are aborted. A command such as a forced STANDBY is left to reach the amplifier;
+    // its reply is still ignored because the session moved on.
+    const QSet<QNetworkReply *> pending = m_pendingPolls;
+    m_pendingPolls.clear();
+    for (QNetworkReply *reply : pending)
+        reply->abort(); // finished fires now; track() ignores it because the session moved on
+
+    // The next amplifier (or this one after a restart) may differ: forget what the last one reported
+    // so its first poll is emitted even when the values match.
+    m_operatingState = StateUnknown;
+    m_antennas.clear();
+    m_activeAntennaNumber = 0;
+    m_activeAntennaName.clear();
+}
+
+void RFKitClient::track(QNetworkReply *reply, RequestKind kind, std::function<void(QNetworkReply *)> onFinished) {
+    if (kind == Poll)
+        m_pendingPolls.insert(reply);
+    const quint64 session = m_session;
+    connect(reply, &QNetworkReply::finished, reply, [this, reply, session, onFinished = std::move(onFinished)]() {
+        reply->deleteLater();
+        m_pendingPolls.remove(reply);
+        if (session == m_session)
+            onFinished(reply);
+    });
 }
 
 bool RFKitClient::isConnected() const {
@@ -90,9 +122,7 @@ void RFKitClient::setOperateMode(bool operate) {
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
     qDebug() << "RFKit: Sending PUT /operate-mode:" << data;
-    QNetworkReply *reply = m_networkManager->put(request, data);
-    connect(reply, &QNetworkReply::finished, reply, [reply, operate, this]() {
-        reply->deleteLater();
+    track(m_networkManager->put(request, data), Command, [operate, this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             qDebug() << "RFKit: operate-mode response:" << reply->readAll();
             OperatingState newState = operate ? StateOperate : StateStandby;
@@ -123,9 +153,7 @@ void RFKitClient::setAntenna(int antennaNumber) {
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
     qDebug() << "RFKit: Sending PUT /antennas/active:" << data;
-    QNetworkReply *reply = m_networkManager->put(request, data);
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->put(request, data), Command, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             // Refresh active antenna on next poll
             pollActiveAntenna();
@@ -139,9 +167,7 @@ void RFKitClient::resetError() {
     QNetworkRequest request = makeRequest("/error/reset");
 
     qDebug() << "RFKit: Sending POST /error/reset";
-    QNetworkReply *reply = m_networkManager->post(request, QByteArray());
-    connect(reply, &QNetworkReply::finished, reply, [reply]() {
-        reply->deleteLater();
+    track(m_networkManager->post(request, QByteArray()), Command, [this](QNetworkReply *reply) {
         if (reply->error() != QNetworkReply::NoError) {
             qWarning() << "RFKit: Failed to reset error:" << reply->error() << reply->errorString();
         }
@@ -162,9 +188,7 @@ void RFKitClient::onPollTimer() {
 }
 
 void RFKitClient::pollPower() {
-    QNetworkReply *reply = m_networkManager->get(makeRequest("/power"));
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->get(makeRequest("/power")), Poll, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             m_consecutiveErrors = 0;
             if (m_state == Connecting) {
@@ -183,9 +207,7 @@ void RFKitClient::pollPower() {
 }
 
 void RFKitClient::pollOperateMode() {
-    QNetworkReply *reply = m_networkManager->get(makeRequest("/operate-mode"));
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->get(makeRequest("/operate-mode")), Poll, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             handleOperateModeResponse(reply->readAll());
         }
@@ -193,9 +215,7 @@ void RFKitClient::pollOperateMode() {
 }
 
 void RFKitClient::pollData() {
-    QNetworkReply *reply = m_networkManager->get(makeRequest("/data"));
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->get(makeRequest("/data")), Poll, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             handleDataResponse(reply->readAll());
         }
@@ -203,9 +223,7 @@ void RFKitClient::pollData() {
 }
 
 void RFKitClient::pollAntennas() {
-    QNetworkReply *reply = m_networkManager->get(makeRequest("/antennas"));
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->get(makeRequest("/antennas")), Poll, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             handleAntennasResponse(reply->readAll());
         }
@@ -213,9 +231,7 @@ void RFKitClient::pollAntennas() {
 }
 
 void RFKitClient::pollActiveAntenna() {
-    QNetworkReply *reply = m_networkManager->get(makeRequest("/antennas/active"));
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->get(makeRequest("/antennas/active")), Poll, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             handleActiveAntennaResponse(reply->readAll());
         }
@@ -223,9 +239,7 @@ void RFKitClient::pollActiveAntenna() {
 }
 
 void RFKitClient::pollInfo() {
-    QNetworkReply *reply = m_networkManager->get(makeRequest("/info"));
-    connect(reply, &QNetworkReply::finished, reply, [reply, this]() {
-        reply->deleteLater();
+    track(m_networkManager->get(makeRequest("/info")), Poll, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             m_consecutiveErrors = 0;
             handleInfoResponse(reply->readAll());
@@ -407,7 +421,7 @@ void RFKitClient::handleAntennasResponse(const QByteArray &data) {
         antennas.append(info);
     }
 
-    if (m_antennas.size() != antennas.size()) {
+    if (m_antennas != antennas) {
         m_antennas = antennas;
         emit antennasUpdated();
     }
