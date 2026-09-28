@@ -215,23 +215,25 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         }
     }
 
-    // TX/RX with no args — when QK4 owns the audio path, these gate the audio
-    // input rather than keying the K4 directly (the audio stream itself triggers
-    // K4 TX). CW/CW-R always forward: keying must reach the radio, and so must
-    // everything when QK4's audio is disabled. "TX/;" (toggle) carries args and
-    // falls through to the generic TX handler below.
-    if ((prefix == "TX" || prefix == "RX") && args.isEmpty()) {
+    // TX;, RX; and the TX/; toggle — when QK4 owns the audio path, these gate the
+    // audio input rather than keying the K4 directly (the audio stream itself
+    // triggers K4 TX). CW/CW-R always forward: keying must reach the radio, and so
+    // must everything when QK4's audio is disabled. A forwarded toggle is resolved
+    // to TX; or RX; here from the radio's current TX state.
+    const bool txToggle = (prefix == "TX" && args == "/");
+    if ((prefix == "TX" || prefix == "RX") && (args.isEmpty() || txToggle)) {
+        const bool key = txToggle ? !m_radioState->isTransmitting() : (prefix == "TX");
         const int mode = m_radioState->mode();
         const bool forward =
             !RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R;
         if (forward) {
-            emit catCommandReceived(cmd);
+            emit catCommandReceived(key ? QStringLiteral("TX;") : QStringLiteral("RX;"));
         } else {
             // Remember who keyed so the transmission can be ended if that client vanishes.
-            m_pttOwner = (prefix == "TX") ? client : nullptr;
-            emit pttRequested(prefix == "TX");
+            m_pttOwner = key ? client : nullptr;
+            emit pttRequested(key);
         }
-        if (prefix == "RX") {
+        if (!key) {
             m_cwPending = 0;
         }
         return QByteArray();
@@ -357,7 +359,7 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             return CatFrames::modeB(m_radioState->modeB());
         }
         if (prefix == "BW$") {
-            return QString("BW$%1;").arg(m_radioState->filterBandwidthB(), 4, 10, QChar('0')).toUtf8();
+            return CatFrames::filterBandwidthB(m_radioState->filterBandwidthB());
         }
         if (prefix == "RG") {
             return QString("RG-%1;").arg(m_radioState->rfGain(), 2, 10, QChar('0')).toUtf8();
@@ -376,13 +378,12 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         if (prefix == "TB") {
             return QByteArray("TB") + QByteArray::number(qBound(0, m_cwPending, 9)) + "00;";
         }
-        // SB — sub RX status: 3=diversity, 1=sub RX on, 0=off.
+        // SB — sub RX status: 0=off, 1=on, 3=on with the Sub mini-pan running. Diversity is DV, not
+        // SB (docs/k4-protocol-quirks.md §12).
         if (prefix == "SB") {
             int subStatus = 0;
-            if (m_radioState->diversityEnabled()) {
-                subStatus = 3;
-            } else if (m_radioState->subReceiverEnabled()) {
-                subStatus = 1;
+            if (m_radioState->subReceiverEnabled()) {
+                subStatus = m_radioState->miniPanBEnabled() ? 3 : 1;
             }
             return QString("SB%1;").arg(subStatus).toUtf8();
         }
@@ -400,10 +401,14 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         }
         // AG/AG$ — while QK4 owns the audio path these report QK4's own volume;
         // otherwise the K4 is authoritative and the query is forwarded.
+        // WHY RadioSettings: the volume sliders persist every change there, including ones made
+        // in the GUI or restored at startup, so it is the one place that is always current.
         if (prefix == "AG" || prefix == "AG$") {
             if (RadioSettings::instance()->audioEnabled()) {
-                const int vol = (prefix == "AG") ? m_mainVolume : m_subVolume;
-                return QString("%1%2;").arg(prefix).arg(vol, 3, 10, QChar('0')).toUtf8();
+                const int percent =
+                    (prefix == "AG") ? RadioSettings::instance()->volume() : RadioSettings::instance()->subVolume();
+                const int gain = (percent * 60 + 50) / 100; // 0-100 -> 0-60, rounded
+                return QString("%1%2;").arg(prefix).arg(gain, 3, 10, QChar('0')).toUtf8();
             }
             emit catCommandReceived(cmd);
             return QByteArray();
@@ -436,7 +441,7 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
 
     // TX/RX commands - control audio input gate for external app transmit.
     // Don't forward to K4 - the audio stream itself triggers K4 TX.
-    // "TX;" asserts transmit; "TX/;" toggles based on the radio's current TX state.
+    // TX;, RX; and TX/; are routed by the audio-path block above; this catches any other args.
     if (prefix == "TX") {
         const bool on = (args == "/") ? !m_radioState->isTransmitting() : true;
         qCDebug(netCat) << "   PTT request:" << (on ? "ON" : "OFF");
@@ -476,10 +481,8 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             const int gain = qBound(0, args.toInt(), 60);
             const int percent = (gain * 100 + 30) / 60; // 0-60 -> 0-100, rounded
             if (prefix == "AG") {
-                m_mainVolume = gain;
                 emit volumeRequested(percent);
             } else {
-                m_subVolume = gain;
                 emit subVolumeRequested(percent);
             }
             return QByteArray();

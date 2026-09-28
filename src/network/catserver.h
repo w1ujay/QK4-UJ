@@ -84,8 +84,6 @@ private:
     quint16 m_port = 0;
 
     int m_cwPending = 0;    // Approximate chars pending in the K4 CW keyer buffer
-    int m_mainVolume = 27;  // AG value 0-60 (default ~45%)
-    int m_subVolume = 27;   // AG$ value 0-60 (default ~45%)
     int m_lastRfGain = 20;  // Last non-zero RF gain, for the RG/ toggle
     int m_lastRfGainB = 20; // Last non-zero sub RF gain, for the RG$/ toggle
 };

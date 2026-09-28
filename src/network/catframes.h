@@ -31,7 +31,9 @@ QByteArray xitEnabled(bool en);
 // Passing a bool could never express the XVTR range at all. See CAT-005.
 QByteArray rfPower(double value, LevelsState::PowerRange range);
 QByteArray rfPowerExtended(double value, LevelsState::PowerRange range);
+// BWnnnn / BW$nnnn replies, in the K4's 10-Hz units (BW0280 is 2800 Hz) like the radio's own.
 QByteArray filterBandwidth(int bwHz);
+QByteArray filterBandwidthB(int bwHz);
 QByteArray filterWidthExtended(int bwHz);
 // KSnnn. CLAMPED to the K4's documented range (manual: "from 8 to 100 WPM"), because the CW macro
 // grammar reaches this with ARITHMETIC - each '>' adds 5 WPM with no upper bound of its own - and
@@ -72,10 +74,10 @@ QByteArray cwAbort();
 //
 // The pair below build REPLIES to a CAT client (catserver.cpp, catpushbroadcaster.cpp). They have
 // never been used to send anything TO the radio, and neither is in the K4's actual command form:
-// noiseBlanker() emits "NB1;" where the K4 wants NBnnm, and filterBandwidth() emits the width in
-// Hz where the K4 wants 10-Hz units. Both are pre-existing reply-direction bugs, reported
-// separately rather than changed here - altering them would change what every existing CAT client
-// on port 9299 is told.
+// noiseBlanker() emits "NB1;" where the K4 wants NBnnm - a pre-existing reply-direction bug, left
+// as is because changing it changes what every existing CAT client on port 9299 is told.
+// filterBandwidth() used to emit Hz the same way; this fork corrected it to 10-Hz units, since a
+// client reading BW2800 as the K4 would sets a 28 kHz filter.
 //
 // These two are for SENDING, and match what QK4's own UI already sends by hand
 // (sidecontrolscrollcontroller.cpp divides the bandwidth by 10; featuremenucontroller.cpp uses the

@@ -205,7 +205,11 @@ QByteArray rfPowerExtended(double value, LevelsState::PowerRange range) {
 }
 
 QByteArray filterBandwidth(int bwHz) {
-    return QString("BW%1;").arg(bwHz, 4, 10, QChar('0')).toUtf8();
+    return QString("BW%1;").arg(qBound(0, bwHz / 10, 9999), 4, 10, QChar('0')).toUtf8();
+}
+
+QByteArray filterBandwidthB(int bwHz) {
+    return QString("BW$%1;").arg(qBound(0, bwHz / 10, 9999), 4, 10, QChar('0')).toUtf8();
 }
 
 QByteArray filterWidthExtended(int bwHz) {

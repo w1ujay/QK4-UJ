@@ -6,6 +6,7 @@
 #include "network/catframes.h"
 #include "network/catserver.h"
 #include "settings/radiosettings.h"
+#include <QScopeGuard>
 #include <QSettings>
 
 class TestCatServer : public QObject {
@@ -782,8 +783,19 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        // Mirrors CatFrames::filterBandwidth: raw Hz, zero-padded to 4 digits.
-        QCOMPARE(sendCommand(server, "BW$;"), QString("BW$4000;"));
+        // Replies go back out in the K4's 10-Hz units, as they came in.
+        QCOMPARE(sendCommand(server, "BW$;"), QString("BW$0400;"));
+    }
+
+    void testMainBandwidthQueryUsesTenHertzUnits() {
+        RadioState rs;
+        rs.parseCATCommand("BW0280;"); // 2800 Hz
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "BW;"), QString("BW0280;"));
+        QCOMPARE(CatFrames::filterBandwidth(2800), QByteArray("BW0280;"));
     }
 
     void testRfGainQuery() {
@@ -891,12 +903,35 @@ private slots:
 
     void testAudioGainQueryReturnsLocalVolume() {
         RadioSettings::instance()->setAudioEnabled(true);
+        const int savedVolume = RadioSettings::instance()->volume();
+        auto restore = qScopeGuard([savedVolume]() { RadioSettings::instance()->setVolume(savedVolume); });
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        // Mirrors MainWindow: the slider applies the request and persists it.
+        connect(&server, &CatServer::volumeRequested, RadioSettings::instance(), &RadioSettings::setVolume);
+
+        sendCommand(server, "AG030;");
+        QCOMPARE(sendCommand(server, "AG;"), QString("AG030;"));
+    }
+
+    // The slider and restored settings move the volume without any CAT AG; queries must follow.
+    void testAudioGainQueryFollowsVolumeSetOutsideCat() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        const int savedVolume = RadioSettings::instance()->volume();
+        const int savedSub = RadioSettings::instance()->subVolume();
+        auto restore = qScopeGuard([savedVolume, savedSub]() {
+            RadioSettings::instance()->setVolume(savedVolume);
+            RadioSettings::instance()->setSubVolume(savedSub);
+        });
         RadioState rs;
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        sendCommand(server, "AG030;");
-        QCOMPARE(sendCommand(server, "AG;"), QString("AG030;"));
+        RadioSettings::instance()->setVolume(100);
+        RadioSettings::instance()->setSubVolume(0);
+        QCOMPARE(sendCommand(server, "AG;"), QString("AG060;"));
+        QCOMPARE(sendCommand(server, "AG$;"), QString("AG$000;"));
     }
 
     void testAudioGainForwardedWhenAudioDisabled() {
@@ -931,6 +966,42 @@ private slots:
         QCOMPARE(pttSpy.count(), 0);
     }
 
+    void testTxToggleForwardedWhenAudioDisabled() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        auto restore = qScopeGuard([]() { RadioSettings::instance()->setAudioEnabled(true); });
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
+        QSignalSpy pttSpy(&server, &CatServer::pttRequested);
+
+        // The K4 is keyed directly, so the toggle resolves to a plain TX; or RX;.
+        sendCommand(server, "TX/;");
+        rs.parseCATCommand("TX;");
+        sendCommand(server, "TX/;");
+
+        QCOMPARE(pttSpy.count(), 0);
+        QCOMPARE(catSpy.count(), 2);
+        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+        QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+    }
+
+    void testTxToggleForwardedToK4InCwMode() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        rs.parseCATCommand("MD3;"); // CW
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
+        QSignalSpy pttSpy(&server, &CatServer::pttRequested);
+
+        sendCommand(server, "TX/;");
+
+        QCOMPARE(pttSpy.count(), 0);
+        QCOMPARE(catSpy.count(), 1);
+        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+    }
+
     void testSubReceiverStatus() {
         RadioState rs;
         rs.parseCATCommand("SB1;");
@@ -941,14 +1012,27 @@ private slots:
         QCOMPARE(sendCommand(server, "SB;"), QString("SB1;"));
     }
 
-    void testDiversityReportedAsSubStatusThree() {
+    // SB3 is Sub RX on with the Sub mini-pan running (docs/k4-protocol-quirks.md §12), not diversity.
+    void testSubMiniPanReportedAsSubStatusThree() {
         RadioState rs;
-        rs.parseCATCommand("DV1;");
+        rs.parseCATCommand("SB3;");
+        rs.parseCATCommand("#MP$1;");
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
         QCOMPARE(sendCommand(server, "SB;"), QString("SB3;"));
+    }
+
+    void testDiversityDoesNotChangeSubStatus() {
+        RadioState rs;
+        rs.parseCATCommand("SB1;");
+        rs.parseCATCommand("DV1;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "SB;"), QString("SB1;"));
     }
 
     void testKeyerBufferEmptyByDefault() {
