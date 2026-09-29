@@ -77,6 +77,13 @@ MiniViewController::MiniViewController(RadioState *radioState, ConnectionControl
         if (m_window->isVisible())
             m_window->setFrequencyB(m_vfoB->frequencyDisplay()->displayText());
     });
+    // WHY: with XIT on, the VFO shows the TX frequency while transmitting and the dial otherwise.
+    // TxStateController re-renders the VFO on every TX/RX change, and it is created before this
+    // controller, so its slot has already run and the display text is current here.
+    connect(m_radioState, &RadioState::transmitStateChanged, this, [this](bool) {
+        if (m_window->isVisible())
+            refreshFrequencies();
+    });
     connect(m_radioState, &RadioState::modeChanged, this, [this](RadioState::Mode mode) {
         if (!m_window->isVisible())
             return;

@@ -253,7 +253,7 @@ void MiniViewWindow::applySettings() {
     m_spotLabel->setVisible(showSpots);
     m_spotSeparator->setVisible(showSpots && (showBand || showMode));
 
-    // If pan was showing and setting changed, handle it
+    // Follow the saved pan visibility in both directions.
     bool showPan = s->miniViewShowPanadapter();
     m_panToggleBtn->setVisible(true); // Always show pan toggle
     if (!showPan && m_panVisible) {
@@ -261,6 +261,15 @@ void MiniViewWindow::applySettings() {
         if (m_miniPan)
             m_miniPan->setVisible(false);
         emit panadapterVisibilityChanged(false);
+    } else if (showPan && !m_panVisible && isVisible()) {
+        // WHY deferred: this runs from showEvent, before the window is on screen. The pan is a
+        // QRhiWidget created lazily in togglePanadapter(), and it only gets a QRhi when it is added to
+        // a window that is already showing (see the B1 notes), so wait until the show has finished,
+        // the same moment a click on the toggle would arrive.
+        QTimer::singleShot(0, this, [this]() {
+            if (isVisible() && !m_panVisible && RadioSettings::instance()->miniViewShowPanadapter())
+                togglePanadapter();
+        });
     }
 
     updateWindowSize();
