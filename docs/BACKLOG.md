@@ -309,11 +309,11 @@ Tom Schaefer (NY4I, wrote the TCI server) said PRs are welcome.
 | #163 | WebSocket drops never complete; silent handshakes hold slots | `fix/websocket-forced-drop` | **PR #166**, ready, CI green, on-air tested; awaiting review |
 | #164 | Mono TCI block with leading silence decoded as stereo | none | Left to Tom |
 | #167 | Disconnecting one DX cluster clears every cluster's spots | none | Not fixed |
-| draft 09 | Antenna config `ACM`/`ACS`/`ACT` sent without `;` | `fix/antenna-config-terminator` (local; merged into fork) | Not posted; needs on-air test |
-| draft 10 | Removing a DX cluster misaligns list rows and live connections | `fix/dxcluster-remove-entry` (local; merged into fork) | Not posted; testable **without** the radio, then PR |
-| draft 11 | Immediate TCI re-key leaves the room mic as TX source, gate open | `fix/tx-source-stale-switch` (local; merged into fork) | Not posted; transmit-safety; no unit test possible (#151) |
+| #169 | Antenna config `ACM`/`ACS`/`ACT` sent without `;` | `fix/antenna-config-terminator` (pushed; merged into fork) | Posted 2026-09-29; Tom offered to test on the air |
+| #170 | Removing a DX cluster misaligns list rows and live connections | `fix/dxcluster-remove-entry` (pushed; merged into fork) | Posted 2026-09-29; testable **without** the radio, then PR |
+| #168 | Immediate TCI re-key leaves the room mic as TX source, gate open | `fix/tx-source-stale-switch` (pushed; merged into fork) | Posted 2026-09-29; transmit-safety; no unit test possible (#151); Tom offered to test |
 
-Drafts for 09-11 are in the session scratchpad (`upstream-reports/`). Nothing is posted without Jay's review.
+Tom offered (2026-09-29) to test on the air any fix committed on the fork; all seven branches are pushed as single commits on `development`.
 
 **On later upstream merges:** where upstream fixes one of these its own way, take theirs and drop ours. The fork
 patches upstream-owned files in `catframes.*`, `catserver.cpp`, `audioengine.*`, `transmitowner.h`,
@@ -345,9 +345,9 @@ Get-Content $log -Wait
 
 - [ ] **#161:** press Esc during a TCI transmission. Expect a clean unkey, no stray blip on the power meter.
 - [ ] **#159:** 24 kHz headset as the mic, WSJT-X over TCI. Expect TX tones at the right frequency.
-- [ ] **Draft 11:** hard to provoke by hand. Mainly check nothing regressed: WSJT-X TX, Esc, PTT button.
-- [ ] **Draft 09:** change an antenna in ANT CFG. Expect the radio to apply it; the log shows `ACM…;` with `;`.
-- [ ] **Draft 10 (no radio needed):** two clusters, connect the second, remove the first. The second still
+- [ ] **#168:** hard to provoke by hand. Mainly check nothing regressed: WSJT-X TX, Esc, PTT button.
+- [ ] **#169:** change an antenna in ANT CFG. Expect the radio to apply it; the log shows `ACM…;` with `;`.
+- [ ] **#170 (no radio needed):** two clusters, connect the second, remove the first. The second still
       shows connected and its console works.
 - [ ] **CAT:** `BW;` / `BW$;` / `SB;` / `AG;` on port 9299 (PowerShell snippet in the 2026-09-28 session).
 - [ ] **Mini View:** B1 update checks (stream ownership, XIT, saved pan).
