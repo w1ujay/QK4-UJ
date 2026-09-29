@@ -34,6 +34,7 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | C3 | On-air: FT8 timing without latency knobs | Check | — | |
 | X1 | PTT frame-count toast | Recommend drop | S | |
 | X2 | Fork panadapter/CW offset centering | Recommend drop | — | |
+| U1–U3 | Review findings: upstream issues/PRs, fork fixes, pending on-air tests | Tracking | — | See section |
 
 ---
 
@@ -86,6 +87,13 @@ while `miniPanAEnabled`) would leave the stream on. Mini View now always sends `
 releases a stream it started, and stops owning it if the radio reports `#MP0` first. On-air check pending:
 open/close Mini View with VFO A's mini-pan closed, then open, and confirm VFO A's state is unchanged afterwards.
 
+**Update 2026-09-29 — two more Mini View fixes (`1735586`).** Mini View showed the dial frequency while
+transmitting with XIT on, because it didn't refresh on TX/RX changes. It now refreshes after
+`TxStateController` re-renders the VFO. A new window also always started with the pan hidden, even when it
+had been left open. `applySettings()` now restores it, deferred until the show finishes so the QRhiWidget is
+added to a window that is already showing (the cause #5 lesson above). On-air check pending: XIT +100 Hz while
+transmitting shows the same frequency in Mini View as on VFO A; the pan reopens after a restart.
+
 ### B2. Audio-enable UI + gating
 `RadioSettings::audioEnabled` and the CatServer checks were ported, but there's no checkbox and no gating of
 audio start/Opus decode. **Risk:** both branches share `QSettings("QK4","QK4")` key `audio/enabled`. If audio
@@ -93,7 +101,11 @@ was turned off in the old fork, v2 inherits "off" with no UI to change it, and C
 TX/RX/AG to the K4 while local audio keeps playing. Checkbox goes in `src/ui/pages/audiooutputpage.cpp`,
 gating in `AudioController` (must handle PTT mic and sidetone). Fork: 63f544c, f642d66.
 
-**Notes:**
+**Notes:** 2026-09-29: a review found `AG;` / `AG$;` get no reply when `audio/enabled` is false. CatServer
+forwards them to the K4, but nothing relays the K4's answer back to the CAT client, and RadioState doesn't track
+AG. Not reachable here: Jay's Windows registry has `audio/enabled = true`, and there is no UI to change it.
+Options: remove the audio-disabled branches from CatServer, which fits the Skip decision and removes the
+inherited-off risk above, or answer from RadioState once upstream tracks AG (Mike's plan in #134). Undecided.
 
 ### B3. CAT `IF` data sub-mode
 `catframes.cpp:153` hardcodes `'0'` for the data sub-mode, so fldigi can't detect RTTY. Upstream changed
@@ -278,6 +290,82 @@ since teardown clears both pointers (uncertain). Low priority.
 
 ---
 
+## Review findings, 2026-09-28/29
+
+Found by automated review sweeps of the whole repo. Fixes to fork-only code went straight onto
+`merge/upstream-dev-2026-09-26`. Bugs in upstream-owned files (unchanged from `mikeg-dal/QK4` `development`) are
+reported upstream; tested fixes live on one-commit branches cut from `development` and are merged into the fork.
+Tom Schaefer (NY4I, wrote the TCI server) said PRs are welcome.
+
+### U1. Upstream issues, fix branches and PRs
+
+| Upstream | Problem | Fix branch (cut from `development`) | Status |
+|---|---|---|---|
+| #134 (comment) | CAT `BW` replies in Hz, not 10-Hz units | fixed in fork only (`964cf57`) | Mike's own issue; waiting |
+| #159 | TCI TX audio decimated at the mic's rate | `fix/tci-tx-decimation` (pushed) | No PR yet; needs on-air test with a 24 kHz mic |
+| #160 | Re-assert/takeover clears `radioConfirmed`, radio's RX; ignored | `fix/transmit-confirmation` (pushed) | No PR yet; unit tests prove it; could PR without radio |
+| #161 | Local unkey during TCI selects the mic before the gate closes | `fix/tci-release-source-order` (pushed) | No PR yet; needs on-air Esc test |
+| #162 | Reconnect: parser buffer, stale `.local` lookup, cleared startup macro | none | Not fixed |
+| #163 | WebSocket drops never complete; silent handshakes hold slots | `fix/websocket-forced-drop` | **PR #166**, ready, CI green, on-air tested; awaiting review |
+| #164 | Mono TCI block with leading silence decoded as stereo | none | Left to Tom |
+| #167 | Disconnecting one DX cluster clears every cluster's spots | none | Not fixed |
+| draft 09 | Antenna config `ACM`/`ACS`/`ACT` sent without `;` | `fix/antenna-config-terminator` (local; merged into fork) | Not posted; needs on-air test |
+| draft 10 | Removing a DX cluster misaligns list rows and live connections | `fix/dxcluster-remove-entry` (local; merged into fork) | Not posted; testable **without** the radio, then PR |
+| draft 11 | Immediate TCI re-key leaves the room mic as TX source, gate open | `fix/tx-source-stale-switch` (local; merged into fork) | Not posted; transmit-safety; no unit test possible (#151) |
+
+Drafts for 09-11 are in the session scratchpad (`upstream-reports/`). Nothing is posted without Jay's review.
+
+**On later upstream merges:** where upstream fixes one of these its own way, take theirs and drop ours. The fork
+patches upstream-owned files in `catframes.*`, `catserver.cpp`, `audioengine.*`, `transmitowner.h`,
+`tcicontroller.cpp`, `websocketserver.*`, `audiocontroller.*`, `antennaconfigcontroller.cpp` and `dxcluster*`.
+
+### U2. Fork-only fixes (on `merge/upstream-dev-2026-09-26`)
+
+- `4a64ca8` Mini View releases the MiniPAN stream now that VFO A follows `#MP` (B1 update above).
+- `aadb316` RFKit: replies from an earlier connection are dropped; the antenna list refreshes when names change.
+- `edb085e` RFKit: drive-power limit rechecked on connect and on every amp state change; OPERATE refused over it.
+- `964cf57` CAT: `BW`/`BW$` in 10-Hz units, `SB3` = Sub mini-pan (not diversity), `AG` follows the sliders,
+  `TX/;` routed like `TX;`.
+- `1735586` Mini View follows XIT on transmit and restores its saved pan (B1 update above).
+
+### U3. On-air tests pending (remote site down, battery used for the RTTY contest)
+
+Run QK4 with the logging block below so each run gets its own file in `C:\AX\QK4\QK4-UJ\logs\`.
+
+```powershell
+cd C:\AX\QK4\QK4-UJ
+New-Item -ItemType Directory -Force -Path C:\AX\QK4\QK4-UJ\logs | Out-Null
+$log = "C:\AX\QK4\QK4-UJ\logs\qk4-$(Get-Date -Format yyyyMMdd-HHmmss).txt"
+$env:QT_FORCE_STDERR_LOGGING = "1"
+$env:QT_MESSAGE_PATTERN = "%{time hh:mm:ss.zzz} %{category} %{type}: %{message}"
+$env:QT_LOGGING_RULES = "net.ws=true;net.tci=true;tx.owner=true;qk4.audio.tx=true"
+Start-Process C:\AX\QK4\QK4-UJ\QK4.exe -WorkingDirectory C:\AX\QK4\QK4-UJ -RedirectStandardError $log
+Get-Content $log -Wait
+```
+
+- [ ] **#161:** press Esc during a TCI transmission. Expect a clean unkey, no stray blip on the power meter.
+- [ ] **#159:** 24 kHz headset as the mic, WSJT-X over TCI. Expect TX tones at the right frequency.
+- [ ] **Draft 11:** hard to provoke by hand. Mainly check nothing regressed: WSJT-X TX, Esc, PTT button.
+- [ ] **Draft 09:** change an antenna in ANT CFG. Expect the radio to apply it; the log shows `ACM…;` with `;`.
+- [ ] **Draft 10 (no radio needed):** two clusters, connect the second, remove the first. The second still
+      shows connected and its console works.
+- [ ] **CAT:** `BW;` / `BW$;` / `SB;` / `AG;` on port 9299 (PowerShell snippet in the 2026-09-28 session).
+- [ ] **Mini View:** B1 update checks (stream ownership, XIT, saved pan).
+- [ ] **RFKit:** with low-power protection on and the K4 over the limit, OPERATE from the amp's own panel
+      returns to STANDBY within one poll. (RFKit amps are off at the moment; disable RFKit until then.)
+- [ ] **Mini-pan follow (upstream feature):** toggle the mini-pan on the K4 front panel; QK4 follows.
+- [ ] **C2 voice**, **C3 clock check** above.
+- [ ] **Fast-forward `ujay-mods-v2`** to the merge branch once the above looks good.
+
+Done on the air 2026-09-28 (PR #166): suspend WSJT-X receiving (dropped at 40.0 s) and transmitting (radio
+unkeyed at once, client dropped at 37.5 / 33.5 s), normal quit (immediate), 8 silent connections (dropped at
+17.6-19.5 s). Use Resource Monitor → Suspend Process, not kill: the OS closes a killed process's socket.
+
+**Tip for review sweeps:** point them at the fork's own changes (`git diff origin/development...HEAD`), not the
+whole repo, or they keep finding upstream bugs faster than they can be tested.
+
+---
+
 ## On-air checks
 
 ### C1. CW notch placement
@@ -291,13 +379,17 @@ with the audible null.
 Fork's last PTT sent `TX;`/`RX;` (4026238, marked experimental). Upstream keys from the audio stream
 (`AudioController::setPttActive`); XMIT still sends `TX;`. Confirm voice and data PTT key the K4 remotely.
 
-**Notes:**
+**Notes:** 2026-09-28: **data confirmed.** WSJT-X over TCI keyed the remote K4 (log: `PTT ON from client 1`,
+`transmitter: none -> TCI client`, then the radio's `TX;` 300-400 ms later), and the radio's own `RX;` released
+it. Voice PTT still to check.
 
 ### C3. FT8 timing without latency knobs
 Fork had tunable buffer/latency targets (74d6c87, 349645e); upstream replaced them with a self-correcting
 jitter buffer (6e1c1df). Confirm FT8 decodes and DT look normal remotely.
 
-**Notes:**
+**Notes:** 2026-09-28: FT4 over TCI decodes normally and completed QSOs. DT was **-0.6 to -0.9 s on every
+station**. A uniform negative offset points to the PC clock, since audio latency would push DT positive. Check
+Windows time sync (or Meinberg NTP) first; if DT stays negative after that, look at QK4.
 
 ---
 
