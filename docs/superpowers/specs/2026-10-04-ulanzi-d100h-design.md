@@ -1,0 +1,232 @@
+# Ulanzi D100H Dial Support — Design
+
+Date: 2026-10-04
+Status: approved in brainstorming, awaiting spec review
+
+## Goal
+
+Let any QK4 user drive the radio from an Ulanzi D100H Bluetooth dial: a stepless haptic dial (with push) and
+seven RGB buttons, configured through Ulanzi Studio. The dial tunes VFO A (VFO B while the dial is held down and
+turned), the seven buttons and the dial press run QK4 macros (tap and hold), and one button can be PTT.
+
+Built on its own branch, `feature/ulanzi-dial`, cut from upstream `origin/development`, so it can be offered to
+`mikeg-dal/QK4` as a PR. The fork merges it into its merge branch with a `CHANGELOG-UJ.md` entry.
+
+## Non-goals (v1)
+
+- Button lighting or any feedback from QK4 to the dial (commands only, one direction).
+- A "learn" step or any per-button configuration inside QK4 beyond the existing macro dialog.
+- Mapping the dial to anything other than VFO A / VFO B tuning.
+- Remote (non-localhost) connections.
+
+## Overview
+
+```
+D100H ──BT──▶ Ulanzi Studio ──▶ QK4 plugin (Node 20)  ──TCP 127.0.0.1:9410, NDJSON──▶ UlanziServer (QK4)
+                                 plugins/ulanzi/...                                        │
+                                                                                            ▼
+                                                                                  HardwareController
+                                                                ┌──────────────┬────────────┴─────────────┐
+                                                        VFO A/B tuning   macroRequested("Ulanzi.*")   pttRequested(bool)
+                                                   (onKpodEncoderRotated   → MacroController          → MainWindow →
+                                                        WithRocker)                                    TransmitController
+```
+
+Two independent pieces joined by a small, host-agnostic line protocol:
+
+1. **Ulanzi Studio plugin** — a thin relay. It knows nothing about the radio.
+2. **QK4 `UlanziServer`** — parses the protocol, decides tap vs. hold, and hands events to
+   `HardwareController`, which maps them onto existing QK4 machinery.
+
+## 1. Wire protocol
+
+Newline-delimited JSON (one object per line, UTF-8, `\n` terminated) over one persistent TCP connection from the
+plugin to `127.0.0.1:<port>`. Default port **9410**.
+
+| Message | Meaning |
+|---|---|
+| `{"t":"rotate","n":1,"hold":false}` | Dial turned one detent; `n` is `+1` (right) or `-1` (left); `hold` true while the dial is pressed |
+| `{"t":"dial","down":true}` / `false` | Dial pressed / released |
+| `{"t":"button","slot":3,"down":true}` / `false` | Button in slot 1–7 pressed / released |
+| `{"t":"ptt","down":true}` / `false` | PTT button pressed / released |
+
+Rules:
+- One rotate message per detent; `n` is exactly ±1. Anything else is malformed.
+- Raw press and release only. The plugin does no timing; tap/hold is QK4's decision.
+- Unknown extra fields are ignored (forward compatibility). Unknown `t` values are malformed.
+
+## 2. Ulanzi Studio plugin
+
+Location: `plugins/ulanzi/com.qk4.ulanziPlugin/`. Node 20, built on the official SDK
+(`github.com/UlanziTechnology/UlanziDeckPlugin-SDK`); the D100H is the SDK's device type `"Dial"`.
+
+Three actions in `manifest.json`:
+
+| Action | Controller | SDK events used | Sends |
+|---|---|---|---|
+| QK4 Dial | Encoder | `onDialRotate` (`rotateEvent`: `left`, `right`, `hold-left`, `hold-right`), `onDialDown`, `onDialUp` | `rotate`, `dial` |
+| QK4 Button | Keypad | `onKeyDown`, `onKeyUp` | `button` with the slot from its property inspector |
+| QK4 PTT | Keypad | `onKeyDown`, `onKeyUp` | `ptt` |
+
+- **QK4 Button** has a property inspector with one setting, "Slot" (1–7, default 1). The user places one
+  QK4 Button per physical key in Ulanzi Studio and picks its slot.
+- `hold-left` / `hold-right` map to `n:-1/+1, hold:true`; `left` / `right` to `hold:false`.
+- **Connection:** one TCP socket for all action instances. On close or error, retry every 2 s, indefinitely.
+  Events that arrive while disconnected are **dropped, never queued**. A queued PTT press or a burst of stale
+  detents would be dangerous or surprising when the link returns.
+- Port is a plugin-wide setting (SDK global settings, default 9410), set from any action's property inspector, so
+  it can follow a changed QK4 port.
+
+## 3. QK4: `UlanziServer`
+
+Files: `src/network/ulanziserver.h`, `src/network/ulanziserver.cpp` (added to `SOURCES`/`HEADERS`).
+
+Modelled on `CatServer`:
+- `QTcpServer` on the main thread, listening on `QHostAddress::LocalHost` only.
+- **One client at a time.** A new connection replaces the current one. The old one is closed and treated as a
+  disconnect (see §6).
+- Line buffer capped at **4 KB**. A client that exceeds it without sending a newline is dropped.
+- `start(quint16 port)`, `stop()`, `isListening()`, `hasClient()`.
+
+### Parsing
+
+A pure, static function so the tests can drive it without sockets:
+
+```cpp
+struct UlanziEvent {
+    enum class Type { Invalid, Rotate, Dial, Button, Ptt };
+    Type type = Type::Invalid;
+    int steps = 0;      // Rotate: +1 / -1
+    bool hold = false;  // Rotate: dial held while turning
+    int slot = 0;       // Button: 1..7
+    bool down = false;  // Dial / Button / Ptt
+};
+static UlanziEvent parseLine(const QByteArray &line);
+```
+
+Uses `QJsonDocument`. Returns `Type::Invalid` for anything outside §1.
+
+### Tap / hold
+
+Decided in the server for buttons 1–7 and the dial press (not PTT):
+
+- `static constexpr int HOLD_MS = 500;` (overridable in tests via a setter).
+- On press, start a single-shot timer for that key. If it fires while the key is still down, emit **hold**
+  immediately (do not wait for release). On release before it fires, emit **tap**. On release after a hold,
+  emit nothing.
+- QK4 has no hold timing of its own to reuse: the KPOD decides hold in its own hardware. 500 ms is the
+  chosen value, as a named constant.
+- A dial press that is turned (any `rotate` with `hold:true` while down) is a VFO B gesture, not a press: it
+  cancels that press's tap/hold, so turning while held never also fires `Ulanzi.DialT/H`.
+
+### Signals
+
+```cpp
+void rotated(int steps, bool hold);
+void buttonTapped(int slot);     // 1..7
+void buttonHeld(int slot);
+void dialTapped();
+void dialHeld();
+void pttChanged(bool down);
+void clientConnectedChanged(bool connected);
+void errorOccurred(const QString &message);
+```
+
+## 4. QK4: wiring
+
+`HardwareController` constructs and owns the `UlanziServer` and exposes `ulanziServer()` beside the existing
+device accessors, under the same documented exception for Options pages.
+
+| Server signal | HardwareController action |
+|---|---|
+| `rotated(n, false)` | `onKpodEncoderRotatedWithRocker(n, 2)`: VFO A, same step and lock handling as KPOD |
+| `rotated(n, true)` | `onKpodEncoderRotatedWithRocker(n, 0)`: VFO B |
+| `buttonTapped(n)` / `buttonHeld(n)` | `emit macroRequested("Ulanzi.<n>T")` / `"Ulanzi.<n>H"` |
+| `dialTapped()` / `dialHeld()` | `emit macroRequested("Ulanzi.DialT")` / `"Ulanzi.DialH"` |
+| `pttChanged(down)` | `emit pttRequested(down)` (new signal) |
+
+`macroRequested` already reaches `MacroController` (`mainwindow.cpp`), so macros need no new plumbing.
+
+`MainWindow` connects `HardwareController::pttRequested` beside the bottom-bar PTT button:
+- `true` → `m_transmitController->engage(TransmitOwner::Owner::Ulanzi, TransmitOwner::Route::StreamedFromHere)`
+- `false` → `m_transmitController->release(TransmitOwner::Owner::Ulanzi)`
+
+### Transmit ownership
+
+`src/models/transmitowner.h`:
+- Add `Owner::Ulanzi` with a comment ("the Ulanzi D100H PTT button, over the local Ulanzi server").
+- Add it to `isLocal()`. The dial sits on the operator's desk, so it preempts remote owners (CAT, TCI) and is
+  never preempted by them, the same as the PTT button.
+  Accepted trade-off: the signal arrives over a localhost socket, so any local process could claim to be the
+  dial. This is the same trust boundary as the CAT server, which is localhost-only.
+- `sourceFor(Owner::Ulanzi)` is the microphone (the existing default branch; no change needed).
+
+### Macros
+
+`src/utils/macroids.h`: 16 new IDs, `Ulanzi1T`/`Ulanzi1H` … `Ulanzi7T`/`Ulanzi7H`, `UlanziDialT`/`UlanziDialH`,
+with values `"Ulanzi.1T"` … `"Ulanzi.DialH"`. Added after the KPOD block.
+`src/ui/dialogs/macrodialog.cpp`: the same 16 entries in the slot list, after the K-pod entries.
+
+## 5. Settings and Options page
+
+`RadioSettings`:
+- `ulanzi/enabled` (bool, default `false`) and `ulanzi/port` (quint16, default `9410`), with getters, setters and
+  `ulanziEnabledChanged` / `ulanziPortChanged` signals, following `catServer/*`.
+- `HardwareController` starts the server when enabled and restarts it on a port change.
+
+`src/ui/pages/ulanzipage.{h,cpp}` ("Ulanzi Dial" in the Options list, after K-Pod), modelled on `kpodpage`:
+- Enable checkbox, port spin box (1024–65535), status line.
+- Status text: "Disabled", "Listening on port 9410, waiting for Ulanzi Studio", "Ulanzi Studio connected",
+  or "Port 9410 unavailable: <reason>".
+- A one-line hint pointing at the plugin README.
+- Colours, dimensions and fonts from `K4Styles`; font sizes with `setPixelSize()`.
+
+## 6. Error handling
+
+| Situation | Behaviour |
+|---|---|
+| Port in use / listen fails | `errorOccurred(msg)` as `CatServer` does. The page shows "Port N unavailable: <reason>". No automatic retry; toggling enable or changing the port retries. |
+| Malformed line (bad JSON, unknown `t`, missing or wrong-typed field, `n` not ±1, slot outside 1–7) | Skipped; logged with `qCDebug`. The connection stays up. |
+| Line over 4 KB without a newline | Client dropped. |
+| Unmapped slot | `macroRequested` fires; `MacroController` already ignores empty bindings. |
+| Client disconnects or is replaced while PTT, a button or the dial is down | Emit `pttChanged(false)` if PTT was down, cancel pending hold timers, emit no tap. |
+| Server stopped or disabled while a client is connected | Same as a disconnect, before the listener is torn down (mirrors `CatServer`'s unkey-before-teardown). |
+| Radio not connected | Events still route and behave exactly as KPOD input does; no Ulanzi-specific handling. |
+| Esc / losing the radio while Ulanzi holds PTT | Existing `TransmitController::releaseAll()`; a later `ptt down:false` from the plugin is ignored as a release from a non-owner. |
+
+## 7. Testing
+
+Qt Test, registered in `tests/CMakeLists.txt`.
+
+`tests/test_ulanziserver.cpp` (`UlanziServerTests`):
+- `parseLine()` table: every valid message from §1; malformed cases (invalid JSON, non-object, unknown `t`,
+  missing fields, `n` = 0 / 2 / "1", slot 0 / 8, `down` not bool); extra fields ignored.
+- Tap vs. hold with a short hold override: quick press → tap on release; long press → hold while down, nothing
+  on release; rotate with `hold:true` during a dial press cancels its tap/hold.
+- Over a real `QTcpSocket` on an ephemeral port, as `test_catserver` does: events arrive as signals; a second
+  client replaces the first; 4 KB cap drops the client; disconnect while PTT is down emits `pttChanged(false)`;
+  `stop()` while PTT is down emits `pttChanged(false)`; listening on a taken port emits `errorOccurred`.
+
+`tests/test_transmitowner.cpp`: `Owner::Ulanzi` preempts `CatClient` and `TciClient`; neither preempts it; a
+release from another owner is ignored; `Ulanzi` and `PttButton` do not preempt each other (local never
+preempts local).
+
+Plugin, by hand in UlanziDeckSimulator: rotate, hold-rotate, dial press, each button slot, PTT; then quit and
+restart QK4 and confirm the plugin reconnects and drops events while disconnected.
+
+Hardware, first thing on the real D100H (the main unknowns): what the plugin actually receives (key ids,
+exactly one `onDialRotate` per detent, `hold-left`/`hold-right` while pressed). Then on the air: tuning A and B,
+tap/hold macros, PTT keys and unkeys, and quitting Ulanzi Studio mid-transmit unkeys the radio.
+
+## 8. Documentation
+
+`plugins/ulanzi/README.md`: install the plugin into Ulanzi Studio, place the three actions on the D100H, set
+each QK4 Button's slot, enable "Ulanzi Dial" in QK4 Options, change the port on both sides if needed, and the
+protocol from §1 for anyone writing a different host.
+
+## 9. Delivery
+
+- Branch `feature/ulanzi-dial` from `origin/development`; conventional commits, clang-format clean.
+- Merge into the fork's merge branch with a `CHANGELOG-UJ.md` entry.
+- Offer upstream as a PR to `mikeg-dal/QK4` once the hardware check passes.
+- This spec lives on the fork's merge branch alongside `docs/BACKLOG.md`, not on the feature branch.
