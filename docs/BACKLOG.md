@@ -302,18 +302,20 @@ Tom Schaefer (NY4I, wrote the TCI server) said PRs are welcome.
 | Upstream | Problem | Fix branch (cut from `development`) | Status |
 |---|---|---|---|
 | #134 (comment) | CAT `BW` replies in Hz, not 10-Hz units | fixed in fork only (`964cf57`) | Mike's own issue; waiting |
-| #159 | TCI TX audio decimated at the mic's rate | `fix/tci-tx-decimation` (pushed) | No PR yet; needs on-air test with a 24 kHz mic |
-| #160 | Re-assert/takeover clears `radioConfirmed`, radio's RX; ignored | `fix/transmit-confirmation` (pushed) | No PR yet; unit tests prove it; could PR without radio |
-| #161 | Local unkey during TCI selects the mic before the gate closes | `fix/tci-release-source-order` (pushed) | No PR yet; needs on-air Esc test |
-| #162 | Reconnect: parser buffer, stale `.local` lookup, cleared startup macro | none | Not fixed |
-| #163 | WebSocket drops never complete; silent handshakes hold slots | `fix/websocket-forced-drop` | **PR #166**, ready, CI green, on-air tested; awaiting review |
-| #164 | Mono TCI block with leading silence decoded as stereo | none | Left to Tom |
-| #167 | Disconnecting one DX cluster clears every cluster's spots | none | Not fixed |
-| #169 | Antenna config `ACM`/`ACS`/`ACT` sent without `;` | `fix/antenna-config-terminator` (pushed; merged into fork) | Posted 2026-09-29; Tom offered to test on the air |
-| #170 | Removing a DX cluster misaligns list rows and live connections | `fix/dxcluster-remove-entry` (pushed; merged into fork) | Posted 2026-09-29; testable **without** the radio, then PR |
-| #168 | Immediate TCI re-key leaves the room mic as TX source, gate open | `fix/tx-source-stale-switch` (pushed; merged into fork) | Posted 2026-09-29; transmit-safety; no unit test possible (#151); Tom offered to test |
+| #159 | TCI TX audio decimated at the mic's rate | `fix/tci-tx-decimation` | **Fixed upstream** (`2a5bd39`, ours) |
+| #160 | Re-assert/takeover clears `radioConfirmed`, radio's RX; ignored | `fix/transmit-confirmation` | **Fixed upstream** (`ea4aadd`, ours; Mike added `2bfe2b9`: a takeover that sends RX; starts a new episode) |
+| #161 | Local unkey during TCI selects the mic before the gate closes | `fix/tci-release-source-order` | **Fixed upstream** (`4319afb`, ours; Mike's `67e5cfe` leaves the TX source to the transmit arbiter) |
+| #162 | Reconnect: parser buffer, stale `.local` lookup, cleared startup macro | none | **Fixed upstream** by Mike (`3aa6669`, `113121b`, `77c334c`) |
+| #163 | WebSocket drops never complete; silent handshakes hold slots | `fix/websocket-forced-drop` | **Fixed upstream** (PR #166 closed, landed as `c1ea65d`) |
+| #164 | Mono TCI block with leading silence decoded as stereo | none | **Fixed upstream** by Mike (`cc6d8fe`) |
+| #167 | Disconnecting one DX cluster clears every cluster's spots | none | **Fixed upstream** by Mike (`a34b386`) |
+| #168 | Immediate TCI re-key leaves the room mic as TX source, gate open | `fix/tx-source-stale-switch` | **Fixed upstream** (`3dd4bf5`, ours) |
+| #169 | Antenna config `ACM`/`ACS`/`ACT` sent without `;` | `fix/antenna-config-terminator` | **Fixed upstream** (`c617ad0`, ours) |
+| #170 | Removing a DX cluster misaligns list rows and live connections | `fix/dxcluster-remove-entry` | **Fixed upstream** (`2464868`, ours) |
 
-Tom offered (2026-09-29) to test on the air any fix committed on the fork; all seven branches are pushed as single commits on `development`.
+All of the above closed upstream and came into the fork with the 2026-10-04 merge of `origin/development`
+(`7a5af6b`); conflicts were resolved by taking upstream's versions. The fix branches are obsolete and can be
+deleted. Only #134 remains open.
 
 **On later upstream merges:** where upstream fixes one of these its own way, take theirs and drop ours. The fork
 patches upstream-owned files in `catframes.*`, `catserver.cpp`, `audioengine.*`, `transmitowner.h`,
@@ -342,6 +344,8 @@ $env:QT_LOGGING_RULES = "net.ws=true;net.tci=true;tx.owner=true;qk4.audio.tx=tru
 Start-Process C:\AX\QK4\QK4-UJ\QK4.exe -WorkingDirectory C:\AX\QK4\QK4-UJ -RedirectStandardError $log
 Get-Content $log -Wait
 ```
+
+The #159-#170 checks below now exercise upstream's versions of the fixes (merged 2026-10-04).
 
 - [ ] **#161:** press Esc during a TCI transmission. Expect a clean unkey, no stray blip on the power meter.
 - [ ] **#159:** 24 kHz headset as the mic, WSJT-X over TCI. Expect TX tones at the right frequency.
