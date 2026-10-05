@@ -186,17 +186,18 @@ UlanziEvent UlanziServer::parseLine(const QByteArray &line) {
         return {};
     e.down = down.toBool();
 
-    // Optional on a dial or button release. Read before the type branches, applied only to those two.
-    const QJsonValue cancel = o.value(QStringLiteral("cancel"));
-    const bool hasCancel = !cancel.isUndefined();
-    if (hasCancel && !cancel.isBool())
-        return {};
-    const bool cancelled = hasCancel && cancel.toBool();
+    // Optional on a dial or button release; for any other type it is ignored whatever its value.
     const bool keyType = t == QStringLiteral("dial") || t == QStringLiteral("button");
-    if (keyType && cancelled && e.down)
-        return {}; // a cancelled press is meaningless
-    if (keyType)
+    if (keyType) {
+        const QJsonValue cancel = o.value(QStringLiteral("cancel"));
+        const bool hasCancel = !cancel.isUndefined();
+        if (hasCancel && !cancel.isBool())
+            return {};
+        const bool cancelled = hasCancel && cancel.toBool();
+        if (cancelled && e.down)
+            return {}; // a cancelled press is meaningless
         e.cancel = cancelled;
+    }
 
     if (t == QStringLiteral("dial")) {
         e.type = UlanziEvent::Type::Dial;

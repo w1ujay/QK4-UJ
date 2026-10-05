@@ -119,6 +119,8 @@ private slots:
                                 << false;
         QTest::newRow("extra field ignored")
             << QByteArray(R"({"t":"ptt","down":true,"v":2})") << int(Type::Ptt) << 0 << false << 0 << true;
+        QTest::newRow("ptt release with non-bool cancel")
+            << QByteArray(R"({"t":"ptt","down":false,"cancel":"x"})") << int(Type::Ptt) << 0 << false << 0 << false;
 
         QTest::newRow("not json") << QByteArray(R"({"t":)") << invalid << 0 << false << 0 << false;
         QTest::newRow("array") << QByteArray("[1]") << invalid << 0 << false << 0 << false;
@@ -158,6 +160,9 @@ private slots:
         const UlanziEvent e = UlanziServer::parseLine(R"({"t":"ptt","down":false,"cancel":true})");
         QCOMPARE(int(e.type), int(Type::Ptt));
         QCOMPARE(e.cancel, false);
+        const UlanziEvent bad = UlanziServer::parseLine(R"({"t":"ptt","down":false,"cancel":"x"})");
+        QCOMPARE(int(bad.type), int(Type::Ptt));
+        QCOMPARE(bad.cancel, false);
     }
 
     void parseLine() {
