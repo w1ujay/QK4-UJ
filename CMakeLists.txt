@@ -183,6 +183,7 @@ set(SOURCES
     src/ui/pages/tciserverpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
+    src/ui/pages/ulanzipage.cpp
     src/ui/pages/kpa1500page.cpp
     src/ui/pages/dxclusterpage.cpp
     src/ui/overlays/dxspotoverlay.cpp
@@ -319,6 +320,7 @@ set(HEADERS
     src/ui/pages/rigcontrolpage.h
     src/ui/pages/cwkeyerpage.h
     src/ui/pages/kpodpage.h
+    src/ui/pages/ulanzipage.h
     src/ui/pages/kpa1500page.h
     src/ui/pages/dxclusterpage.h
     src/ui/overlays/dxspotoverlay.h

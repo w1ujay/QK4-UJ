@@ -23,6 +23,7 @@ class RigControlPage;
 class TciServerPage;
 class CwKeyerPage;
 class KpodPage;
+class UlanziPage;
 class Kpa1500Page;
 class DxClusterPage;
 
@@ -44,6 +45,7 @@ public:
         PageTciServer,
         PageCwKeyer,
         PageKpod,
+        PageUlanzi,
         PageKpa1500,
         PageDxCluster,
         PageCount
@@ -85,6 +87,7 @@ private:
     RigControlPage *m_rigControlPage = nullptr;
     CwKeyerPage *m_cwKeyerPage = nullptr;
     KpodPage *m_kpodPage = nullptr;
+    UlanziPage *m_ulanziPage = nullptr;
     Kpa1500Page *m_kpa1500Page = nullptr;
     DxClusterPage *m_dxClusterPage = nullptr;
 };
