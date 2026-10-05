@@ -57,25 +57,34 @@ Rules:
 
 ## 2. Ulanzi Studio plugin
 
-Location: `plugins/ulanzi/com.qk4.ulanziPlugin/`. Node 20, built on the official SDK
-(`github.com/UlanziTechnology/UlanziDeckPlugin-SDK`); the D100H is the SDK's device type `"Dial"`.
+Location: `plugins/ulanzi/com.ulanzi.qk4.ulanziPlugin/`, plugin UUID `com.ulanzi.ulanzistudio.qk4`. The SDK
+(`github.com/UlanziTechnology/UlanziDeckPlugin-SDK`, Apache-2.0) requires this shape: the folder is
+`com.ulanzi.<name>.ulanziPlugin`, and the main service is recognised by a UUID of **exactly four** dot-separated
+parts. Action UUIDs add a fifth: `.dial`, `.button`, `.ptt`. Ulanzi Studio runs it on Node 20.
 
-Three actions in `manifest.json`:
+Three actions in `manifest.json` (no `Devices` key, so every device can use them; whether the D100H reports as
+the SDK's `"Dial"` model is unverified):
 
 | Action | Controller | SDK events used | Sends |
 |---|---|---|---|
 | QK4 Dial | Encoder | `onDialRotate` (`rotateEvent`: `left`, `right`, `hold-left`, `hold-right`), `onDialDown`, `onDialUp` | `rotate`, `dial` |
 | QK4 Button | Keypad | `onKeyDown`, `onKeyUp` | `button` with the slot from its property inspector |
-| QK4 PTT | Keypad | `onKeyDown`, `onKeyUp` | `ptt` |
+| QK4 PTT | Keypad | `onKeyDown`, `onKeyUp`, `onClear` | `ptt` |
 
-- **QK4 Button** has a property inspector with one setting, "Slot" (1–7, default 1). The user places one
-  QK4 Button per physical key in Ulanzi Studio and picks its slot.
+- **QK4 Button** has a property inspector with one setting, "Slot" (1-7, default 1), saved as the action's
+  param. The user places one QK4 Button per physical key in Ulanzi Studio and picks its slot.
 - `hold-left` / `hold-right` map to `n:-1/+1, hold:true`; `left` / `right` to `hold:false`.
-- **Connection:** one TCP socket for all action instances. On close or error, retry every 2 s, indefinitely.
-  Events that arrive while disconnected are **dropped, never queued**. A queued PTT press or a burst of stale
-  detents would be dangerous or surprising when the link returns.
-- Port is a plugin-wide setting (SDK global settings, default 9410), set from any action's property inspector, so
-  it can follow a changed QK4 port.
+- **Connection:** one TCP socket (Node `net`) for all action instances. On close or error, retry every 2 s,
+  indefinitely. Events that arrive while disconnected are **dropped, never queued**. A queued PTT press or a
+  burst of stale detents would be dangerous or surprising when the link returns.
+- **Port** is an SDK global setting (default 9410), shown on every action's property inspector, so it can follow
+  a changed QK4 port. A new port drops the socket and reconnects.
+- **PTT key removed while held** (`onClear` for a PTT context that is down): send `ptt down:false`.
+- **Code layout:** the protocol mapping (`plugin/protocol.js`) and the reconnecting socket (`plugin/relay.js`)
+  are pure modules with `node --test` unit tests; `plugin/app.js` only wires SDK events to them. The SDK's
+  Node library is vendored (with its licence) and needs `ws`; Ulanzi Studio installs no npm dependencies, so
+  `npm run build` bundles everything with esbuild into `dist/app.js` (`CodePath`), which is committed so that
+  installing is copying the folder. The property inspector uses the SDK's vendored HTML library.
 
 ## 3. QK4: `UlanziServer`
 
@@ -86,7 +95,7 @@ Modelled on `CatServer`:
 - **One client at a time.** A new connection replaces the current one. The old one is closed and treated as a
   disconnect (see §6).
 - Line buffer capped at **4 KB**. A client that exceeds it without sending a newline is dropped.
-- `start(quint16 port)`, `stop()`, `isListening()`, `hasClient()`.
+- `start(quint16 port)`, `stop()`, `isListening()`, `hasClient()`, `port()`, `lastError()`.
 
 ### Parsing
 
@@ -129,7 +138,9 @@ void dialTapped();
 void dialHeld();
 void pttChanged(bool down);
 void clientConnectedChanged(bool connected);
-void errorOccurred(const QString &message);
+void errorOccurred(const QString &message); // "Port N unavailable: <reason>", also kept as lastError()
+void started(quint16 port);
+void stopped();
 ```
 
 ## 4. QK4: wiring
@@ -139,7 +150,7 @@ device accessors, under the same documented exception for Options pages.
 
 | Server signal | HardwareController action |
 |---|---|
-| `rotated(n, false)` | `onKpodEncoderRotatedWithRocker(n, 2)`: VFO A, same step and lock handling as KPOD |
+| `rotated(n, false)` | `onKpodEncoderRotatedWithRocker(n, 2)`: VFO A, same step and lock handling as KPOD. Ignored until the radio is connected and has reported the VFO's frequency (the KPOD's USB-007 guard). |
 | `rotated(n, true)` | `onKpodEncoderRotatedWithRocker(n, 0)`: VFO B |
 | `buttonTapped(n)` / `buttonHeld(n)` | `emit macroRequested("Ulanzi.<n>T")` / `"Ulanzi.<n>H"` |
 | `dialTapped()` / `dialHeld()` | `emit macroRequested("Ulanzi.DialT")` / `"Ulanzi.DialH"` |
@@ -174,8 +185,8 @@ with values `"Ulanzi.1T"` … `"Ulanzi.DialH"`. Added after the KPOD block.
   `ulanziEnabledChanged` / `ulanziPortChanged` signals, following `catServer/*`.
 - `HardwareController` starts the server when enabled and restarts it on a port change.
 
-`src/ui/pages/ulanzipage.{h,cpp}` ("Ulanzi Dial" in the Options list, after K-Pod), modelled on `kpodpage`:
-- Enable checkbox, port spin box (1024–65535), status line.
+`src/ui/pages/ulanzipage.{h,cpp}` ("Ulanzi Dial" in the Options list, after K-Pod), laid out like `rigcontrolpage` (the closest existing page: enable, port, status):
+- Enable checkbox, port field (1024–65535, a `QLineEdit` as on the Rig Control page), status line.
 - Status text: "Disabled", "Listening on port 9410, waiting for Ulanzi Studio", "Ulanzi Studio connected",
   or "Port 9410 unavailable: <reason>".
 - A one-line hint pointing at the plugin README.
@@ -211,7 +222,8 @@ Qt Test, registered in `tests/CMakeLists.txt`.
 release from another owner is ignored; `Ulanzi` and `PttButton` do not preempt each other (local never
 preempts local).
 
-Plugin, by hand in UlanziDeckSimulator: rotate, hold-rotate, dial press, each button slot, PTT; then quit and
+Plugin: `node --test` for `protocol.js` and `relay.js` (mapping, drop-while-disconnected, 2 s reconnect, port
+change). Then by hand in UlanziDeckSimulator: rotate, hold-rotate, dial press, each button slot, PTT; then quit and
 restart QK4 and confirm the plugin reconnects and drops events while disconnected.
 
 Hardware, first thing on the real D100H (the main unknowns): what the plugin actually receives (key ids,
