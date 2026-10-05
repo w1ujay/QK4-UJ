@@ -13,6 +13,10 @@ export function wire(ud, { relay, keys, defaultPort }) {
     relay.close();
   });
 
+  // The SDK emits 'error' on a failed or broken Studio socket; with no listener Node would throw and kill the
+  // plugin. 'close' follows and does the work (see onClose).
+  ud.onError(() => {});
+
   ud.onAdd((jsn) => {
     keys.remember(jsn);
     ud.getGlobalSettings(jsn.context);

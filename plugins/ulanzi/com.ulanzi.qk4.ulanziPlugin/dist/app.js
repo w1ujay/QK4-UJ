@@ -4951,6 +4951,8 @@ function wire(ud, { relay: relay2, keys: keys2, defaultPort }) {
     keys2.reset();
     relay2.close();
   });
+  ud.onError(() => {
+  });
   ud.onAdd((jsn) => {
     keys2.remember(jsn);
     ud.getGlobalSettings(jsn.context);

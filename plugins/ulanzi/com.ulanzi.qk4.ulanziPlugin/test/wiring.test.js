@@ -15,7 +15,7 @@ class FakeUd extends EventEmitter {
       onConnected: 'connected', onClose: 'close', onAdd: 'add', onParamFromApp: 'paramfromapp',
       onParamFromPlugin: 'paramfromplugin', onDidReceiveGlobalSettings: 'didReceiveGlobalSettings',
       onKeyDown: 'keydown', onKeyUp: 'keyup', onClear: 'clear', onDialDown: 'dialdown', onDialUp: 'dialup',
-      onDialRotate: 'dialrotate',
+      onDialRotate: 'dialrotate', onError: 'error',
     };
     for (const [method, event] of Object.entries(events)) {
       this[method] = (fn) => {
@@ -77,4 +77,10 @@ test('losing Studio while keyed closes the QK4 connection for good', () => {
   assert.equal(sockets[0].destroyed, true); // QK4 sees the disconnect and releases PTT
   assert.equal(relay.connected, false);
   assert.equal(timers.length, 0); // and the plugin does not reconnect on its own
+});
+
+test('an SDK error event does not throw and leaves the QK4 relay connected', () => {
+  const { ud, relay } = setup();
+  assert.doesNotThrow(() => ud.emit('error', 'boom'));
+  assert.equal(relay.connected, true);
 });
