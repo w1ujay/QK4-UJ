@@ -89,10 +89,11 @@ UlanziPage::UlanziPage(UlanziServer *server, QWidget *parent) : QWidget(parent),
     m_enableCheckbox->setChecked(RadioSettings::instance()->ulanziEnabled());
     layout->addWidget(m_enableCheckbox);
 
-    auto *helpLabel = new QLabel("Install the QK4 plugin in Ulanzi Studio (plugins/ulanzi/README.md in the QK4 "
-                                 "source) and set the same port in any QK4 action there. Assign the buttons in "
-                                 "Macros, under Ulanzi.1T to Ulanzi.DialH.",
-                                 this);
+    auto *helpLabel =
+        new QLabel("Ulanzi Studio (Windows and macOS): install the QK4 plugin (plugins/ulanzi/README.md "
+                   "in the QK4 source) and set the same port in any QK4 action there. Assign the buttons in "
+                   "Macros, under Ulanzi.1T to Ulanzi.DialH.",
+                   this);
     helpLabel->setStyleSheet(K4Styles::Dialog::helpText());
     helpLabel->setWordWrap(true);
     layout->addWidget(helpLabel);

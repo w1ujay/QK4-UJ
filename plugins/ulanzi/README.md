@@ -39,6 +39,10 @@ any QK4 action's settings in Ulanzi Studio (the port is shared by all QK4 action
 - PTT is released if Ulanzi Studio quits, crashes or loses its connection to the plugin or to QK4, if the PTT
   key is removed from the deck while held, and if the Ulanzi server is disabled in QK4.
 - With two PTT keys (or two buttons on one slot), letting go of one does not release the other.
+- If the dial itself loses its Bluetooth link, or Ulanzi Studio switches page or profile while PTT is held, Ulanzi
+  Studio may not send the release; press Esc in QK4 to unkey. (To be confirmed on hardware.)
+- Run one host at a time: Ulanzi Studio and the UlanziDeckSimulator both connecting makes them take the connection
+  from each other every 2 seconds.
 - Events that happen while the plugin is not connected are dropped, never delivered late.
 - QK4 treats the dial's PTT like its own PTT button: it can take transmit over from WSJT-X (CAT or TCI),
   and WSJT-X cannot take it from the dial.
