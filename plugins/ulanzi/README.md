@@ -79,3 +79,5 @@ start the main service yourself from the plugin folder: `node dist/app.js 127.0.
 Vendored, unmodified, under the Apache License 2.0 (see each folder's `LICENSE`):
 - `vendor/plugin-common-node/` from UlanziTechnology/plugin-common-node @ `9e478b2`
 - `property-inspector/libs/` from UlanziTechnology/plugin-common-html @ `0aeb6a2`
+
+`dist/app.js` also bundles `ws` (MIT; the notice is in `dist/ws-LICENSE`).

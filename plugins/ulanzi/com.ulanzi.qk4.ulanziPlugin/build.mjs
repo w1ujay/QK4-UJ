@@ -1,7 +1,7 @@
 // Bundles the main service and its dependencies (the SDK and ws) into dist/app.js, because Ulanzi
 // Studio installs no npm dependencies. dist/ is committed so installing the plugin is copying the folder.
 import { build } from 'esbuild';
-import { mkdir, writeFile } from 'node:fs/promises';
+import { copyFile, mkdir, writeFile } from 'node:fs/promises';
 
 await mkdir('dist', { recursive: true });
 await build({
@@ -17,3 +17,5 @@ await build({
 });
 // The package root is "type": "module"; the bundle is CommonJS.
 await writeFile('dist/package.json', '{\n  "type": "commonjs"\n}\n');
+// The bundle contains ws (MIT), whose licence requires the notice to travel with it.
+await copyFile('node_modules/ws/LICENSE', 'dist/ws-LICENSE');
