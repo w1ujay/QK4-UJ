@@ -85,3 +85,24 @@ test('close() also cancels a pending retry, and connectTo() afterwards starts ag
   relay.connectTo(9410);
   assert.equal(sockets.length, 2);
 });
+
+test('onConnected listeners fire on each successful connect, and only for the current socket', () => {
+  const { relay, sockets, timers } = relayHarness();
+  let a = 0;
+  let b = 0;
+  relay.onConnected(() => a++);
+  relay.onConnected(() => b++);
+  relay.connectTo(9410);
+  assert.equal(a, 0); // not on socket creation
+  sockets[0].emit('connect');
+  assert.deepEqual([a, b], [1, 1]);
+  sockets[0].emit('close');
+  timers[0].fn();
+  sockets[1].emit('connect'); // after a retry
+  assert.deepEqual([a, b], [2, 2]);
+  relay.connectTo(9500);
+  sockets[1].emit('connect'); // the replaced socket's late connect
+  assert.deepEqual([a, b], [2, 2]);
+  sockets.at(-1).emit('connect'); // after connectTo(newPort)
+  assert.deepEqual([a, b], [3, 3]);
+});

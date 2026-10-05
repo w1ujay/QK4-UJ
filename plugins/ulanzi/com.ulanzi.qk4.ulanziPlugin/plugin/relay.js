@@ -14,6 +14,7 @@ export class Relay {
   #socket = null;
   #timer = null;
   #connected = false;
+  #connectedListeners = [];
 
   constructor({ createSocket, retryMs = RETRY_MS, setTimer = setTimeout, clearTimer = clearTimeout }) {
     this.#createSocket = createSocket;
@@ -24,6 +25,11 @@ export class Relay {
 
   get connected() {
     return this.#connected;
+  }
+
+  /// Call fn every time a connection to QK4 is established: first connect, after a retry, after a port change.
+  onConnected(fn) {
+    this.#connectedListeners.push(fn);
   }
 
   /// Connect (or reconnect) to 127.0.0.1:port. The same port while connected or retrying is a no-op.
@@ -52,7 +58,9 @@ export class Relay {
     const socket = this.#createSocket(this.#port);
     this.#socket = socket;
     socket.on('connect', () => {
-      if (this.#socket === socket) this.#connected = true;
+      if (this.#socket !== socket) return;
+      this.#connected = true;
+      for (const fn of this.#connectedListeners) fn();
     });
     socket.on('error', () => {}); // 'close' follows every error and does the work
     socket.on('close', () => {

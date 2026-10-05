@@ -4825,6 +4825,7 @@ var Relay = class {
   #socket = null;
   #timer = null;
   #connected = false;
+  #connectedListeners = [];
   constructor({ createSocket, retryMs = RETRY_MS, setTimer = setTimeout, clearTimer = clearTimeout }) {
     this.#createSocket = createSocket;
     this.#retryMs = retryMs;
@@ -4833,6 +4834,10 @@ var Relay = class {
   }
   get connected() {
     return this.#connected;
+  }
+  /// Call fn every time a connection to QK4 is established: first connect, after a retry, after a port change.
+  onConnected(fn) {
+    this.#connectedListeners.push(fn);
   }
   /// Connect (or reconnect) to 127.0.0.1:port. The same port while connected or retrying is a no-op.
   connectTo(port) {
@@ -4858,7 +4863,9 @@ var Relay = class {
     const socket = this.#createSocket(this.#port);
     this.#socket = socket;
     socket.on("connect", () => {
-      if (this.#socket === socket) this.#connected = true;
+      if (this.#socket !== socket) return;
+      this.#connected = true;
+      for (const fn of this.#connectedListeners) fn();
     });
     socket.on("error", () => {
     });
@@ -4947,6 +4954,7 @@ var KeyTracker = class {
 // plugin/wiring.js
 function wire(ud, { relay: relay2, keys: keys2, defaultPort }) {
   ud.onConnected(() => relay2.connectTo(defaultPort));
+  relay2.onConnected(() => keys2.reset());
   ud.onClose(() => {
     keys2.reset();
     relay2.close();

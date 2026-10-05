@@ -84,3 +84,48 @@ test('an SDK error event does not throw and leaves the QK4 relay connected', () 
   assert.doesNotThrow(() => ud.emit('error', 'boom'));
   assert.equal(relay.connected, true);
 });
+
+// Review finding: QK4 releases everything a departing connection held, so key state is per connection.
+test('a fresh PTT press after a reconnect keys even while an older key is still held', () => {
+  const { ud, sockets, timers } = setup();
+  ud.emit('keydown', { uuid: ACTIONS.ptt, context: 'a' });
+  assert.deepEqual(lines(sockets[0]), [{ t: 'ptt', down: true }]);
+  sockets[0].emit('close');
+  timers[0].fn();
+  sockets[1].emit('connect');
+  ud.emit('keydown', { uuid: ACTIONS.ptt, context: 'b' });
+  assert.deepEqual(lines(sockets[1]), [{ t: 'ptt', down: true }]);
+  ud.emit('keyup', { uuid: ACTIONS.ptt, context: 'a' });
+  assert.equal(sockets[1].written.length, 1);
+  ud.emit('keyup', { uuid: ACTIONS.ptt, context: 'b' });
+  assert.deepEqual(lines(sockets[1]), [
+    { t: 'ptt', down: true },
+    { t: 'ptt', down: false },
+  ]);
+});
+
+test('a press made while disconnected does not block the next press after reconnect', () => {
+  const { ud, sockets, timers } = setup();
+  sockets[0].emit('close');
+  ud.emit('keydown', { uuid: ACTIONS.ptt, context: 'a' }); // dropped
+  timers[0].fn();
+  sockets[1].emit('connect');
+  ud.emit('keydown', { uuid: ACTIONS.ptt, context: 'b' });
+  assert.deepEqual(lines(sockets[1]), [{ t: 'ptt', down: true }]);
+});
+
+test('a port change with a key held starts the new connection clean', () => {
+  const { ud, sockets } = setup();
+  const button = { uuid: ACTIONS.button, param: { slot: 3 } };
+  ud.emit('keydown', { ...button, context: 'a' });
+  assert.deepEqual(lines(sockets[0]), [{ t: 'button', slot: 3, down: true }]);
+  ud.emit('didReceiveGlobalSettings', { settings: { port: 9500 } });
+  const next = sockets.at(-1);
+  next.emit('connect');
+  ud.emit('keydown', { ...button, context: 'b' });
+  assert.deepEqual(lines(next), [{ t: 'button', slot: 3, down: true }]);
+  ud.emit('keyup', { ...button, context: 'a' });
+  assert.equal(next.written.length, 1);
+  ud.emit('keyup', { ...button, context: 'b' });
+  assert.deepEqual(lines(next).at(-1), { t: 'button', slot: 3, down: false });
+});
