@@ -86,6 +86,11 @@ the SDK's `"Dial"` model is unverified):
   `button:<slot>`, `dial`). A key's `down` is sent when its first holder presses and its `up` when its last
   holder releases, so releasing one of two PTT keys never unkeys the other. A press stays bound to the key it
   started on: changing a button's slot mid-press releases the slot that was pressed.
+- **Key state is per QK4 connection.** Every new QK4 connection (first connect, reconnect after a loss,
+  a port change) starts with no held keys: holds delivered on the previous connection are forgotten (QK4 has
+  already released them), presses made while disconnected are forgotten, and nothing is replayed. A key still
+  physically held across a reconnect sends nothing until it is pressed again; its release is ignored. Fresh
+  presses after the reconnect go down and up on their own.
 - **Action removed while held** (`onClear`): it stops holding its key. If it was the last holder, the release
   is sent with `cancel:true` for a button or the dial (no tap, no deferred hold) and as a plain release for PTT.
 - **Studio connection lost** (`onClose`; the SDK neither exits nor reconnects): forget all held keys and close
