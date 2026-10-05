@@ -1,0 +1,50 @@
+{
+  "Author": "QK4",
+  "Name": "QK4",
+  "Description": "Tune, run macros and key PTT on an Elecraft K4 through QK4.",
+  "Icon": "assets/icons/plugin.png",
+  "Category": "QK4",
+  "CategoryIcon": "assets/icons/plugin.png",
+  "Version": "0.1.0",
+  "UUID": "com.ulanzi.ulanzistudio.qk4",
+  "Type": "JavaScript",
+  "CodePath": "dist/app.js",
+  "Software": { "MinVersion": "2.1.0" },
+  "OS": [
+    { "Platform": "windows", "MinimumVersion": "10" },
+    { "Platform": "mac", "MinimumVersion": "11.0" }
+  ],
+  "Actions": [
+    {
+      "Name": "QK4 Dial",
+      "Icon": "assets/icons/dial.png",
+      "UUID": "com.ulanzi.ulanzistudio.qk4.dial",
+      "Tooltip": "Turn to tune VFO A; hold and turn to tune VFO B; press for the Ulanzi.Dial macros.",
+      "PropertyInspectorPath": "property-inspector/inspector.html",
+      "Controllers": ["Encoder"],
+      "Encoder": { "layout": "$UA1" },
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "QK4 Dial", "Image": "assets/icons/dial.png" }]
+    },
+    {
+      "Name": "QK4 Button",
+      "Icon": "assets/icons/button.png",
+      "UUID": "com.ulanzi.ulanzistudio.qk4.button",
+      "Tooltip": "Runs QK4's Ulanzi macro for this slot: tap or hold.",
+      "PropertyInspectorPath": "property-inspector/inspector.html",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "QK4 Button", "Image": "assets/icons/button.png" }]
+    },
+    {
+      "Name": "QK4 PTT",
+      "Icon": "assets/icons/ptt.png",
+      "UUID": "com.ulanzi.ulanzistudio.qk4.ptt",
+      "Tooltip": "Transmits while held.",
+      "PropertyInspectorPath": "property-inspector/inspector.html",
+      "Controllers": ["Keypad"],
+      "DisableAutomaticStates": true,
+      "States": [{ "Name": "QK4 PTT", "Image": "assets/icons/ptt.png" }]
+    }
+  ]
+}
