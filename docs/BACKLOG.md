@@ -358,6 +358,17 @@ The #159-#170 checks below now exercise upstream's versions of the fixes (merged
 - [ ] **RFKit:** with low-power protection on and the K4 over the limit, OPERATE from the amp's own panel
       returns to STANDBY within one poll. (RFKit amps are off at the moment; disable RFKit until then.)
 - [ ] **Mini-pan follow (upstream feature):** toggle the mini-pan on the K4 front panel; QK4 follows.
+- [ ] **Ulanzi D100H, simulator first (Windows):** Options → Ulanzi Dial status (disabled / listening / connected /
+      port busy), then the plugin in UlanziDeckSimulator: rotate, hold-rotate, dial tap/hold (hold only on release,
+      none after a turn), button slots tap/hold, two overlapping PTT keys, removing a held key, quitting QK4 and
+      restarting (plugin reconnects in ~2 s, a fresh press then works), stopping the simulator while PTT is held.
+- [ ] **Ulanzi D100H, hardware:** what the plugin receives on the real dial (one `dialrotate` per detent,
+      `hold-left`/`hold-right` while pressed, key events for the seven buttons, whether it reports as `Dial`), the
+      Windows plugin folder path for the README, then on the air: tune A/B, macros, PTT keys and unkeys, quitting
+      Ulanzi Studio mid-transmit unkeys. **Also: power off / Bluetooth loss and a Studio page switch while PTT is
+      held** — if no release arrives, decide on a PTT watchdog before the upstream PR.
+- [ ] **Ulanzi upstream PR:** after the above, PR `feature/ulanzi-dial` to mikeg-dal/QK4; say that CI does not run
+      the plugin tests or check `dist/app.js`, and that release builds don't include the plugin.
 - [ ] **C2 voice**, **C3 clock check** above.
 - [ ] **Fast-forward `ujay-mods-v2`** to the merge branch once the above looks good.
 

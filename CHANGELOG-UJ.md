@@ -51,6 +51,11 @@ conflict with.
   `showPage()` for that.
 - **Mini-pan right-click** — right-click a VFO mini-pan or the Mini View pan to
   tune VFO B to that frequency, with CW pitch and RIT handled.
+- **Ulanzi D100H dial** (branch `feature/ulanzi-dial`, to be offered upstream after the hardware check) — new
+  "Ulanzi Dial" Options page and a Ulanzi Studio plugin in `plugins/ulanzi/`. The dial tunes VFO A (VFO B while
+  held down and turned); seven buttons and the dial press run `Ulanzi.*` tap/hold macros (dial hold fires on
+  release, never after a turn); a PTT button transmits as a local owner. PTT is released when the plugin, Ulanzi
+  Studio or the QK4 connection goes away, and the plugin starts each QK4 connection with no held keys.
 
 ### Changed
 - Window title reads `QK4-UJ v<version>` (`QK4-UJ <branch>-<sha>` on CI branch
