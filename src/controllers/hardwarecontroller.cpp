@@ -6,7 +6,9 @@
 #include "hardware/kpoddevice.h"
 #include "hardware/kpodplusdevice.h"
 #include "models/radiostate.h"
+#include "network/ulanziserver.h"
 #include "settings/radiosettings.h"
+#include "utils/macroids.h"
 #include "utils/radioutils.h"
 #include <QLoggingCategory>
 
@@ -171,6 +173,26 @@ HardwareController::HardwareController(RadioState *radioState, ConnectionControl
     // immediately after this controller). See cwcontroller.h.
 
     // =========================================================================
+    // Ulanzi D100H dial (Ulanzi Studio plugin over a localhost socket)
+    // =========================================================================
+    // Turning tunes VFO A, or VFO B while the dial is held down; the buttons and the dial press run
+    // the Ulanzi macros through the same macroRequested path as the KPOD; PTT goes to MainWindow.
+    m_ulanziServer = new UlanziServer(this);
+    connect(m_ulanziServer, &UlanziServer::rotated, this, &HardwareController::onUlanziRotated);
+    connect(m_ulanziServer, &UlanziServer::buttonTapped, this,
+            [this](int slot) { emit macroRequested(MacroIds::ulanziButton(slot, false)); });
+    connect(m_ulanziServer, &UlanziServer::buttonHeld, this,
+            [this](int slot) { emit macroRequested(MacroIds::ulanziButton(slot, true)); });
+    connect(m_ulanziServer, &UlanziServer::dialTapped, this,
+            [this]() { emit macroRequested(MacroIds::ulanziDial(false)); });
+    connect(m_ulanziServer, &UlanziServer::dialHeld, this,
+            [this]() { emit macroRequested(MacroIds::ulanziDial(true)); });
+    connect(m_ulanziServer, &UlanziServer::pttChanged, this, &HardwareController::pttRequested);
+    connect(RadioSettings::instance(), &RadioSettings::ulanziEnabledChanged, this, [this]() { applyUlanziSettings(); });
+    connect(RadioSettings::instance(), &RadioSettings::ulanziPortChanged, this, [this]() { applyUlanziSettings(); });
+    applyUlanziSettings();
+
+    // =========================================================================
     // Device notifications — one policy for all four devices
     // =========================================================================
     // Only the HaliKey used to reach NotificationWidget. The KPOD and KPOD+ announced their arrival
@@ -250,6 +272,11 @@ void HardwareController::shutdownDevices() {
         return;
     }
     m_devicesShutDown = true;
+
+    // The Ulanzi server first: it is the only input here that can hold the transmitter, and stopping
+    // it releases PTT while TransmitController is still alive to act on it.
+    if (m_ulanziServer)
+        m_ulanziServer->stop();
 
     // Shutdown order: HaliKey → Keyer → Sidetone → KPOD/KPOD+
     // HaliKey stops paddle events first, then keyer (producer of KZ commands) stops
@@ -363,6 +390,31 @@ void HardwareController::onKpodEncoderRotatedWithRocker(int ticks, int rockerPos
         }
         break;
     }
+}
+
+// =============================================================================
+// Ulanzi D100H
+// =============================================================================
+
+void HardwareController::applyUlanziSettings() {
+    // start() is a no-op on the port already in use and restarts on a new one, so this one call
+    // covers enabling, a port change, and retrying after a port that was busy.
+    if (RadioSettings::instance()->ulanziEnabled())
+        m_ulanziServer->start(RadioSettings::instance()->ulanziPort());
+    else
+        m_ulanziServer->stop();
+}
+
+void HardwareController::onUlanziRotated(int steps, bool hold) {
+    if (!m_connectionController->isConnected())
+        return;
+    // USB-007, as for the KPOD: until the K4 has reported the VFO's frequency there is nothing to tune
+    // relative to, and a turn would send FA/FB for a near-zero frequency.
+    const quint64 freq = hold ? m_radioState->vfoB() : m_radioState->vfoA();
+    if (freq == 0)
+        return;
+    // Rocker positions as the KPOD reports them: 2 = left = VFO A, 0 = centre = VFO B.
+    onKpodEncoderRotatedWithRocker(steps, hold ? 0 : 2);
 }
 
 void HardwareController::onKpodPollError(const QString &error) {
