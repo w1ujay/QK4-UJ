@@ -14,6 +14,7 @@ class IambicKeyer;
 class SidetoneGenerator;
 class RadioState;
 class ConnectionController;
+class UlanziServer;
 
 /**
  * @brief Owns hardware-side workers: KPOD USB knob (main thread), HaliKey CW paddle
@@ -46,6 +47,7 @@ public:
     KpodDevice *kpodDevice() const { return m_kpodDevice; }
     KpodPlusDevice *kpodPlusDevice() const { return m_kpodPlusDevice; }
     HalikeyDevice *halikeyDevice() const { return m_halikeyDevice; }
+    UlanziServer *ulanziServer() const { return m_ulanziServer; }
 
     // IambicKeyer + SidetoneGenerator accessors — consumed by CwController,
     // which is constructed right after HardwareController and wires the CW
@@ -94,6 +96,11 @@ signals:
     // KPOD button press → MainWindow dispatches macro
     void macroRequested(const QString &functionId);
 
+    /// The Ulanzi D100H PTT button went down or up (or its plugin went away while it was down).
+    /// MainWindow hands it to TransmitController as Owner::Ulanzi; this controller has no handle on
+    /// the transmitter.
+    void pttRequested(bool down);
+
     /// The KPOD+ is taking over CW keying, or giving it back.
     ///
     /// Emitted from the lifecycle policy's decision to open or close, which is deliberately AHEAD
@@ -115,6 +122,8 @@ private slots:
 
 private:
     void onKpodEncoderRotatedWithRocker(int ticks, int rockerPosition);
+    void onUlanziRotated(int steps, bool hold);
+    void applyUlanziSettings();
 
 private:
     RadioState *m_radioState;
@@ -142,6 +151,9 @@ private:
     // CW playback wiring lives on CwController.
     SidetoneGenerator *m_sidetoneGenerator;
     QThread *m_sidetoneThread = nullptr;
+
+    // Ulanzi D100H dial: localhost server for the Ulanzi Studio plugin. Main thread.
+    UlanziServer *m_ulanziServer = nullptr;
 };
 
 #endif // HARDWARECONTROLLER_H

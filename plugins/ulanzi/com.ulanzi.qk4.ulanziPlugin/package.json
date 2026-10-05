@@ -1,0 +1,18 @@
+{
+  "name": "qk4-ulanzi-plugin",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "description": "Ulanzi Studio plugin that relays the D100H dial to QK4",
+  "license": "GPL-3.0-only",
+  "scripts": {
+    "test": "node --test test/protocol.test.js test/relay.test.js test/keys.test.js test/wiring.test.js",
+    "build": "node build.mjs"
+  },
+  "dependencies": {
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "esbuild": "^0.25.0"
+  }
+}

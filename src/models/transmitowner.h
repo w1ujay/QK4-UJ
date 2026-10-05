@@ -31,6 +31,7 @@ enum class Owner {
     Xmit,      // the side-panel XMIT button
     CatClient, // WSJT-X and friends over the native CAT server
     TciClient, // a TCI client
+    Ulanzi,    // the Ulanzi D100H PTT button, over the local Ulanzi server
     Radio      // the K4 keyed itself: front panel, footswitch at the radio, TUNE, a fault
 };
 
@@ -113,8 +114,11 @@ inline bool keyedByCat(Route r) {
 // A local producer is the operator, physically at this computer. Local preempts remote, because
 // the operator is here and the client is not — the rule PR #133 established for TCI and which this
 // generalises. Remote never preempts anything, including a transmission the radio started itself.
+//
+// The Ulanzi dial is local: it sits on the operator's desk. Its signal arrives over a localhost
+// socket, so any local process could claim to be it — the same trust boundary as the CAT server.
 inline bool isLocal(Owner o) {
-    return o == Owner::PttButton || o == Owner::Xmit;
+    return o == Owner::PttButton || o == Owner::Xmit || o == Owner::Ulanzi;
 }
 
 inline AudioSource sourceFor(Owner o) {

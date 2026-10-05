@@ -46,6 +46,32 @@ const QString Kpod7H = "K-pod.7H";
 const QString Kpod8T = "K-pod.8T";
 const QString Kpod8H = "K-pod.8H";
 
+// Ulanzi D100H buttons and dial press (T=Tap, H=Hold)
+const QString Ulanzi1T = "Ulanzi.1T";
+const QString Ulanzi1H = "Ulanzi.1H";
+const QString Ulanzi2T = "Ulanzi.2T";
+const QString Ulanzi2H = "Ulanzi.2H";
+const QString Ulanzi3T = "Ulanzi.3T";
+const QString Ulanzi3H = "Ulanzi.3H";
+const QString Ulanzi4T = "Ulanzi.4T";
+const QString Ulanzi4H = "Ulanzi.4H";
+const QString Ulanzi5T = "Ulanzi.5T";
+const QString Ulanzi5H = "Ulanzi.5H";
+const QString Ulanzi6T = "Ulanzi.6T";
+const QString Ulanzi6H = "Ulanzi.6H";
+const QString Ulanzi7T = "Ulanzi.7T";
+const QString Ulanzi7H = "Ulanzi.7H";
+const QString UlanziDialT = "Ulanzi.DialT";
+const QString UlanziDialH = "Ulanzi.DialH";
+
+inline QString ulanziButton(int slot, bool held) {
+    return QStringLiteral("Ulanzi.%1%2").arg(slot).arg(held ? QLatin1Char('H') : QLatin1Char('T'));
+}
+
+inline QString ulanziDial(bool held) {
+    return held ? UlanziDialH : UlanziDialT;
+}
+
 // Keyboard Function Keys (F1-F12)
 const QString KbdF1 = "Keyboard-F1";
 const QString KbdF2 = "Keyboard-F2";

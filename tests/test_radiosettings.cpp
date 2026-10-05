@@ -193,6 +193,41 @@ private slots:
         s->setConnectAtStartupRadio(99);
         QCOMPARE(s->connectAtStartupIndex(), -1);
     }
+
+    // ---- Ulanzi dial ---------------------------------------------------------------------------
+
+    // Off unless the operator turns it on: a listening socket nobody asked for is not a default.
+    void ulanziDefaultsToOffOnPort9410() {
+        RadioSettings *s = RadioSettings::instance();
+        QCOMPARE(s->ulanziEnabled(), false);
+        QCOMPARE(s->ulanziPort(), quint16(9410));
+    }
+
+    void ulanziSettersAnnounceOnlyRealChanges() {
+        RadioSettings *s = RadioSettings::instance();
+        QSignalSpy enabled(s, &RadioSettings::ulanziEnabledChanged);
+        s->setUlanziEnabled(true);
+        s->setUlanziEnabled(true);
+        QCOMPARE(enabled.count(), 1);
+        QCOMPARE(s->ulanziEnabled(), true);
+        s->setUlanziEnabled(false);
+        QCOMPARE(enabled.count(), 2);
+
+        QSignalSpy port(s, &RadioSettings::ulanziPortChanged);
+        s->setUlanziPort(9500);
+        s->setUlanziPort(9500);
+        QCOMPARE(port.count(), 1);
+        QCOMPARE(s->ulanziPort(), quint16(9500));
+        s->setUlanziPort(9410);
+    }
+
+    // Same rule as the CAT server: privileged ports are clamped, not stored.
+    void ulanziPortIsClampedToUnprivileged() {
+        RadioSettings *s = RadioSettings::instance();
+        s->setUlanziPort(80);
+        QCOMPARE(s->ulanziPort(), quint16(1024));
+        s->setUlanziPort(9410);
+    }
 };
 
 QTEST_MAIN(TestRadioSettings)

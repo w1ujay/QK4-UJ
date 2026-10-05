@@ -125,6 +125,70 @@ private slots:
         QCOMPARE(s.owner, Owner::PttButton);
     }
 
+    // ---- The Ulanzi D100H PTT button ----------------------------------------------------------
+
+    // It sits on the operator's desk, so it streams the microphone exactly as the PTT button does.
+    void ulanziStreamsTheMicrophone() {
+        State s;
+        const Effects e = engage(s, Owner::Ulanzi, Route::StreamedFromHere);
+        QVERIFY(!e.refused);
+        QVERIFY(e.setGate);
+        QVERIFY(e.gateActive);
+        QVERIFY(e.setSource);
+        QCOMPARE(e.source, AudioSource::Microphone);
+        QVERIFY(!e.sendTx);
+        QVERIFY(e.transmitting);
+    }
+
+    // Local preempts remote: the operator pressing the dial's PTT takes it from WSJT-X.
+    void ulanziTakesItFromRemote() {
+        for (auto remote : {Owner::CatClient, Owner::TciClient}) {
+            State s;
+            engage(s, remote, Route::StreamedFromHere);
+            const Effects e = engage(s, Owner::Ulanzi, Route::StreamedFromHere);
+            QVERIFY(!e.refused);
+            QCOMPARE(s.owner, Owner::Ulanzi);
+        }
+        State tci;
+        engage(tci, Owner::TciClient, Route::StreamedFromHere);
+        const Effects e = engage(tci, Owner::Ulanzi, Route::StreamedFromHere);
+        QVERIFY(e.setSource);
+        QCOMPARE(e.source, AudioSource::Microphone); // off the client's audio, onto the mic
+    }
+
+    // Remote never preempts anything, the dial included.
+    void remoteCannotTakeItFromUlanzi() {
+        State s;
+        engage(s, Owner::Ulanzi, Route::StreamedFromHere);
+        QVERIFY(engage(s, Owner::CatClient, Route::StreamedFromHere).refused);
+        QVERIFY(engage(s, Owner::TciClient, Route::StreamedFromHere).refused);
+        QCOMPARE(s.owner, Owner::Ulanzi);
+    }
+
+    // Local never preempts local: whoever pressed first keeps it.
+    void ulanziAndPttButtonDoNotTakeItFromEachOther() {
+        State a;
+        engage(a, Owner::Ulanzi, Route::StreamedFromHere);
+        QVERIFY(engage(a, Owner::PttButton, Route::StreamedFromHere).refused);
+        QCOMPARE(a.owner, Owner::Ulanzi);
+
+        State b;
+        engage(b, Owner::PttButton, Route::StreamedFromHere);
+        QVERIFY(engage(b, Owner::Ulanzi, Route::StreamedFromHere).refused);
+        QCOMPARE(b.owner, Owner::PttButton);
+    }
+
+    // Someone else letting go does not unkey the dial's transmission.
+    void anotherOwnersReleaseDoesNotUnkeyUlanzi() {
+        State s;
+        engage(s, Owner::Ulanzi, Route::StreamedFromHere);
+        QVERIFY(release(s, Owner::PttButton).ignored);
+        QVERIFY(release(s, Owner::CatClient).ignored);
+        QCOMPARE(s.owner, Owner::Ulanzi);
+        QVERIFY(!release(s, Owner::Ulanzi).ignored);
+        QCOMPARE(s.owner, Owner::None);
+    }
+
     // Preempting a streamed transmission with a CAT-keyed one has to do both halves.
     void preemptionAcrossRoutesClosesTheGateAndKeys() {
         State s;
@@ -174,7 +238,7 @@ private slots:
     // Esc, losing the radio, and shutting down all release whoever holds it. AUD-001 was exactly
     // this not happening: the gate survived a disconnect and the next mic-device change transmitted.
     void releaseAllReleasesAnyOwner() {
-        for (auto who : {Owner::PttButton, Owner::Xmit, Owner::CatClient, Owner::TciClient}) {
+        for (auto who : {Owner::PttButton, Owner::Xmit, Owner::CatClient, Owner::TciClient, Owner::Ulanzi}) {
             const Route how = (who == Owner::Xmit) ? Route::RadioLocal : Route::StreamedFromHere;
             State s;
             engage(s, who, how);

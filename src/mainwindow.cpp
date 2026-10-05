@@ -462,6 +462,17 @@ void MainWindow::setupHardwareController() {
     connect(m_hardwareController, &HardwareController::macroRequested, m_macroController,
             &MacroController::executeMacro);
 
+    // Ulanzi D100H PTT button. Local, like the bottom-bar PTT button: the dial is on the operator's desk.
+    // TransmitController is the context so the connection dies with it; it is destroyed before
+    // HardwareController, whose destructor may still release PTT.
+    connect(m_hardwareController, &HardwareController::pttRequested, m_transmitController,
+            [tc = m_transmitController](bool down) {
+                if (down)
+                    tc->engage(TransmitOwner::Owner::Ulanzi, TransmitOwner::Route::StreamedFromHere);
+                else
+                    tc->release(TransmitOwner::Owner::Ulanzi);
+            });
+
     // Hardware-side errors (HaliKey port-open failures today) → notification overlay
     connect(m_hardwareController, &HardwareController::hardwareError, this, &MainWindow::onHardwareError);
 

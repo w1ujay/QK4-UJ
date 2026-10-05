@@ -543,6 +543,32 @@ void RadioSettings::setCatServerPort(quint16 port) {
     }
 }
 
+bool RadioSettings::ulanziEnabled() const {
+    return m_ulanziEnabled;
+}
+
+void RadioSettings::setUlanziEnabled(bool enabled) {
+    if (m_ulanziEnabled != enabled) {
+        m_ulanziEnabled = enabled;
+        save();
+        emit ulanziEnabledChanged(enabled);
+    }
+}
+
+quint16 RadioSettings::ulanziPort() const {
+    return m_ulanziPort;
+}
+
+void RadioSettings::setUlanziPort(quint16 port) {
+    // Clamp to valid port range (1024-65535), as for the CAT server
+    port = qBound(quint16(1024), port, quint16(65535));
+    if (m_ulanziPort != port) {
+        m_ulanziPort = port;
+        save();
+        emit ulanziPortChanged(port);
+    }
+}
+
 bool RadioSettings::tciServerEnabled() const {
     return m_tciServerEnabled;
 }
@@ -852,6 +878,8 @@ void RadioSettings::load() {
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
+    m_ulanziEnabled = m_settings.value("ulanzi/enabled", false).toBool();
+    m_ulanziPort = m_settings.value("ulanzi/port", 9410).toUInt();
     m_tciServerEnabled = m_settings.value("tciServer/enabled", false).toBool();
     m_tciServerPort = m_settings.value("tciServer/port", 50001).toUInt();
     m_tciAudioEnabled = m_settings.value("tciServer/audio", true).toBool();
@@ -991,6 +1019,8 @@ void RadioSettings::save() {
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);
     m_settings.setValue("catServer/port", m_catServerPort);
+    m_settings.setValue("ulanzi/enabled", m_ulanziEnabled);
+    m_settings.setValue("ulanzi/port", m_ulanziPort);
     m_settings.setValue("tciServer/enabled", m_tciServerEnabled);
     m_settings.setValue("tciServer/port", m_tciServerPort);
     m_settings.setValue("tciServer/audio", m_tciAudioEnabled);

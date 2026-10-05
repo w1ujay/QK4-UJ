@@ -26,6 +26,7 @@ This fork (maintained by Jay Corriveau, W1UJ) adds RFKit amplifier support, a co
 - **Band Selection** — Quick band switching via popup menu
 - **KPOD / KPOD+ Support** — USB integration with Elecraft KPOD tuning knob and KPOD+ CW keyer
 - **KPA1500 Support** — Optional integration with Elecraft KPA1500 amplifier
+- **Ulanzi D100H Dial** — Rotary dial, seven keys and PTT through the Ulanzi Studio plugin in `plugins/ulanzi/`
 - **CAT Server** — Built-in CAT server (port 9299) for integration with third-party logging and contest software
 - **Self-Contained Releases** — macOS DMG, Windows ZIP, Raspberry Pi tarball, and Linux Flatpak include all dependencies
 

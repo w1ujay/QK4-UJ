@@ -122,6 +122,7 @@ set(SOURCES
     src/network/kpa1500antennas.cpp
     src/network/dxclusterclient.cpp
     src/network/catserver.cpp
+    src/network/ulanziserver.cpp
     src/network/catframes.cpp
     src/network/cwmacro.cpp
     src/network/catpushbroadcaster.cpp
@@ -185,6 +186,7 @@ set(SOURCES
     src/ui/pages/tciserverpage.cpp
     src/ui/pages/cwkeyerpage.cpp
     src/ui/pages/kpodpage.cpp
+    src/ui/pages/ulanzipage.cpp
     src/ui/pages/kpa1500page.cpp
     src/ui/pages/rfkitpage.cpp
     src/ui/pages/dxclusterpage.cpp
@@ -280,6 +282,7 @@ set(HEADERS
     src/network/kpa1500client.h
     src/network/dxclusterclient.h
     src/network/catserver.h
+    src/network/ulanziserver.h
     src/network/catframes.h
     src/network/catpushbroadcaster.h
     src/network/k4discovery.h
@@ -327,6 +330,7 @@ set(HEADERS
     src/ui/pages/rigcontrolpage.h
     src/ui/pages/cwkeyerpage.h
     src/ui/pages/kpodpage.h
+    src/ui/pages/ulanzipage.h
     src/ui/pages/kpa1500page.h
     src/ui/pages/rfkitpage.h
     src/ui/pages/dxclusterpage.h
