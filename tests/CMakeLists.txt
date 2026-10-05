@@ -389,6 +389,14 @@ target_include_directories(test_catserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_catserver Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME CatServerTests COMMAND test_catserver)
 
+# Ulanzi D100H server: line protocol, tap/hold timing, and the single-client socket lifecycle
+add_executable(test_ulanziserver test_ulanziserver.cpp
+    ${CMAKE_SOURCE_DIR}/src/network/ulanziserver.cpp
+)
+target_include_directories(test_ulanziserver PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_ulanziserver Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME UlanziServerTests COMMAND test_ulanziserver)
+
 # CatPushBroadcaster per-client AI subscription / push tests
 add_executable(test_catpushbroadcaster test_catpushbroadcaster.cpp
     ${CMAKE_SOURCE_DIR}/src/network/catpushbroadcaster.cpp

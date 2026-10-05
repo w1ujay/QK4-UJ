@@ -120,6 +120,7 @@ set(SOURCES
     src/network/kpa1500antennas.cpp
     src/network/dxclusterclient.cpp
     src/network/catserver.cpp
+    src/network/ulanziserver.cpp
     src/network/catframes.cpp
     src/network/cwmacro.cpp
     src/network/catpushbroadcaster.cpp
@@ -271,6 +272,7 @@ set(HEADERS
     src/network/kpa1500client.h
     src/network/dxclusterclient.h
     src/network/catserver.h
+    src/network/ulanziserver.h
     src/network/catframes.h
     src/network/catpushbroadcaster.h
     src/network/k4discovery.h
