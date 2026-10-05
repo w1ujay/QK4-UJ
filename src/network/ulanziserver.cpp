@@ -5,12 +5,16 @@
 #include <QJsonParseError>
 #include <QJsonValue>
 #include <QLoggingCategory>
+#include <QTcpServer>
+#include <QTcpSocket>
 #include <QTimer>
 #include <cmath>
+#include <cstring>
 
 Q_LOGGING_CATEGORY(netUlanzi, "net.ulanzi")
 
-UlanziServer::UlanziServer(QObject *parent) : QObject(parent) {
+UlanziServer::UlanziServer(QObject *parent) : QObject(parent), m_server(new QTcpServer(this)) {
+    connect(m_server, &QTcpServer::newConnection, this, &UlanziServer::onNewConnection);
     for (int key = 0; key < static_cast<int>(m_keys.size()); ++key) {
         auto *timer = new QTimer(this);
         timer->setSingleShot(true);
@@ -19,10 +23,139 @@ UlanziServer::UlanziServer(QObject *parent) : QObject(parent) {
     }
 }
 
-UlanziServer::~UlanziServer() = default;
+UlanziServer::~UlanziServer() {
+    stop();
+}
 
 void UlanziServer::setHoldMs(int ms) {
     m_holdMs = ms;
+}
+
+bool UlanziServer::start(quint16 port) {
+    if (m_server->isListening()) {
+        if (m_server->serverPort() == port)
+            return true;
+        stop();
+    }
+    if (!m_server->listen(QHostAddress::LocalHost, port)) {
+        m_lastError = QStringLiteral("Port %1 unavailable: %2").arg(port).arg(m_server->errorString());
+        qCWarning(netUlanzi) << m_lastError;
+        emit errorOccurred(m_lastError);
+        return false;
+    }
+    m_lastError.clear();
+    qCInfo(netUlanzi) << "Ulanzi server listening on port" << m_server->serverPort();
+    emit started(m_server->serverPort());
+    return true;
+}
+
+void UlanziServer::stop() {
+    // Unkey before the listener goes, as CatServer does: disabling the server mid-transmission must
+    // not leave the radio keyed with no client left to release it.
+    dropClient();
+    m_lastError.clear();
+    if (m_server->isListening()) {
+        m_server->close();
+        emit stopped();
+    }
+}
+
+bool UlanziServer::isListening() const {
+    return m_server->isListening();
+}
+
+bool UlanziServer::hasClient() const {
+    return m_client != nullptr;
+}
+
+quint16 UlanziServer::port() const {
+    return m_server->isListening() ? m_server->serverPort() : 0;
+}
+
+QString UlanziServer::lastError() const {
+    return m_lastError;
+}
+
+void UlanziServer::onNewConnection() {
+    while (m_server->hasPendingConnections()) {
+        QTcpSocket *next = m_server->nextPendingConnection();
+        if (m_client) {
+            qCInfo(netUlanzi) << "A new Ulanzi client replaces the current one";
+            dropClient();
+        }
+        m_client = next;
+        // Bound what Qt buffers from the socket. Past this the kernel applies TCP backpressure, so a
+        // client that floods is held at the socket instead of in our memory.
+        next->setReadBufferSize(SOCKET_READ_BUFFER_BYTES);
+        connect(next, &QTcpSocket::readyRead, this, &UlanziServer::onReadyRead);
+        connect(next, &QTcpSocket::disconnected, this, [this, next]() {
+            if (m_client == next)
+                dropClient();
+        });
+        qCInfo(netUlanzi) << "Ulanzi client connected from port" << next->peerPort();
+        emit clientConnectedChanged(true);
+    }
+}
+
+void UlanziServer::onReadyRead() {
+    QTcpSocket *client = m_client;
+    if (!client)
+        return;
+
+    // WHY bounded chunks with the limit checked as bytes arrive: reading everything first and checking
+    // afterwards let a newline-terminated line of any size through to the parser, and held a whole flood in
+    // memory before looking at it. Here no line ever grows past MAX_LINE_BYTES raw bytes.
+    char chunk[MAX_LINE_BYTES];
+    while (m_client == client && client->bytesAvailable() > 0) {
+        const qint64 n = client->read(chunk, sizeof(chunk));
+        if (n <= 0)
+            return;
+        const char *p = chunk;
+        const char *const end = chunk + n;
+        while (p < end) {
+            const char *newline = static_cast<const char *>(std::memchr(p, '\n', end - p));
+            const qsizetype take = (newline ? newline : end) - p;
+            if (m_buffer.size() + take > MAX_LINE_BYTES) {
+                qCWarning(netUlanzi) << "Ulanzi client sent a line over" << MAX_LINE_BYTES << "bytes - disconnecting";
+                dropClient();
+                return;
+            }
+            m_buffer.append(p, take);
+            if (!newline)
+                break;
+            p = newline + 1;
+            const QByteArray line = m_buffer;
+            m_buffer.clear();
+            processLine(line);
+            if (m_client != client)
+                return; // a receiver stopped the server or dropped the client
+        }
+    }
+}
+
+void UlanziServer::processLine(const QByteArray &rawLine) {
+    const QByteArray line = rawLine.trimmed(); // after the length check, so whitespace counts toward it
+    if (line.isEmpty())
+        return;
+    const UlanziEvent event = parseLine(line);
+    if (event.type == UlanziEvent::Type::Invalid) {
+        qCDebug(netUlanzi) << "Ignoring malformed line:" << line.left(120);
+        return;
+    }
+    handleEvent(event);
+}
+
+void UlanziServer::dropClient() {
+    if (!m_client)
+        return;
+    QTcpSocket *old = m_client;
+    m_client = nullptr;
+    m_buffer.clear();
+    old->disconnect(this); // no re-entry from the disconnected() that abort() raises
+    old->abort();
+    old->deleteLater();
+    releaseInputs();
+    emit clientConnectedChanged(false);
 }
 
 UlanziEvent UlanziServer::parseLine(const QByteArray &line) {

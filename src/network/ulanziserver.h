@@ -7,6 +7,8 @@
 #include <array>
 
 class QTimer;
+class QTcpServer;
+class QTcpSocket;
 
 /// One decoded line of the Ulanzi plugin protocol. See plugins/ulanzi/README.md for the wire format.
 struct UlanziEvent {
@@ -39,6 +41,16 @@ public:
     explicit UlanziServer(QObject *parent = nullptr);
     ~UlanziServer() override;
 
+    /// Listen on 127.0.0.1:port. Already listening on that port is a no-op; another port restarts.
+    /// On failure: false, errorOccurred("Port N unavailable: <reason>"), and lastError() keeps it.
+    bool start(quint16 port);
+    /// Drop the client (releasing PTT first) and close the listener.
+    void stop();
+    bool isListening() const;
+    bool hasClient() const;
+    quint16 port() const; // the actual listening port; 0 when not listening
+    QString lastError() const;
+
     /// Tests shorten the hold threshold; production uses HOLD_MS.
     void setHoldMs(int ms);
 
@@ -55,6 +67,10 @@ signals:
     void dialTapped();
     void dialHeld();
     void pttChanged(bool down);
+    void clientConnectedChanged(bool connected);
+    void errorOccurred(const QString &message);
+    void started(quint16 port);
+    void stopped();
 
 private:
     // m_keys[DIAL_KEY] is the dial press; m_keys[1..BUTTON_COUNT] are the buttons.
@@ -71,10 +87,18 @@ private:
     void pressKey(int key, bool down, bool cancel);
     void onHoldTimeout(int key);
     void releaseInputs();
+    void onNewConnection();
+    void onReadyRead();
+    void processLine(const QByteArray &rawLine);
+    void dropClient();
 
     std::array<KeyState, BUTTON_COUNT + 1> m_keys;
     bool m_pttDown = false;
     int m_holdMs = HOLD_MS;
+    QTcpServer *m_server;
+    QTcpSocket *m_client = nullptr; // one at a time; a new connection replaces it
+    QByteArray m_buffer;            // the current line so far, never more than MAX_LINE_BYTES
+    QString m_lastError;
 };
 
 #endif // ULANZISERVER_H

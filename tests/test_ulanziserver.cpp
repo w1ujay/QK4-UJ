@@ -41,6 +41,11 @@ UlanziEvent cancelled(UlanziEvent release) {
     release.cancel = true;
     return release;
 }
+// A valid PTT line padded with JSON whitespace to exactly `rawBytes`, newline not included.
+QByteArray paddedPttLine(int rawBytes) {
+    const QByteArray head = R"({"t":"ptt","down":true)";
+    return head + QByteArray(rawBytes - head.size() - 1, ' ') + '}';
+}
 } // namespace
 
 class TestUlanziServer : public QObject {
@@ -51,6 +56,37 @@ private:
     static constexpr int kHoldMs = 60;
     // Comfortably past kHoldMs, for asserting that something did NOT happen.
     static constexpr int kPastHoldMs = 200;
+
+    static constexpr int kTimeoutMs = 2000;
+    static constexpr int kPollStepMs = 5;
+
+    // The server lives on this thread and only runs while the event loop does, so every wait spins it.
+    template <typename Predicate> bool spinUntil(Predicate ready, int timeoutMs = kTimeoutMs) {
+        QElapsedTimer timer;
+        timer.start();
+        while (!ready()) {
+            if (timer.elapsed() >= timeoutMs)
+                return false;
+            QTest::qWait(kPollStepMs);
+        }
+        return true;
+    }
+
+    // A client the server has adopted (hasClient() true), or null.
+    std::unique_ptr<QTcpSocket> connectClient(UlanziServer &server) {
+        auto sock = std::make_unique<QTcpSocket>();
+        sock->connectToHost(QHostAddress::LocalHost, server.port());
+        if (!sock->waitForConnected(1000))
+            return nullptr;
+        if (!spinUntil([&] { return server.hasClient(); }))
+            return nullptr;
+        return sock;
+    }
+
+    void send(QTcpSocket &sock, const QByteArray &bytes) {
+        sock.write(bytes);
+        sock.flush();
+    }
 
 private slots:
     // ---- parseLine ---------------------------------------------------------------------------
@@ -304,6 +340,269 @@ private slots:
         server.handleEvent(ptt(true));
         server.handleEvent(ptt(true)); // repeated press
         QCOMPARE(pttSpy.count(), 1);
+    }
+
+    // ---- socket lifecycle --------------------------------------------------------------------
+
+    void startsOnAnEphemeralPortAndReportsIt() {
+        UlanziServer server;
+        QSignalSpy started(&server, &UlanziServer::started);
+        QVERIFY(server.start(0));
+        QVERIFY(server.isListening());
+        QVERIFY(server.port() != 0);
+        QCOMPARE(started.count(), 1);
+        QVERIFY(server.lastError().isEmpty());
+    }
+
+    void eventsArriveOverTheSocket() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy connected(&server, &UlanziServer::clientConnectedChanged);
+        QSignalSpy rotated(&server, &UlanziServer::rotated);
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+
+        auto client = connectClient(server);
+        QVERIFY(client);
+        QCOMPARE(connected.count(), 1);
+        QCOMPARE(connected.at(0).at(0).toBool(), true);
+
+        send(*client, R"({"t":"rotate","n":1,"hold":false})"
+                      "\n"
+                      R"({"t":"ptt","down":true})"
+                      "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+        QCOMPARE(rotated.count(), 1);
+    }
+
+    // Review Focus 1. A fast spin: many detents land in one read and every one must count.
+    void burstOfDetentsInOneWriteAreAllDelivered() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy rotated(&server, &UlanziServer::rotated);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        QByteArray burst;
+        for (int i = 0; i < 20; ++i)
+            burst += R"({"t":"rotate","n":-1,"hold":false})"
+                     "\n";
+        send(*client, burst);
+        QTRY_COMPARE_WITH_TIMEOUT(rotated.count(), 20, kTimeoutMs);
+    }
+
+    // Review Focus 2.
+    void aLineSplitAcrossWritesIsJoined() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy rotated(&server, &UlanziServer::rotated);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, R"({"t":"rotate",)");
+        QTest::qWait(50);
+        QCOMPARE(rotated.count(), 0);
+        send(*client, R"("n":1,"hold":false})"
+                      "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(rotated.count(), 1, kTimeoutMs);
+    }
+
+    // Review Focus 3.
+    void crlfLineEndingsAreAccepted() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, "{\"t\":\"ptt\",\"down\":true}  \r\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+    }
+
+    void aMalformedLineIsSkippedAndTheConnectionStays() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, "garbage\n"
+                      R"({"t":"ptt","down":true})"
+                      "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+        QVERIFY(server.hasClient());
+    }
+
+    // A new client replaces the old one, and whatever the old one held is released.
+    void aSecondClientReplacesTheFirst() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        QSignalSpy rotated(&server, &UlanziServer::rotated);
+
+        auto first = connectClient(server);
+        QVERIFY(first);
+        send(*first, R"({"t":"ptt","down":true})"
+                     "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+
+        auto second = std::make_unique<QTcpSocket>();
+        second->connectToHost(QHostAddress::LocalHost, server.port());
+        QVERIFY(second->waitForConnected(1000));
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 2, kTimeoutMs);
+        QCOMPARE(pttSpy.at(1).at(0).toBool(), false);
+        QVERIFY(spinUntil([&] { return first->state() == QAbstractSocket::UnconnectedState; }));
+
+        send(*second, R"({"t":"rotate","n":1,"hold":false})"
+                      "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(rotated.count(), 1, kTimeoutMs);
+        QVERIFY(server.hasClient());
+    }
+
+    // ---- the 4096-byte raw line limit (newline excluded, measured before trimming) -----------
+
+    void aLineOfExactlyTheLimitIsAccepted() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        const QByteArray line = paddedPttLine(UlanziServer::MAX_LINE_BYTES);
+        QCOMPARE(line.size(), UlanziServer::MAX_LINE_BYTES);
+        send(*client, line + '\n');
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+        QVERIFY(server.hasClient());
+    }
+
+    // The bound is per raw line, so a terminating newline does not make an oversized line acceptable.
+    void aTerminatedLineOverTheLimitDropsTheClientUnparsed() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, paddedPttLine(UlanziServer::MAX_LINE_BYTES + 1) + '\n');
+        QVERIFY(spinUntil([&] { return !server.hasClient(); }));
+        QCOMPARE(pttSpy.count(), 0); // never parsed
+    }
+
+    // Trailing whitespace counts: the limit is checked before trimming.
+    void trailingWhitespaceCountsTowardTheLimit() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        const QByteArray line = R"({"t":"ptt","down":true})";
+        send(*client, line + QByteArray(UlanziServer::MAX_LINE_BYTES + 1 - line.size(), ' ') + '\n');
+        QVERIFY(spinUntil([&] { return !server.hasClient(); }));
+    }
+
+    void anUnterminatedLineAtTheLimitWaitsForItsNewline() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, paddedPttLine(UlanziServer::MAX_LINE_BYTES));
+        QTest::qWait(100);
+        QVERIFY(server.hasClient());
+        QCOMPARE(pttSpy.count(), 0);
+        send(*client, "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+    }
+
+    void anUnterminatedLineOverTheLimitDropsTheClient() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, QByteArray(UlanziServer::MAX_LINE_BYTES + 1, 'x'));
+        QVERIFY(spinUntil([&] { return !server.hasClient(); }));
+    }
+
+    // A flood with no newline is refused as soon as it passes the limit, not after it has all arrived.
+    void aFloodWithoutNewlinesIsDroppedEarly() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, QByteArray(4 * 1024 * 1024, 'x'));
+        QVERIFY(spinUntil([&] { return !server.hasClient(); }));
+    }
+
+    // Ulanzi Studio crashing or quitting mid-transmission must unkey the radio.
+    void aDisconnectWhilePttIsDownReleasesIt() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        QSignalSpy connected(&server, &UlanziServer::clientConnectedChanged);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, R"({"t":"ptt","down":true})"
+                      "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+        client->disconnectFromHost();
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 2, kTimeoutMs);
+        QCOMPARE(pttSpy.at(1).at(0).toBool(), false);
+        QVERIFY(!server.hasClient());
+        QCOMPARE(connected.last().at(0).toBool(), false);
+    }
+
+    // A press left unfinished by a disconnect is dropped: no tap on the way out, no hold later.
+    void aDisconnectWhileAButtonIsDownFiresNothing() {
+        UlanziServer server;
+        server.setHoldMs(kHoldMs);
+        QVERIFY(server.start(0));
+        QSignalSpy tapped(&server, &UlanziServer::buttonTapped);
+        QSignalSpy held(&server, &UlanziServer::buttonHeld);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, R"({"t":"button","slot":4,"down":true})"
+                      "\n");
+        QTest::qWait(10);
+        client->disconnectFromHost();
+        QVERIFY(spinUntil([&] { return !server.hasClient(); }));
+        QTest::qWait(kPastHoldMs);
+        QCOMPARE(tapped.count(), 0);
+        QCOMPARE(held.count(), 0);
+    }
+
+    void stopWhilePttIsDownReleasesItFirst() {
+        UlanziServer server;
+        QVERIFY(server.start(0));
+        QSignalSpy pttSpy(&server, &UlanziServer::pttChanged);
+        QSignalSpy stopped(&server, &UlanziServer::stopped);
+        auto client = connectClient(server);
+        QVERIFY(client);
+
+        send(*client, R"({"t":"ptt","down":true})"
+                      "\n");
+        QTRY_COMPARE_WITH_TIMEOUT(pttSpy.count(), 1, kTimeoutMs);
+        server.stop();
+        QCOMPARE(pttSpy.count(), 2);
+        QCOMPARE(pttSpy.at(1).at(0).toBool(), false);
+        QCOMPARE(stopped.count(), 1);
+        QVERIFY(!server.isListening());
+        QCOMPARE(server.port(), quint16(0));
+    }
+
+    void aTakenPortIsReported() {
+        QTcpServer blocker;
+        QVERIFY(blocker.listen(QHostAddress::LocalHost, 0));
+
+        UlanziServer server;
+        QSignalSpy errors(&server, &UlanziServer::errorOccurred);
+        QVERIFY(!server.start(blocker.serverPort()));
+        QVERIFY(!server.isListening());
+        QCOMPARE(errors.count(), 1);
+        QVERIFY(server.lastError().startsWith(QStringLiteral("Port %1 unavailable: ").arg(blocker.serverPort())));
     }
 };
 
