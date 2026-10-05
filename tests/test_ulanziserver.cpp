@@ -7,6 +7,7 @@
 #include <QTest>
 #include <memory>
 #include "network/ulanziserver.h"
+#include "utils/macroids.h"
 
 using Type = UlanziEvent::Type;
 
@@ -603,6 +604,21 @@ private slots:
         QVERIFY(!server.isListening());
         QCOMPARE(errors.count(), 1);
         QVERIFY(server.lastError().startsWith(QStringLiteral("Port %1 unavailable: ").arg(blocker.serverPort())));
+    }
+
+    // ---- macro IDs ---------------------------------------------------------------------------
+
+    // HardwareController builds IDs with the helpers; the macro dialog lists the constants. They must agree,
+    // or a configured macro never runs.
+    void macroIdsMatchTheMacroDialogSlots() {
+        QCOMPARE(MacroIds::ulanziButton(1, false), MacroIds::Ulanzi1T);
+        QCOMPARE(MacroIds::ulanziButton(1, true), MacroIds::Ulanzi1H);
+        QCOMPARE(MacroIds::ulanziButton(7, false), MacroIds::Ulanzi7T);
+        QCOMPARE(MacroIds::ulanziButton(7, true), MacroIds::Ulanzi7H);
+        QCOMPARE(MacroIds::ulanziDial(false), MacroIds::UlanziDialT);
+        QCOMPARE(MacroIds::ulanziDial(true), MacroIds::UlanziDialH);
+        QCOMPARE(MacroIds::Ulanzi3T, QStringLiteral("Ulanzi.3T"));
+        QCOMPARE(MacroIds::UlanziDialH, QStringLiteral("Ulanzi.DialH"));
     }
 };
 
