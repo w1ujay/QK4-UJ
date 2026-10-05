@@ -28,6 +28,8 @@ const char *ownerName(TransmitOwner::Owner o) {
         return "CAT client";
     case TransmitOwner::Owner::TciClient:
         return "TCI client";
+    case TransmitOwner::Owner::Ulanzi:
+        return "Ulanzi dial";
     case TransmitOwner::Owner::Radio:
         return "radio";
     }
