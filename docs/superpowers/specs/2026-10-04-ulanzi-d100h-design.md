@@ -48,12 +48,20 @@ plugin to `127.0.0.1:<port>`. Default port **9410**.
 | `{"t":"rotate","n":1,"hold":false}` | Dial turned one detent; `n` is `+1` (right) or `-1` (left); `hold` true while the dial is pressed |
 | `{"t":"dial","down":true}` / `false` | Dial pressed / released |
 | `{"t":"button","slot":3,"down":true}` / `false` | Button in slot 1–7 pressed / released |
+| `{"t":"button","slot":3,"down":false,"cancel":true}` | Button released **without** counting as a press (its action was removed from the deck mid-press). Also valid on `dial`. |
 | `{"t":"ptt","down":true}` / `false` | PTT button pressed / released |
 
 Rules:
 - One rotate message per detent; `n` is exactly ±1. Anything else is malformed.
 - Raw press and release only. The plugin does no timing; tap/hold is QK4's decision.
 - Unknown extra fields are ignored (forward compatibility). Unknown `t` values are malformed.
+- `cancel` is optional, boolean, and only meaningful on a `button` or `dial` release. `cancel:true` with
+  `down:true` is malformed. A cancelled release fires no tap and no deferred hold; a button hold that already
+  fired stays fired.
+- **Line limit:** each line's raw bytes (before the `\n`, before any trimming) may be at most 4096. A longer
+  line, terminated or not, drops the client.
+- Messages describe **keys** (PTT, button slot *n*, the dial), not deck actions. The plugin combines several
+  actions on one key: the key goes down when the first is pressed and up when the last is released.
 
 ## 2. Ulanzi Studio plugin
 
@@ -67,21 +75,30 @@ the SDK's `"Dial"` model is unverified):
 
 | Action | Controller | SDK events used | Sends |
 |---|---|---|---|
-| QK4 Dial | Encoder | `onDialRotate` (`rotateEvent`: `left`, `right`, `hold-left`, `hold-right`), `onDialDown`, `onDialUp` | `rotate`, `dial` |
-| QK4 Button | Keypad | `onKeyDown`, `onKeyUp` | `button` with the slot from its property inspector |
+| QK4 Dial | Encoder | `onDialRotate` (`rotateEvent`: `left`, `right`, `hold-left`, `hold-right`), `onDialDown`, `onDialUp`, `onClear` | `rotate`, `dial` |
+| QK4 Button | Keypad | `onKeyDown`, `onKeyUp`, `onClear` | `button` with the slot from its property inspector |
 | QK4 PTT | Keypad | `onKeyDown`, `onKeyUp`, `onClear` | `ptt` |
 
 - **QK4 Button** has a property inspector with one setting, "Slot" (1-7, default 1), saved as the action's
   param. The user places one QK4 Button per physical key in Ulanzi Studio and picks its slot.
 - `hold-left` / `hold-right` map to `n:-1/+1, hold:true`; `left` / `right` to `hold:false`.
+- **Key aggregation:** presses are tracked per action instance (context) and combined per key (`ptt`,
+  `button:<slot>`, `dial`). A key's `down` is sent when its first holder presses and its `up` when its last
+  holder releases, so releasing one of two PTT keys never unkeys the other. A press stays bound to the key it
+  started on: changing a button's slot mid-press releases the slot that was pressed.
+- **Action removed while held** (`onClear`): it stops holding its key. If it was the last holder, the release
+  is sent with `cancel:true` for a button or the dial (no tap, no deferred hold) and as a plain release for PTT.
+- **Studio connection lost** (`onClose`; the SDK neither exits nor reconnects): forget all held keys and close
+  the QK4 socket with no retry. QK4 releases everything on disconnect, PTT included. With nothing left open,
+  the Node process ends.
 - **Connection:** one TCP socket (Node `net`) for all action instances. On close or error, retry every 2 s,
   indefinitely. Events that arrive while disconnected are **dropped, never queued**. A queued PTT press or a
   burst of stale detents would be dangerous or surprising when the link returns.
 - **Port** is an SDK global setting (default 9410), shown on every action's property inspector, so it can follow
   a changed QK4 port. A new port drops the socket and reconnects.
-- **PTT key removed while held** (`onClear` for a PTT context that is down): send `ptt down:false`.
-- **Code layout:** the protocol mapping (`plugin/protocol.js`) and the reconnecting socket (`plugin/relay.js`)
-  are pure modules with `node --test` unit tests; `plugin/app.js` only wires SDK events to them. The SDK's
+- **Code layout:** the protocol mapping (`plugin/protocol.js`), the reconnecting socket (`plugin/relay.js`),
+  key aggregation (`plugin/keys.js`) and the SDK event wiring (`plugin/wiring.js`, taking the SDK object as a
+  parameter) are modules with `node --test` unit tests; `plugin/app.js` only constructs them. The SDK's
   Node library is vendored (with its licence) and needs `ws`; Ulanzi Studio installs no npm dependencies, so
   `npm run build` bundles everything with esbuild into `dist/app.js` (`CodePath`), which is committed so that
   installing is copying the folder. The property inspector uses the SDK's vendored HTML library.
@@ -94,7 +111,9 @@ Modelled on `CatServer`:
 - `QTcpServer` on the main thread, listening on `QHostAddress::LocalHost` only.
 - **One client at a time.** A new connection replaces the current one. The old one is closed and treated as a
   disconnect (see §6).
-- Line buffer capped at **4 KB**. A client that exceeds it without sending a newline is dropped.
+- **4096-byte raw line limit**, enforced while reading and before trimming or parsing: reads are taken in
+  bounded chunks and the socket's read buffer is capped, so an oversized line or a flood is never held whole.
+  A line over the limit, terminated or not, drops the client.
 - `start(quint16 port)`, `stop()`, `isListening()`, `hasClient()`, `port()`, `lastError()`.
 
 ### Parsing
@@ -109,6 +128,7 @@ struct UlanziEvent {
     bool hold = false;  // Rotate: dial held while turning
     int slot = 0;       // Button: 1..7
     bool down = false;  // Dial / Button / Ptt
+    bool cancel = false; // Dial / Button release: not a press (no tap, no deferred hold)
 };
 static UlanziEvent parseLine(const QByteArray &line);
 ```
@@ -120,13 +140,18 @@ Uses `QJsonDocument`. Returns `Type::Invalid` for anything outside §1.
 Decided in the server for buttons 1–7 and the dial press (not PTT):
 
 - `static constexpr int HOLD_MS = 500;` (overridable in tests via a setter).
-- On press, start a single-shot timer for that key. If it fires while the key is still down, emit **hold**
-  immediately (do not wait for release). On release before it fires, emit **tap**. On release after a hold,
-  emit nothing.
+- On press, start a single-shot timer for that key. On release before it fires, emit **tap**.
+- **Buttons:** if the timer fires while the button is still down, emit **hold** immediately (do not wait for
+  release); the release after it emits nothing.
+- **Dial press:** the timer only marks the press as long. **Hold is emitted on release**, and only if the dial
+  was not turned while held. This is what makes the no-macro guarantee below possible: a hold emitted at
+  500 ms could not be taken back by a turn at 600 ms.
+- A release with `cancel:true` emits nothing (no tap, no deferred dial hold).
 - QK4 has no hold timing of its own to reuse: the KPOD decides hold in its own hardware. 500 ms is the
   chosen value, as a named constant.
-- A dial press that is turned (any `rotate` with `hold:true` while down) is a VFO B gesture, not a press: it
-  cancels that press's tap/hold, so turning while held never also fires `Ulanzi.DialT/H`.
+- A dial press that is turned (any `rotate` with `hold:true` while down), before or after 500 ms, is a VFO B
+  gesture, not a press: it cancels that press's tap and hold, so turning while held never fires
+  `Ulanzi.DialT/H`.
 
 ### Signals
 
@@ -198,9 +223,11 @@ with values `"Ulanzi.1T"` … `"Ulanzi.DialH"`. Added after the KPOD block.
 |---|---|
 | Port in use / listen fails | `errorOccurred(msg)` as `CatServer` does. The page shows "Port N unavailable: <reason>". No automatic retry; toggling enable or changing the port retries. |
 | Malformed line (bad JSON, unknown `t`, missing or wrong-typed field, `n` not ±1, slot outside 1–7) | Skipped; logged with `qCDebug`. The connection stays up. |
-| Line over 4 KB without a newline | Client dropped. |
+| Line over 4096 raw bytes, with or without a newline | Client dropped before the line is parsed. |
 | Unmapped slot | `macroRequested` fires; `MacroController` already ignores empty bindings. |
-| Client disconnects or is replaced while PTT, a button or the dial is down | Emit `pttChanged(false)` if PTT was down, cancel pending hold timers, emit no tap. |
+| Client disconnects or is replaced while PTT, a button or the dial is down | Emit `pttChanged(false)` if PTT was down, cancel pending hold timers, emit no tap and no deferred dial hold. |
+| Ulanzi Studio connection lost while the plugin keeps running | The plugin closes its QK4 socket (no retry), which is the disconnect above. |
+| Deck action removed while held | The plugin sends a cancelled release for its key (if it was the last holder): no tap, no hold. |
 | Server stopped or disabled while a client is connected | Same as a disconnect, before the listener is torn down (mirrors `CatServer`'s unkey-before-teardown). |
 | Radio not connected | Events still route and behave exactly as KPOD input does; no Ulanzi-specific handling. |
 | Esc / losing the radio while Ulanzi holds PTT | Existing `TransmitController::releaseAll()`; a later `ptt down:false` from the plugin is ignored as a release from a non-owner. |
@@ -212,18 +239,22 @@ Qt Test, registered in `tests/CMakeLists.txt`.
 `tests/test_ulanziserver.cpp` (`UlanziServerTests`):
 - `parseLine()` table: every valid message from §1; malformed cases (invalid JSON, non-object, unknown `t`,
   missing fields, `n` = 0 / 2 / "1", slot 0 / 8, `down` not bool); extra fields ignored.
-- Tap vs. hold with a short hold override: quick press → tap on release; long press → hold while down, nothing
-  on release; rotate with `hold:true` during a dial press cancels its tap/hold.
+- Tap vs. hold with a short hold override: quick press → tap on release; long button press → hold while
+  down, nothing on release; long dial press → nothing while down, hold on release; rotate with `hold:true`
+  during a dial press, before **and after** the threshold, cancels its tap and hold; a cancelled release fires
+  nothing.
 - Over a real `QTcpSocket` on an ephemeral port, as `test_catserver` does: events arrive as signals; a second
-  client replaces the first; 4 KB cap drops the client; disconnect while PTT is down emits `pttChanged(false)`;
+  client replaces the first; lines of exactly 4096 raw bytes are accepted and 4097 drop the client, terminated
+  or not; disconnect while PTT is down emits `pttChanged(false)`;
   `stop()` while PTT is down emits `pttChanged(false)`; listening on a taken port emits `errorOccurred`.
 
 `tests/test_transmitowner.cpp`: `Owner::Ulanzi` preempts `CatClient` and `TciClient`; neither preempts it; a
 release from another owner is ignored; `Ulanzi` and `PttButton` do not preempt each other (local never
 preempts local).
 
-Plugin: `node --test` for `protocol.js` and `relay.js` (mapping, drop-while-disconnected, 2 s reconnect, port
-change). Then by hand in UlanziDeckSimulator: rotate, hold-rotate, dial press, each button slot, PTT; then quit and
+Plugin: `node --test` for `protocol.js`, `relay.js`, `keys.js` and `wiring.js` (mapping, drop-while-disconnected,
+2 s reconnect, port change, overlapping PTT and same-slot presses, slot changed mid-press, removal while held,
+losing Studio while the QK4 connection is up). Then by hand in UlanziDeckSimulator: rotate, hold-rotate, dial press, each button slot, PTT; then quit and
 restart QK4 and confirm the plugin reconnects and drops events while disconnected.
 
 Hardware, first thing on the real D100H (the main unknowns): what the plugin actually receives (key ids,
