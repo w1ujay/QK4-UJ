@@ -1,6 +1,7 @@
 name: Reusable · Flatpak build
 
-# Reusable Linux x86_64 (Flatpak) builder. Called by build-signed.yml and ci-packaging.yml; never triggered
+# Reusable Linux x86_64 (Flatpak) builder. Called by build-signed.yml, ci-packaging.yml and (fork-only)
+# build-linux.yml; never triggered
 # directly. Flatpak is distro-agnostic — one bundle runs on Ubuntu, Fedora,
 # Debian, Arch and the rest — so this is one artifact, not per-distro packaging.
 #
@@ -59,9 +60,12 @@ jobs:
           # The manifest already carries QK4_VERSION_FULL as a build env var with a
           # sensible local default, so CI only overrides its value — the build
           # command itself stays untouched and readable.
-          jq --arg sha "$GITHUB_SHA" --arg ver "$VERSION" '
+          # WHY the url too: the manifest names the upstream repo, so a build run
+          # from a fork would pin a commit that upstream does not have.
+          REPO_URL="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}.git"
+          jq --arg sha "$GITHUB_SHA" --arg ver "$VERSION" --arg url "$REPO_URL" '
             (.modules[] | select(.name == "qk4") | .sources[] | select(.type == "git"))
-              |= (del(.branch) + {commit: $sha})
+              |= (del(.branch) + {commit: $sha, url: $url})
             | (.modules[] | select(.name == "qk4") | .["build-options"].env.QK4_VERSION_FULL)
               = $ver
           ' "$MANIFEST" > manifest.pinned.json

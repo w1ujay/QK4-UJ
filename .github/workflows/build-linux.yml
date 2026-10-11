@@ -1,0 +1,58 @@
+name: Build Linux
+
+run-name: Build Linux ${{ github.ref_name }}
+
+# Fork-only (QK4-UJ) on-demand Linux build: one x86_64 Flatpak bundle that
+# installs on Mint, Ubuntu, Fedora and the rest.
+#
+# WHY this file exists: upstream only builds the Flatpak from build-signed.yml
+# and ci-packaging.yml, neither of which runs on fork branches on demand. Like
+# build-windows.yml, a copy must also sit on the fork's default branch so the
+# Actions UI lists it; the run then uses this file from the selected branch.
+# The build steps themselves live in _build-flatpak.yml.
+
+on:
+  workflow_dispatch:
+    inputs:
+      version_suffix:
+        description: 'Optional suffix appended to "<branch>-<sha>" (e.g. "rc1"); leave blank for none.'
+        required: false
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: build-linux-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  version:
+    name: Derive version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
+
+      - name: Derive version
+        id: derive
+        env:
+          SUFFIX: ${{ inputs.version_suffix }}
+        run: |
+          # Slashes are legal in ref names but not in filenames.
+          BRANCH=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${BRANCH}-${SHORT_SHA}"
+          if [ -n "$SUFFIX" ]; then
+            VERSION="${VERSION}-${SUFFIX}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Derived version: $VERSION"
+
+  flatpak:
+    needs: version
+    uses: ./.github/workflows/_build-flatpak.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
