@@ -65,6 +65,11 @@ signals:
     // This controls the audio input gate, not direct K4 PTT
     void pttRequested(bool on);
 
+    // Emitted for TX;/RX; that must key the K4 itself (CW, or QK4 audio disabled): the radio
+    // transmits from its own input. Routed through the transmit arbiter like pttRequested, so an
+    // operator who has taken over is not unkeyed by this client's RX; or its departure.
+    void radioKeyRequested(bool on);
+
     // Emitted when an external app sets AF gain via AG/AG$ while QK4 owns the
     // audio path. level is 0-100 (mapped from the K4's 0-60 AG range).
     void volumeRequested(int level);
@@ -105,8 +110,8 @@ private:
     // sending RX; does not leave the transmitter keyed — any client's RX; still releases,
     // whoever keyed, because that is the fail-safe direction.
     QTcpSocket *m_pttOwner = nullptr;
-    // True when the owner keyed by a TX; forwarded to the radio (CW, or QK4 audio off) rather than
-    // through the mic gate, so releasing it means sending RX; to the radio.
+    // True when the owner keyed the radio itself (CW, or QK4 audio off) rather than through the
+    // mic gate, so its release goes out as radioKeyRequested(false).
     bool m_pttOwnerForwarded = false;
     CatPushBroadcaster *m_broadcaster = nullptr;
     quint16 m_port = 0;

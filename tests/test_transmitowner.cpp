@@ -422,6 +422,22 @@ private slots:
         QCOMPARE(s.owner, Owner::PttButton);
     }
 
+    // A CAT client keys the radio directly (CW), the operator takes over, and then the client sends
+    // RX; or disconnects. Its release must not unkey the operator.
+    void aDepartingCatClientDoesNotUnkeyAnOperatorWhoTookOver() {
+        State s;
+        engage(s, Owner::CatClient, Route::RadioLocal);
+        radioReports(s, true);
+        engage(s, Owner::PttButton, Route::StreamedFromHere);
+
+        const Effects late = release(s, Owner::CatClient);
+        QVERIFY(late.ignored);
+        QVERIFY(!late.sendRx);
+        QVERIFY(!late.setGate);
+        QCOMPARE(s.owner, Owner::PttButton);
+        QVERIFY(late.transmitting);
+    }
+
     // XMIT today sends TX; AND opens the gate. Until the bench says whether that is right, the
     // arbiter has to reproduce it exactly — and undo both halves on release.
     void catKeyedAndStreamedDoesBothAndUndoesBoth() {

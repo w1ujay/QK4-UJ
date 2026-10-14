@@ -656,27 +656,29 @@ private slots:
         client->deleteLater();
     }
 
-    // CW (or QK4 audio off) forwards TX; to the radio instead of gating the mic. A client that
-    // keys that way and then vanishes must still unkey the radio.
+    // CW (or QK4 audio off) keys the radio itself instead of gating the mic. A client that keys
+    // that way and then vanishes must still release it.
     void testForwardedTxReleasedWhenKeyingClientDisconnects() {
         RadioSettings::instance()->setAudioEnabled(true);
         RadioState rs;
         rs.parseCATCommand("MD3;"); // CW
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        QSignalSpy keySpy(&server, &CatServer::radioKeyRequested);
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
 
         QTcpSocket *client = connectAndKeepOpen(server.port());
         QVERIFY(client);
         client->write("TX;");
         client->flush();
-        QTRY_COMPARE(catSpy.count(), 1);
-        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+        QTRY_COMPARE(keySpy.count(), 1);
+        QCOMPARE(keySpy.at(0).at(0).toBool(), true);
 
         client->disconnectFromHost();
-        QTRY_COMPARE(catSpy.count(), 2);
-        QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+        QTRY_COMPARE(keySpy.count(), 2);
+        QCOMPARE(keySpy.at(1).at(0).toBool(), false);
         client->deleteLater();
+        QCOMPARE(catSpy.count(), 0); // keyed through the arbiter, never straight to the wire
     }
 
     void testStoppingTheServerReleasesForwardedTx() {
@@ -685,6 +687,7 @@ private slots:
         RadioState rs;
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        QSignalSpy keySpy(&server, &CatServer::radioKeyRequested);
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
         QSignalSpy pttSpy(&server, &CatServer::pttRequested);
 
@@ -692,13 +695,14 @@ private slots:
         QVERIFY(client);
         client->write("TX;");
         client->flush();
-        QTRY_COMPARE(catSpy.count(), 1);
+        QTRY_COMPARE(keySpy.count(), 1);
 
         server.stop();
-        QCOMPARE(catSpy.count(), 2);
-        QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+        QCOMPARE(keySpy.count(), 2);
+        QCOMPARE(keySpy.at(1).at(0).toBool(), false);
         QCOMPARE(pttSpy.count(), 0); // the mic gate was never opened, so it is not touched
         client->deleteLater();
+        QCOMPARE(catSpy.count(), 0); // keyed through the arbiter, never straight to the wire
     }
 
     // Unkeying by RX; ends ownership: a later disconnect must not send a second RX;.
@@ -708,18 +712,20 @@ private slots:
         rs.parseCATCommand("MD3;"); // CW
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        QSignalSpy keySpy(&server, &CatServer::radioKeyRequested);
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
 
         QTcpSocket *client = connectAndKeepOpen(server.port());
         QVERIFY(client);
         client->write("TX;RX;");
         client->flush();
-        QTRY_COMPARE(catSpy.count(), 2);
+        QTRY_COMPARE(keySpy.count(), 2);
 
         client->disconnectFromHost();
         QTest::qWait(200);
-        QCOMPARE(catSpy.count(), 2);
+        QCOMPARE(keySpy.count(), 2);
         client->deleteLater();
+        QCOMPARE(catSpy.count(), 0); // keyed through the arbiter, never straight to the wire
     }
 
     void testTxToggleCommand() {
@@ -1377,15 +1383,17 @@ private slots:
 
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        QSignalSpy keySpy(&server, &CatServer::radioKeyRequested);
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
         QSignalSpy pttSpy(&server, &CatServer::pttRequested);
 
         sendCommand(server, "TX;");
 
         // CW keying must reach the K4 directly, not gate the audio path.
-        QCOMPARE(catSpy.count(), 1);
-        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+        QCOMPARE(keySpy.count(), 1);
+        QCOMPARE(keySpy.at(0).at(0).toBool(), true);
         QCOMPARE(pttSpy.count(), 0);
+        QCOMPARE(catSpy.count(), 0); // keyed through the arbiter, never straight to the wire
     }
 
     void testTxToggleForwardedWhenAudioDisabled() {
@@ -1394,6 +1402,7 @@ private slots:
         RadioState rs;
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        QSignalSpy keySpy(&server, &CatServer::radioKeyRequested);
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
         QSignalSpy pttSpy(&server, &CatServer::pttRequested);
 
@@ -1403,17 +1412,18 @@ private slots:
         QVERIFY(client);
         client->write("TX/;");
         client->flush();
-        QTRY_COMPARE(catSpy.count(), 1);
+        QTRY_COMPARE(keySpy.count(), 1);
         rs.parseCATCommand("TX;");
         client->write("TX/;");
         client->flush();
-        QTRY_COMPARE(catSpy.count(), 2);
+        QTRY_COMPARE(keySpy.count(), 2);
 
         QCOMPARE(pttSpy.count(), 0);
-        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
-        QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+        QCOMPARE(keySpy.at(0).at(0).toBool(), true);
+        QCOMPARE(keySpy.at(1).at(0).toBool(), false);
         client->disconnectFromHost();
         client->deleteLater();
+        QCOMPARE(catSpy.count(), 0); // keyed through the arbiter, never straight to the wire
     }
 
     void testTxToggleForwardedToK4InCwMode() {
@@ -1422,14 +1432,16 @@ private slots:
         rs.parseCATCommand("MD3;"); // CW
         CatServer server(&rs);
         QVERIFY(server.start(0));
+        QSignalSpy keySpy(&server, &CatServer::radioKeyRequested);
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
         QSignalSpy pttSpy(&server, &CatServer::pttRequested);
 
         sendCommand(server, "TX/;");
 
         QCOMPARE(pttSpy.count(), 0);
-        QCOMPARE(catSpy.count(), 1);
-        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+        QCOMPARE(keySpy.count(), 1);
+        QCOMPARE(keySpy.at(0).at(0).toBool(), true);
+        QCOMPARE(catSpy.count(), 0); // keyed through the arbiter, never straight to the wire
     }
 
     void testSubReceiverStatus() {

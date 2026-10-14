@@ -202,7 +202,7 @@ void CatServer::releasePttIfOwner(QTcpSocket *client) {
     m_pttOwner = nullptr;
     if (m_pttOwnerForwarded) {
         m_pttOwnerForwarded = false;
-        emit catCommandReceived(QStringLiteral("RX;"));
+        emit radioKeyRequested(false);
     } else {
         emit pttRequested(false);
     }
@@ -286,7 +286,7 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         m_pttOwner = key ? client : nullptr;
         m_pttOwnerForwarded = key && forward;
         if (forward) {
-            emit catCommandReceived(key ? QStringLiteral("TX;") : QStringLiteral("RX;"));
+            emit radioKeyRequested(key);
         } else {
             emit pttRequested(key);
         }

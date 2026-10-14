@@ -568,6 +568,26 @@ void MainWindow::setupCatServer() {
             m_transmitController->release(TransmitOwner::Owner::CatClient);
     });
 
+    // TX;/RX; that key the K4 directly (CW, or QK4 audio off). RadioLocal: TX; on the wire, gate
+    // left shut. Through the arbiter so a local takeover is not undone by this client's RX; or by
+    // its disconnect.
+    connect(m_catServer, &CatServer::radioKeyRequested, this, [this](bool on) {
+        if (on) {
+            m_transmitController->engage(TransmitOwner::Owner::CatClient, TransmitOwner::Route::RadioLocal);
+            return;
+        }
+        const TransmitOwner::Owner owner = m_transmitController->owner();
+        if (owner == TransmitOwner::Owner::CatClient) {
+            m_transmitController->release(TransmitOwner::Owner::CatClient);
+        } else if (owner == TransmitOwner::Owner::None || owner == TransmitOwner::Owner::Radio) {
+            // WHY still sent: the radio may be keying a KY macro from its own buffer, which the
+            // arbiter does not hold, and a logger's RX; is how it stops that. No one here is keyed
+            // for it to interrupt.
+            m_connectionController->sendCAT(QStringLiteral("RX;"));
+        }
+        // Anyone else - the operator, or a TCI client - holds the transmitter; leave it keyed.
+    });
+
     // Connect to settings for CAT server enable/disable
     connect(RadioSettings::instance(), &RadioSettings::catServerEnabledChanged, this, [this](bool enabled) {
         if (enabled) {
