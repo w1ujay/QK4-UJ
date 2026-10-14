@@ -4,6 +4,7 @@
 #include "audio/audiologging.h"
 #include "audio/opusencoder.h"
 #include "audio/rawaudioformat.h" // EM0/EM1 wire format
+#include "audio/rxoutputstage.h"  // RX boost + soft limiter
 #include "network/protocol.h"     // buildAudioPacket
 #include "utils/radioutils.h"     // RX jitter-buffer watermarks
 #include <QDateTime>
@@ -250,7 +251,8 @@ bool AudioEngine::setupAudioOutput() {
         return false;
     }
 
-    // Volume is always 1.0 — actual volume control is in the K4's AG command
+    // Always 1.0: QK4's volume is applied per sample in applyMixAndVolume (the MAIN/SUB sliders).
+    // The K4's AG is the radio's own speaker and does not reach this stream.
     m_audioSink->setVolume(1.0f);
 
     // WHY: every sink (re)build must re-arm prebuffering and drop any backlog. setupAudioOutput()
@@ -463,8 +465,15 @@ void AudioEngine::applyMixAndVolume(QByteArray &packet) {
     int sampleCount = totalFloats / 2;
 
     // Load atomic/guarded values once per packet (not per sample)
-    const float mainVol = m_mainVolume.load(std::memory_order_relaxed);
-    const float subVol = m_subVolume.load(std::memory_order_relaxed);
+    // The boost multiplies the sliders, so a saved slider position means what it always did.
+    const float boost = m_rxBoostGain.load(std::memory_order_relaxed);
+    const float mainVol = m_mainVolume.load(std::memory_order_relaxed) * boost;
+    const float subVol = m_subVolume.load(std::memory_order_relaxed) * boost;
+    // WHY only when boosted: at 0 dB the output is exactly what it was before the boost existed
+    // (hard clamp), and the radio's stream - scaled to full scale by the decoder - does not exceed
+    // it on its own. The boost is what pushes peaks over the top, so the boost brings the limiter.
+    const bool limit = boost > 1.0f;
+    auto finish = [limit](float v) { return limit ? RxOutputStage::softLimit(v) : qBound(-1.0f, v, 1.0f); };
     const bool subMuted = m_subMuted.load(std::memory_order_relaxed);
     const int balMode = m_balanceMode.load(std::memory_order_relaxed);
     const int balOffset = m_balanceOffset.load(std::memory_order_relaxed);
@@ -483,16 +492,34 @@ void AudioEngine::applyMixAndVolume(QByteArray &packet) {
         balRightGain = qBound(0.0f, (50.0f + balOffset) / 50.0f, 1.0f);
     }
 
+    const bool measure = qk4AudioRx().isDebugEnabled();
+    auto measureIn = [&](float mainSample, float subSample) {
+        m_rxStats.sumSqMain += static_cast<double>(mainSample) * mainSample;
+        m_rxStats.sumSqSub += static_cast<double>(subSample) * subSample;
+        m_rxStats.peakMain = qMax(m_rxStats.peakMain, std::fabs(mainSample));
+        m_rxStats.peakSub = qMax(m_rxStats.peakSub, std::fabs(subSample));
+        ++m_rxStats.frames;
+    };
+    auto measureOut = [&](float left, float right) {
+        const float peak = qMax(std::fabs(left), std::fabs(right));
+        m_rxStats.peakOut = qMax(m_rxStats.peakOut, peak);
+        m_rxStats.clipped += (std::fabs(left) > 1.0f) + (std::fabs(right) > 1.0f);
+    };
+
     for (int i = 0; i < sampleCount; i++) {
         float mainSample = samples[i * 2];    // Left channel (Main RX / VFO A)
         float subSample = samples[i * 2 + 1]; // Right channel (Sub RX / VFO B)
+        if (measure)
+            measureIn(mainSample, subSample);
 
         // Step 1: SUB RX off — both channels get main audio only, sub slider has no effect
         // BL balance still applies (L/R gain is independent of SUB RX state)
         if (subMuted) {
             float s = mainSample * mainVol;
-            samples[i * 2] = qBound(-1.0f, s * balLeftGain, 1.0f);
-            samples[i * 2 + 1] = qBound(-1.0f, s * balRightGain, 1.0f);
+            if (measure)
+                measureOut(s * balLeftGain, s * balRightGain);
+            samples[i * 2] = finish(s * balLeftGain);
+            samples[i * 2 + 1] = finish(s * balRightGain);
             continue;
         }
 
@@ -512,10 +539,28 @@ void AudioEngine::applyMixAndVolume(QByteArray &packet) {
             right *= balRightGain;
         }
 
-        // Step 4: Clamp
-        samples[i * 2] = qBound(-1.0f, left, 1.0f);
-        samples[i * 2 + 1] = qBound(-1.0f, right, 1.0f);
+        // Step 4: Clamp, or soft-limit when boosted
+        if (measure)
+            measureOut(left, right);
+        samples[i * 2] = finish(left);
+        samples[i * 2 + 1] = finish(right);
     }
+
+    if (measure && m_rxStats.frames >= m_outputFormat.sampleRate())
+        reportRxLevels(mainVol / boost, subVol / boost, boost);
+}
+
+void AudioEngine::reportRxLevels(float mainVol, float subVol, float boost) {
+    auto dbfs = [](double v) { return v > 0.0 ? 20.0 * std::log10(v) : -999.0; };
+    const double n = static_cast<double>(m_rxStats.frames);
+    qCDebug(qk4AudioRx,
+            "RX 1s: main peak %.1f rms %.1f dBFS | sub peak %.1f rms %.1f dBFS | out peak %.1f dBFS over-FS %d | "
+            "sliders main %.2f sub %.2f boost %+.0f dB (%s)",
+            dbfs(m_rxStats.peakMain), dbfs(std::sqrt(m_rxStats.sumSqMain / n)), dbfs(m_rxStats.peakSub),
+            dbfs(std::sqrt(m_rxStats.sumSqSub / n)), dbfs(m_rxStats.peakOut), m_rxStats.clipped,
+            static_cast<double>(mainVol), static_cast<double>(subVol), dbfs(boost),
+            boost > 1.0f ? "soft-limited" : "clamped");
+    m_rxStats = RxLevelStats{};
 }
 
 void AudioEngine::openMic() {
@@ -837,6 +882,10 @@ void AudioEngine::setPttActive(bool active) {
 
 void AudioEngine::setMainVolume(float volume) {
     m_mainVolume.store(qBound(0.0f, volume, 1.0f), std::memory_order_relaxed);
+}
+
+void AudioEngine::setRxBoostDb(int db) {
+    m_rxBoostGain.store(RxOutputStage::boostGain(db), std::memory_order_relaxed);
 }
 
 void AudioEngine::setSubVolume(float volume) {

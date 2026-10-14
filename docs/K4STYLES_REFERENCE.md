@@ -401,10 +401,13 @@ const QString &K4Styles::Dialog::helpText();         // Gray italic help (TextGr
 const QString &K4Styles::Dialog::sectionHeader();    // White bold header (TextWhite, FontSizePopup)
 const QString &K4Styles::Dialog::comboBox();         // Full combo box styling (dark bg, arrow, item view)
 const QString &K4Styles::Dialog::lineEdit();         // Full line edit (dark bg, focus border)
+const QString &K4Styles::Dialog::spinBox();          // Full spin box (dark bg, focus border, drawn arrows)
 const QString &K4Styles::Dialog::checkBox();         // Checkbox + indicator sizing (enabled)
 const QString &K4Styles::Dialog::checkBoxDisabled(); // Checkbox (disabled / gray text)
 const QString &K4Styles::Dialog::actionButton();     // Dialog action button (dark bg, padding 10px 20px)
 const QString &K4Styles::Dialog::actionButtonSmall();// Small action button (padding 6px 12px)
+
+const QString &K4Styles::applicationStyleSheet();    // App-wide fallback: checkBox + comboBox + lineEdit + spinBox, installed in main()
 
 // Dynamic — `QString` (fresh each call; color/size vary)
 const QString &K4Styles::Dialog::statusLabel(const QString &color);  // Bold status label, dynamic color

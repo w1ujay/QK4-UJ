@@ -12,6 +12,7 @@
 
 Q_LOGGING_CATEGORY(qk4Audio, "qk4.audio")
 Q_LOGGING_CATEGORY(qk4AudioTx, "qk4.audio.tx")
+Q_LOGGING_CATEGORY(qk4AudioRx, "qk4.audio.rx")
 
 AudioController::AudioController(ConnectionController *connController, RadioState *radioState, QObject *parent)
     : QObject(parent), m_connectionController(connController), m_radioState(radioState),
@@ -236,6 +237,11 @@ void AudioController::setMainVolume(float vol) {
 void AudioController::setSubVolume(float vol) {
     if (m_audioEngine)
         m_audioEngine->setSubVolume(vol);
+}
+
+void AudioController::setRxBoostDb(int db) {
+    if (m_audioEngine)
+        m_audioEngine->setRxBoostDb(db);
 }
 
 void AudioController::setBalanceMode(int mode) {

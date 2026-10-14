@@ -61,6 +61,7 @@ void CatServer::stop() {
         client->disconnectFromHost();
     }
     m_clients.clear();
+    m_pendingRadioQueries.clear();
 
     if (m_server->isListening()) {
         m_server->close();
@@ -140,6 +141,51 @@ void CatServer::onNewConnection() {
         QString address = QString("%1:%2").arg(client->peerAddress().toString()).arg(client->peerPort());
         qCInfo(netCat) << "CAT client connected:" << address;
         emit clientConnected(address);
+    }
+}
+
+void CatServer::askRadio(const QString &key, QTcpSocket *client) {
+    PendingRadioQuery &pending = m_pendingRadioQueries[key];
+    pending.waiters.append(client);
+    if (pending.waiters.size() > 1)
+        return;
+
+    pending.generation = ++m_radioQueryGeneration;
+    const quint64 generation = pending.generation;
+    QTimer::singleShot(kRadioQueryTimeoutMs, this, [this, key, generation]() {
+        auto it = m_pendingRadioQueries.find(key);
+        if (it != m_pendingRadioQueries.end() && it->generation == generation) {
+            qCDebug(netCat) << "   radio did not answer" << key << "- dropping" << it->waiters.size() << "waiter(s)";
+            m_pendingRadioQueries.erase(it);
+        }
+    });
+    qCDebug(netCat) << "   asking the radio:" << key;
+    emit radioQueryRequested(key + ';');
+}
+
+void CatServer::onRadioResponse(const QString &response) {
+    if (m_pendingRadioQueries.isEmpty())
+        return;
+    const QStringList frames = response.split(';', Qt::SkipEmptyParts);
+    for (const QString &frame : frames) {
+        // AG018 answers "AG"; AG$018 answers "AG$". The character after the key decides, so the
+        // Main reply can never satisfy a Sub query or the reverse.
+        for (auto it = m_pendingRadioQueries.begin(); it != m_pendingRadioQueries.end();) {
+            const QString &key = it.key();
+            const bool matches = frame.startsWith(key) && (key.endsWith('$') || frame.mid(key.size(), 1) != "$");
+            if (!matches) {
+                ++it;
+                continue;
+            }
+            const QByteArray reply = (frame + ';').toUtf8();
+            for (const QPointer<QTcpSocket> &client : std::as_const(it->waiters)) {
+                if (client && m_clients.contains(client)) {
+                    qCDebug(netCat) << "TX ->" << client->peerPort() << reply << "(from the radio)";
+                    client->write(reply);
+                }
+            }
+            it = m_pendingRadioQueries.erase(it);
+        }
     }
 }
 
@@ -328,22 +374,26 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
             return CatFrames::keyerSpeed(m_radioState->keyerSpeed());
         }
         if (prefix == "NB") {
-            return CatFrames::noiseBlanker(m_radioState->noiseBlankerEnabled());
+            return CatFrames::setNoiseBlanker(m_radioState->noiseBlankerLevel(), m_radioState->noiseBlankerEnabled(),
+                                              m_radioState->noiseBlankerFilterWidth());
         }
         if (prefix == "NR") {
-            return CatFrames::noiseReduction(m_radioState->noiseReductionEnabled());
+            return CatFrames::noiseReduction(m_radioState->noiseReductionLevel(),
+                                             m_radioState->noiseReductionEnabled());
         }
         if (prefix == "VX") {
-            return CatFrames::vox(m_radioState->voxEnabled());
+            return CatFrames::vox(*m_radioState);
         }
         if (prefix == "BW") {
-            return CatFrames::filterBandwidth(m_radioState->filterBandwidth());
+            const int bw = m_radioState->filterBandwidth();
+            return bw < 0 ? QByteArray() : CatFrames::setFilterBandwidth(bw);
         }
         if (prefix == "ID") {
             return QByteArray("ID017;"); // K4 ID
         }
         if (prefix == "DT") {
-            return CatFrames::dataSubMode(m_radioState->dataSubMode());
+            const int dt = m_radioState->dataSubMode();
+            return dt < 0 ? QByteArray() : CatFrames::dataSubMode(dt);
         }
         if (prefix == "OM") {
             QString om = m_radioState->optionModules();
@@ -355,18 +405,45 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         if (prefix == "AI") {
             return CatFrames::aiMode(m_broadcaster->clientAiMode(client));
         }
+        // Sub-RX queries. The prefix extractor folds '$' into the prefix, so "MD$;" arrives as "MD$".
         if (prefix == "MD$") {
             return CatFrames::modeB(m_radioState->modeB());
         }
-        if (prefix == "BW$") {
-            return CatFrames::filterBandwidthB(m_radioState->filterBandwidthB());
-        }
-        if (prefix == "RG") {
-            return QString("RG-%1;").arg(m_radioState->rfGain(), 2, 10, QChar('0')).toUtf8();
+        if (prefix == "SQ$") {
+            const int sq = m_radioState->squelchLevelB();
+            return sq < 0 ? QByteArray() : CatFrames::squelch(sq, true);
         }
         if (prefix == "RG$") {
-            return QString("RG$-%1;").arg(m_radioState->rfGainB(), 2, 10, QChar('0')).toUtf8();
+            const int rg = m_radioState->rfGainB();
+            return rg < 0 ? QByteArray() : CatFrames::rfGain(rg, true);
         }
+        if (prefix == "RO$") {
+            return CatFrames::subRx(CatFrames::ritOffset(m_radioState->ritXitOffsetB()));
+        }
+        if (prefix == "RT$") {
+            return CatFrames::subRx(CatFrames::ritEnabled(m_radioState->ritEnabledB()));
+        }
+        if (prefix == "GT$") {
+            return CatFrames::subRx(CatFrames::agcSpeed(static_cast<int>(m_radioState->agcSpeedB())));
+        }
+        if (prefix == "NB$") {
+            return CatFrames::subRx(CatFrames::setNoiseBlanker(m_radioState->noiseBlankerLevelB(),
+                                                               m_radioState->noiseBlankerEnabledB(),
+                                                               m_radioState->noiseBlankerFilterWidthB()));
+        }
+        if (prefix == "NR$") {
+            return CatFrames::subRx(CatFrames::noiseReduction(m_radioState->noiseReductionLevelB(),
+                                                              m_radioState->noiseReductionEnabledB()));
+        }
+        if (prefix == "BW$") {
+            const int bw = m_radioState->filterBandwidthB();
+            return bw < 0 ? QByteArray() : CatFrames::subRx(CatFrames::setFilterBandwidth(bw));
+        }
+        if (prefix == "DT$") {
+            const int dt = m_radioState->dataSubModeB();
+            return dt < 0 ? QByteArray() : CatFrames::subRx(CatFrames::dataSubMode(dt));
+        }
+        // XT$ stays unanswered: the radio itself does not answer it.
         // KY GET — keyer buffer space: KY0; = room available, KY1; = full.
         // The K4's buffer holds ~60 characters; report full from 50 pending.
         if (prefix == "KY") {
@@ -399,8 +476,7 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         if (prefix == "PCX") {
             return CatFrames::rfPowerExtended(m_radioState->rfPower(), m_radioState->powerRange());
         }
-        // AG/AG$ — while QK4 owns the audio path these report QK4's own volume;
-        // otherwise the K4 is authoritative and the query is forwarded.
+        // AG/AG$ — while QK4 owns the audio path these report QK4's own volume.
         // WHY RadioSettings: the volume sliders persist every change there, including ones made
         // in the GUI or restored at startup, so it is the one place that is always current.
         if (prefix == "AG" || prefix == "AG$") {
@@ -410,11 +486,21 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
                 const int gain = (percent * 60 + 50) / 100; // 0-100 -> 0-60, rounded
                 return QString("%1%2;").arg(prefix).arg(gain, 3, 10, QChar('0')).toUtf8();
             }
-            emit catCommandReceived(cmd);
+            // WHY ask: the radio does not report AF gain when the knob moves - measured on a K4D at
+            // R40, turning it produced no AG traffic at all - so a stored value goes stale at the
+            // first turn. Only the radio knows the current one.
+            askRadio(prefix, client);
             return QByteArray();
         }
         if (prefix == "SQ") {
-            return QByteArray("SQ000;");
+            // No answer until the radio has reported it - a made-up 000 is indistinguishable from
+            // a real zero.
+            const int sq = m_radioState->squelchLevel();
+            return sq < 0 ? QByteArray() : CatFrames::squelch(sq, false);
+        }
+        if (prefix == "RG") {
+            const int rg = m_radioState->rfGain();
+            return rg < 0 ? QByteArray() : CatFrames::rfGain(rg, false);
         }
         if (prefix == "FW") {
             return CatFrames::filterWidthExtended(m_radioState->filterBandwidth());

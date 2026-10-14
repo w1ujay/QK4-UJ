@@ -390,7 +390,7 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        QCOMPARE(sendCommand(server, "NB;"), QString("NB0;"));
+        QCOMPARE(sendCommand(server, "NB;"), QString("NB0000;")); // level 00, off, filter 0
     }
 
     void testNoiseReductionOff() {
@@ -398,7 +398,7 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        QCOMPARE(sendCommand(server, "NR;"), QString("NR0;"));
+        QCOMPARE(sendCommand(server, "NR;"), QString("NR000;")); // level 00, off
     }
 
     void testVoxOff() {
@@ -406,7 +406,7 @@ private slots:
         CatServer server(&rs);
         QVERIFY(server.start(0));
 
-        QCOMPARE(sendCommand(server, "VX;"), QString("VX0;"));
+        QCOMPARE(sendCommand(server, "VX;"), QString("VXV0;")); // no mode yet: the voice group
     }
 
     // =========================================================================
@@ -756,8 +756,7 @@ private slots:
         QVERIFY(server.start(0));
 
         QCOMPARE(sendCommand(server, "PCX;"), QString("PCX050L;"));
-        // The plain PC reply carries no suffix, but must not mis-scale either.
-        QCOMPARE(sendCommand(server, "PC;"), QString("PC050;"));
+        QCOMPARE(sendCommand(server, "PC;"), QString("PC050L;"));
     }
 
     void testPcxXvtrRangeCanBeEmitted() {
@@ -781,7 +780,352 @@ private slots:
         QVERIFY(server.start(0));
 
         QCOMPARE(sendCommand(server, "PCX;"), QString("PCX100H;"));
-        QCOMPARE(sendCommand(server, "PC;"), QString("PC100;"));
+        QCOMPARE(sendCommand(server, "PC;"), QString("PC100H;"));
+    }
+
+    // #134. Each pair was captured from a K4D at R40: what the radio reported, then its own answer
+    // to a bare `PC;`. Without the range letter PC006 reads as 6 W and PC100 as 100 W.
+    void testPcReplyMatchesTheRadio_data() {
+        QTest::addColumn<QString>("fromRadio");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("15 W, QRO") << "PC015H;" << "PC015H;";
+        QTest::newRow("10.0 W, QRP") << "PC100L;" << "PC100L;";
+        QTest::newRow("0.6 W, QRP") << "PC006L;" << "PC006L;";
+        QTest::newRow("5.0 mW, XVTR") << "PC050X;" << "PC050X;";
+    }
+
+    void testPcReplyMatchesTheRadio() {
+        QFETCH(QString, fromRadio);
+        QFETCH(QString, expected);
+        RadioState rs;
+        rs.parseCATCommand(fromRadio);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "PC;"), expected);
+    }
+
+    // #134. Captured from a K4D at R40: BW0300 is 3000 Hz. The reply was BW3000;, which a client
+    // reads as 30 kHz.
+    void testBwReplyIsInTenHertzUnits_data() {
+        QTest::addColumn<QString>("fromRadio");
+        QTest::newRow("3000 Hz") << "BW0300;";
+        QTest::newRow("3420 Hz") << "BW0342;";
+        QTest::newRow("200 Hz") << "BW0020;";
+    }
+
+    void testBwReplyIsInTenHertzUnits() {
+        QFETCH(QString, fromRadio);
+        RadioState rs;
+        rs.parseCATCommand(fromRadio);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "BW;"), fromRadio);
+    }
+
+    // #134. Captured from a K4D at R40: NB0301 is level 03, off, filter 1. The reply was NB0;.
+    void testNbReplyIsTheRadiosForm_data() {
+        QTest::addColumn<QString>("fromRadio");
+        QTest::newRow("level 3, off, filter 1") << "NB0301;";
+        QTest::newRow("level 15, on, filter 2") << "NB1512;";
+    }
+
+    void testNbReplyIsTheRadiosForm() {
+        QFETCH(QString, fromRadio);
+        RadioState rs;
+        rs.parseCATCommand(fromRadio);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "NB;"), fromRadio);
+    }
+
+    // #134. Captured from a K4D at R40: NR050 is level 05, off. The reply was NR0;.
+    void testNrReplyIsTheRadiosForm_data() {
+        QTest::addColumn<QString>("fromRadio");
+        QTest::newRow("level 5, off") << "NR050;";
+        QTest::newRow("level 10, on") << "NR101;";
+    }
+
+    void testNrReplyIsTheRadiosForm() {
+        QFETCH(QString, fromRadio);
+        RadioState rs;
+        rs.parseCATCommand(fromRadio);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "NR;"), fromRadio);
+    }
+
+    // #134. The K4D at R40 reported VXC1, VXV0, VXD0 in its state dump and was in DATA (MD6); it
+    // answered VX; with VXD0. QK4 answered VX1 - VOX on - because it reported on if ANY mode had it.
+    void testVxReplyIsForTheCurrentMode_data() {
+        QTest::addColumn<QString>("mode");
+        QTest::addColumn<QString>("expected");
+        QTest::newRow("DATA") << "MD6;" << "VXD0;";
+        QTest::newRow("DATA-R") << "MD9;" << "VXD0;";
+        QTest::newRow("CW") << "MD3;" << "VXC1;";
+        QTest::newRow("CW-R") << "MD7;" << "VXC1;";
+        QTest::newRow("USB") << "MD2;" << "VXV0;";
+        QTest::newRow("AM") << "MD5;" << "VXV0;";
+    }
+
+    void testVxReplyIsForTheCurrentMode() {
+        QFETCH(QString, mode);
+        QFETCH(QString, expected);
+        RadioState rs;
+        rs.parseCATCommand("VXC1;");
+        rs.parseCATCommand("VXV0;");
+        rs.parseCATCommand("VXD0;");
+        rs.parseCATCommand(mode);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "VX;"), expected);
+    }
+
+    // #134. The K4D at R40 answered GT2; QK4 answered GT002, the K3's three-digit form. The same
+    // builder sends TCI's agc_mode to the radio, so GT002 went to the K4 as well.
+    void testGtIsOneDigit_data() {
+        QTest::addColumn<QString>("fromRadio");
+        QTest::newRow("off") << "GT0;";
+        QTest::newRow("slow") << "GT1;";
+        QTest::newRow("fast") << "GT2;";
+    }
+
+    void testGtIsOneDigit() {
+        QFETCH(QString, fromRadio);
+        RadioState rs;
+        rs.parseCATCommand(fromRadio);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "GT;"), fromRadio);
+        QCOMPARE(CatFrames::agcSpeed(fromRadio.mid(2, 1).toInt()), fromRadio.toUtf8());
+    }
+
+    // #134. SQ was answered SQ000 whatever the radio said, and SQ$ not at all. Captured from a
+    // K4D at R40 after the squelch was turned up: SQ010, SQ$005.
+    void testSqAnswersTheRadiosSquelch() {
+        RadioState rs;
+        rs.parseCATCommand("SQ010;");
+        rs.parseCATCommand("SQ$005;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "SQ;"), QString("SQ010;"));
+        QCOMPARE(sendCommand(server, "SQ$;"), QString("SQ$005;"));
+    }
+
+    void testSqIsSilentUntilTheRadioReportsIt() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "SQ;"), QString());
+        QCOMPARE(sendCommand(server, "SQ$;"), QString());
+    }
+
+    // #134. RG and RG$ went unanswered although QK4 stores both. Captured from a K4D at R40: RG-00.
+    void testRgAnswersTheRadiosRfGain() {
+        RadioState rs;
+        rs.parseCATCommand("RG-00;");
+        rs.parseCATCommand("RG$-12;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "RG;"), QString("RG-00;"));
+        QCOMPARE(sendCommand(server, "RG$;"), QString("RG$-12;"));
+    }
+
+    // #134. Only MD$ was answered; every other Sub RX query reached the radio and its reply went to
+    // QK4, not the client. Each row is the radio's own reply, captured from a K4D at R40.
+    void testSubRxQueriesAnswerTheRadiosForm_data() {
+        QTest::addColumn<QString>("fromRadio");
+        QTest::addColumn<QString>("query");
+        QTest::newRow("RO$") << "RO$+0000;" << "RO$;";
+        QTest::newRow("RT$") << "RT$0;" << "RT$;";
+        QTest::newRow("GT$") << "GT$2;" << "GT$;";
+        QTest::newRow("NB$") << "NB$0301;" << "NB$;";
+        QTest::newRow("NR$") << "NR$050;" << "NR$;";
+        QTest::newRow("BW$") << "BW$0020;" << "BW$;";
+        QTest::newRow("DT$") << "DT$0;" << "DT$;";
+    }
+
+    void testSubRxQueriesAnswerTheRadiosForm() {
+        QFETCH(QString, fromRadio);
+        QFETCH(QString, query);
+        RadioState rs;
+        rs.parseCATCommand(fromRadio);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, query), fromRadio);
+    }
+
+    // Before the radio reports them, BW and DT have nothing true to say. DT answered DT-1; - not even
+    // well-formed.
+    void testBwAndDtAreSilentUntilTheRadioReportsThem() {
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "DT;"), QString());
+        QCOMPARE(sendCommand(server, "BW$;"), QString());
+    }
+
+    // =========================================================================
+    // AG / AG$ - answered by asking the radio (#134)
+    //
+    // The radio does not report AF gain when the knob moves (a K4D at R40 sent no AG traffic while
+    // it was turned), so only the radio knows the current value. Each test plays the radio's side
+    // by calling onRadioResponse(). This fork answers AG from QK4's own volume while QK4 owns the
+    // audio path (tested further down), so these run with audio disabled.
+    // =========================================================================
+
+private:
+    // A client that stays connected, since the answer arrives after the radio replies.
+    struct Client {
+        QTcpSocket socket;
+        QByteArray received;
+    };
+
+    void connectClient(CatServer &server, Client &c) {
+        c.socket.connectToHost("127.0.0.1", server.port());
+        QVERIFY(c.socket.waitForConnected(1000));
+        QCoreApplication::processEvents();
+    }
+
+    void send(Client &c, const char *cmd) {
+        c.socket.write(cmd);
+        c.socket.flush();
+    }
+
+    bool waitForReply(Client &c, const QByteArray &expected) {
+        return spinUntil(
+            [&] {
+                c.received += c.socket.readAll();
+                return c.received.contains(expected);
+            },
+            kReplyTimeoutMs);
+    }
+
+private slots:
+    void testAgIsAskedOfTheRadioAndItsAnswerReturned() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy asked(&server, &CatServer::radioQueryRequested);
+
+        Client c;
+        connectClient(server, c);
+        send(c, "AG;");
+        QVERIFY(spinUntil([&] { return asked.count() == 1; }, kReplyTimeoutMs));
+        QCOMPARE(asked.at(0).at(0).toString(), QString("AG;"));
+
+        server.onRadioResponse("AG$005;"); // Sub's answer starts with "AG" too and must not satisfy it
+        server.onRadioResponse("SM04;AG018;FA00014049500;"); // batched, as the radio sends them
+        QVERIFY(waitForReply(c, "AG018;"));
+        QCOMPARE(c.received, QByteArray("AG018;"));
+    }
+
+    void testSubAgIsKeptApartFromMain() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy asked(&server, &CatServer::radioQueryRequested);
+
+        Client c;
+        connectClient(server, c);
+        send(c, "AG$;");
+        QVERIFY(spinUntil([&] { return asked.count() == 1; }, kReplyTimeoutMs));
+        QCOMPARE(asked.at(0).at(0).toString(), QString("AG$;"));
+
+        server.onRadioResponse("AG000;"); // Main's answer must not satisfy a Sub query
+        server.onRadioResponse("AG$018;");
+        QVERIFY(waitForReply(c, "AG$018;"));
+        QCOMPARE(c.received, QByteArray("AG$018;"));
+    }
+
+    void testTwoWaitersShareOneQuestionToTheRadio() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy asked(&server, &CatServer::radioQueryRequested);
+
+        Client a, b;
+        connectClient(server, a);
+        connectClient(server, b);
+        send(a, "AG;");
+        QVERIFY(spinUntil([&] { return asked.count() == 1; }, kReplyTimeoutMs));
+        send(b, "AG;");
+        QTest::qWait(100);
+        QCOMPARE(asked.count(), 1);
+
+        server.onRadioResponse("AG018;");
+        QVERIFY(waitForReply(a, "AG018;"));
+        QVERIFY(waitForReply(b, "AG018;"));
+    }
+
+    // No answer from the radio - disconnected, or off - leaves the client with no reply, as a real
+    // radio that is off would. A reply arriving after the timeout goes nowhere.
+    void testUnansweredQueryIsDroppedAfterTheTimeout() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy asked(&server, &CatServer::radioQueryRequested);
+
+        Client c;
+        connectClient(server, c);
+        send(c, "AG;");
+        QVERIFY(spinUntil([&] { return asked.count() == 1; }, kReplyTimeoutMs));
+        QTest::qWait(CatServer::kRadioQueryTimeoutMs + 200);
+
+        server.onRadioResponse("AG018;");
+        QTest::qWait(100);
+        c.received += c.socket.readAll();
+        QCOMPARE(c.received, QByteArray());
+
+        send(c, "AG;"); // and the next query asks the radio again
+        QVERIFY(spinUntil([&] { return asked.count() == 2; }, kReplyTimeoutMs));
+    }
+
+    void testWaiterThatDisconnectsIsSkipped() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy asked(&server, &CatServer::radioQueryRequested);
+
+        auto *gone = new Client;
+        connectClient(server, *gone);
+        Client stays;
+        connectClient(server, stays);
+        send(*gone, "AG;");
+        QVERIFY(spinUntil([&] { return asked.count() == 1; }, kReplyTimeoutMs));
+        send(stays, "AG;");
+        QTest::qWait(50);
+
+        gone->socket.disconnectFromHost();
+        delete gone;
+        QVERIFY(spinUntil([&] { return server.clientCount() == 1; }, kReplyTimeoutMs));
+
+        server.onRadioResponse("AG018;");
+        QVERIFY(waitForReply(stays, "AG018;"));
     }
 
     // =========================================================================
@@ -807,7 +1151,7 @@ private slots:
         QVERIFY(server.start(0));
 
         QCOMPARE(sendCommand(server, "BW;"), QString("BW0280;"));
-        QCOMPARE(CatFrames::filterBandwidth(2800), QByteArray("BW0280;"));
+        QCOMPARE(CatFrames::setFilterBandwidth(2800), QByteArray("BW0280;"));
     }
 
     void testRfGainQuery() {

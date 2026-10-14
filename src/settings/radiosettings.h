@@ -149,6 +149,10 @@ public:
     int tciTxGain() const;
     void setTciTxGain(int value); // 0-100, default 25
 
+    // RX playback boost above the MAIN/SUB sliders, in dB: 0, 3, 6, 9 or 12 (default 0).
+    int rxAudioBoostDb() const;
+    void setRxAudioBoostDb(int db);
+
     // Macro settings
     QMap<QString, MacroEntry> macros() const;
     MacroEntry macro(const QString &functionId) const;
@@ -248,6 +252,20 @@ public:
     bool temperatureInFahrenheit() const;
     void setTemperatureInFahrenheit(bool fahrenheit);
 
+    // Interface scale, in percent: one of kInterfaceScales, or kInterfaceScaleAuto to fit the
+    // screen. Qt reads the scale once, before QApplication exists, so a change applies at the next
+    // launch — see startupInterfaceScale() and settings/interfacescale.h.
+    static constexpr int kInterfaceScaleAuto = 0;
+    static constexpr int kInterfaceScales[] = {75, 80, 90, 100, 110, 125};
+    int interfaceScale() const;
+    void setInterfaceScale(int percent);
+    // The factor Auto last fitted to the screen, 0.5 to 1.0.
+    double autoScaleFactor() const;
+    void setAutoScaleFactor(double factor);
+    // The factor to start with, read before QApplication exists and so without this singleton —
+    // from the same store, spelled the same way.
+    static double startupInterfaceScale(bool *isAuto = nullptr);
+
 signals:
     void radiosChanged();
     void kpodEnabledChanged(bool enabled);
@@ -265,6 +283,7 @@ signals:
     void tciServerPortChanged(quint16 port);
     void tciAudioEnabledChanged(bool enabled);
     void tciTxGainChanged(int value);
+    void rxAudioBoostDbChanged(int db);
     void macrosChanged();
     void halikeyEnabledChanged(bool enabled);
     void halikeyPortNameChanged(const QString &portName);
@@ -285,6 +304,7 @@ signals:
     void miniViewSettingsChanged();
 
     void temperatureInFahrenheitChanged(bool fahrenheit);
+    void interfaceScaleChanged(int percent);
 
 private:
     explicit RadioSettings(QObject *parent = nullptr);

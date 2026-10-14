@@ -194,22 +194,14 @@ char powerRangeSuffix(LevelsState::PowerRange range) {
 } // namespace
 
 QByteArray rfPower(double value, LevelsState::PowerRange range) {
-    // No range suffix: PC is the plain query and the K4's own echo carries one (PC045H), but
-    // whether its reply to a bare `PC;` includes it has not been confirmed on the radio, so the
-    // shape is left alone here and only the scaling is corrected.
-    return QString("PC%1;").arg(powerToWire(value, range), 3, 10, QChar('0')).toUtf8();
+    // WHY the range letter: without it the digits are ambiguous - PC006 is 6 W in the QRO range
+    // but 0.6 W in QRP. Measured on a K4D at R40: the radio answers a bare `PC;` with the letter
+    // (PC015H, PC100L, PC006L), so a client that works with a real K4 expects it. #134.
+    return QString("PC%1%2;").arg(powerToWire(value, range), 3, 10, QChar('0')).arg(powerRangeSuffix(range)).toUtf8();
 }
 
 QByteArray rfPowerExtended(double value, LevelsState::PowerRange range) {
     return QString("PCX%1%2;").arg(powerToWire(value, range), 3, 10, QChar('0')).arg(powerRangeSuffix(range)).toUtf8();
-}
-
-QByteArray filterBandwidth(int bwHz) {
-    return QString("BW%1;").arg(qBound(0, bwHz / 10, 9999), 4, 10, QChar('0')).toUtf8();
-}
-
-QByteArray filterBandwidthB(int bwHz) {
-    return QString("BW$%1;").arg(qBound(0, bwHz / 10, 9999), 4, 10, QChar('0')).toUtf8();
 }
 
 QByteArray filterWidthExtended(int bwHz) {
@@ -299,20 +291,37 @@ QByteArray setFilterBandwidth(int bwHz) {
     return QString("BW%1;").arg(qBound(0, bwHz / 10, 9999), 4, 10, QChar('0')).toUtf8();
 }
 
-QByteArray noiseBlanker(bool on) {
-    return QString("NB%1;").arg(on ? 1 : 0).toUtf8();
+QByteArray noiseReduction(int level, bool on) {
+    return QString("NR%1%2;").arg(qBound(0, level, 99), 2, 10, QChar('0')).arg(on ? 1 : 0).toUtf8();
 }
 
-QByteArray noiseReduction(bool on) {
-    return QString("NR%1;").arg(on ? 1 : 0).toUtf8();
+QByteArray squelch(int level, bool subRx) {
+    return QString("SQ%1%2;").arg(subRx ? "$" : "").arg(qBound(0, level, 999), 3, 10, QChar('0')).toUtf8();
+}
+
+QByteArray rfGain(int magnitude, bool subRx) {
+    return QString("RG%1-%2;").arg(subRx ? "$" : "").arg(qBound(0, magnitude, 99), 2, 10, QChar('0')).toUtf8();
+}
+
+QByteArray subRx(const QByteArray &mainFrame) {
+    return mainFrame.left(2) + '$' + mainFrame.mid(2);
 }
 
 QByteArray agcSpeed(int agc) {
-    return QString("GT%1;").arg(agc, 3, 10, QChar('0')).toUtf8();
+    return QString("GT%1;").arg(qBound(0, agc, 2)).toUtf8();
 }
 
-QByteArray vox(bool on) {
-    return QString("VX%1;").arg(on ? 1 : 0).toUtf8();
+QByteArray vox(const RadioState &rs) {
+    switch (rs.mode()) {
+    case RadioState::CW:
+    case RadioState::CW_R:
+        return QString("VXC%1;").arg(rs.voxCW() ? 1 : 0).toUtf8();
+    case RadioState::DATA:
+    case RadioState::DATA_R:
+        return QString("VXD%1;").arg(rs.voxData() ? 1 : 0).toUtf8();
+    default:
+        return QString("VXV%1;").arg(rs.voxVoice() ? 1 : 0).toUtf8();
+    }
 }
 
 QByteArray diversity(bool on) {

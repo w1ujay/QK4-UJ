@@ -30,6 +30,7 @@
 #include "ui/widgets/vforowwidget.h"
 #include "ui/widgets/filterindicatorwidget.h"
 #include "ui/styling/k4styles.h"
+#include "utils/windowfit.h"
 #include "controllers/antennaconfigcontroller.h"
 #include "controllers/antennadisplaycontroller.h"
 #include "controllers/textdecodecontroller.h"
@@ -62,9 +63,11 @@
 #include <QMouseEvent>
 #include <QMoveEvent>
 #include <QCloseEvent>
+#include <QScreen>
 #include <QShortcut>
 #include <QAbstractButton>
 #include <QApplication>
+#include <QStyle>
 #include <functional>
 
 Q_LOGGING_CATEGORY(qk4Main, "qk4.main")
@@ -141,15 +144,17 @@ MainWindow::MainWindow(QWidget *parent) : QMainWindow(parent), m_radioState(new 
     setupUi();
     m_popupManager->setVfos(m_vfoA, m_vfoB);
     setupMenuBar();
+    sizeToScreen();
 
     // ESC — halt all transmission regardless of which child widget has focus.
     // QShortcut fires at window scope; keyPressEvent only fires when the window frame itself has focus.
     // Clears both the K4 TX state (RX;) and QK4's internal PTT/audio state so the UI unlocks too.
     auto *escShortcut = new QShortcut(Qt::Key_Escape, this);
     connect(escShortcut, &QShortcut::activated, this, [this]() {
-        // Unconditional, whoever holds it. This is the operator's last resort, so it releases
-        // rather than asking, and the arbiter sends whatever unkey the engage actually needs.
-        m_transmitController->releaseAll();
+        // Unconditional, whoever holds it — including nobody. This is the operator's last resort:
+        // it releases rather than asking, and always sends the K4's CW abort, because a KY macro
+        // or a TCI cw_macros is keyed from the radio's own buffer and the arbiter never sees it.
+        m_transmitController->operatorStop();
     });
 
     setupNotificationWidget();
@@ -542,6 +547,13 @@ void MainWindow::setupCatServer() {
         m_radioState->parseCATCommand(command);
     });
 
+    // Queries only the radio can answer (AG): sent as is, and NOT applied to RadioState the way a
+    // client's SET is above. The reply reaches the CAT server through every incoming frame.
+    connect(m_catServer, &CatServer::radioQueryRequested, this,
+            [this](const QString &command) { m_connectionController->sendCAT(command); });
+    connect(m_connectionController, &ConnectionController::catResponseReceived, m_catServer,
+            &CatServer::onRadioResponse);
+
     // Surface CAT server bind failures to the user
     connect(m_catServer, &CatServer::errorOccurred, this,
             [this](const QString &error) { qWarning() << "CAT server:" << error; });
@@ -683,13 +695,20 @@ void MainWindow::setupMenuBar() {
     helpMenu->addAction(aboutAction);
 }
 
+void MainWindow::sizeToScreen() {
+    // WHY: no setMinimumSize here. A top-level window with a layout takes its minimum from that
+    // layout, menu bar included — a hand-written minimum drifts out of step with the widgets and,
+    // when smaller, lets the layout squeeze controls into each other (see utils/windowfit.h).
+    const QRect available = screen()->availableGeometry();
+    const QSize size = WindowFit::initialWindowSize(minimumSizeHint(), QSize(kPreferredWidth, 0), available.size());
+    setGeometry(QStyle::alignedRect(Qt::LeftToRight, Qt::AlignCenter, size, available));
+}
+
 void MainWindow::setupUi() {
     // WHY: fork CI builds are versioned "<branch>-<sha>", which reads oddly after a "v".
     const QString version = QCoreApplication::applicationVersion();
     const bool numericVersion = !version.isEmpty() && version.front().isDigit();
     setWindowTitle(QString(numericVersion ? "QK4-UJ v%1" : "QK4-UJ %1").arg(version));
-    setMinimumSize(1340, 840);
-    resize(1340, 840); // Default to minimum size on launch
 
     // WHY: WA_NativeWindow is not set here.
     // Qt 6.10.1 bug on macOS Tahoe: WA_NativeWindow forces native window creation
@@ -1439,7 +1458,9 @@ void MainWindow::onRadioReady() {
     m_connectionController->sendCAT(QString("SL%1;").arg(sl));
     m_radioState->parseCATCommand(QString("SL%1;").arg(sl));
 
-    // Start audio engine via AudioController
+    // Start audio engine via AudioController. The boost is applied here rather than read inside
+    // AudioController's constructor, which already reaches for settings it should be given (#151).
+    m_audioController->setRxBoostDb(RadioSettings::instance()->rxAudioBoostDb());
     m_audioController->startAudio(m_sideControlPanel->volume() / 100.0f, m_sideControlPanel->subVolume() / 100.0f,
                                   RadioSettings::instance()->micGain() / 100.0f);
 

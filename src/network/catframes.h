@@ -32,9 +32,6 @@ QByteArray xitEnabled(bool en);
 // Passing a bool could never express the XVTR range at all. See CAT-005.
 QByteArray rfPower(double value, LevelsState::PowerRange range);
 QByteArray rfPowerExtended(double value, LevelsState::PowerRange range);
-// BWnnnn / BW$nnnn replies, in the K4's 10-Hz units (BW0280 is 2800 Hz) like the radio's own.
-QByteArray filterBandwidth(int bwHz);
-QByteArray filterBandwidthB(int bwHz);
 QByteArray filterWidthExtended(int bwHz);
 // KSnnn. CLAMPED to the K4's documented range (manual: "from 8 to 100 WPM"), because the CW macro
 // grammar reaches this with ARITHMETIC - each '>' adds 5 WPM with no upper bound of its own - and
@@ -71,21 +68,9 @@ bool modeKeysCwText(RadioState::Mode mode);
 // Aborts a message in progress: KY<0x04>;RX;. One frame carrying two commands, which is how the
 // radio is given it. Bench-confirmed on Elecraft hardware (TR4W's TK4Radio.StopCW).
 QByteArray cwAbort();
-// WHY THESE TWO EXIST ALONGSIDE noiseBlanker() AND filterBandwidth() BELOW.
-//
-// The pair below build REPLIES to a CAT client (catserver.cpp, catpushbroadcaster.cpp). They have
-// never been used to send anything TO the radio, and neither is in the K4's actual command form:
-// noiseBlanker() emits "NB1;" where the K4 wants NBnnm - a pre-existing reply-direction bug, left
-// as is because changing it changes what every existing CAT client on port 9299 is told.
-// filterBandwidth() used to emit Hz the same way; this fork corrected it to 10-Hz units, since a
-// client reading BW2800 as the K4 would sets a 28 kHz filter.
-//
-// These two are for SENDING, and match what QK4's own UI already sends by hand
-// (sidecontrolscrollcontroller.cpp divides the bandwidth by 10; featuremenucontroller.cpp uses the
-// NB/ toggle).
-
 // NBnnm: nn is the level 00-15, m is on/off. The level is preserved by the caller, because TCI's
-// RX_NB_ENABLE is on/off only and must not silently move the level.
+// RX_NB_ENABLE is on/off only and must not silently move the level. The radio uses the same form
+// in both directions, so this is also the reply to a CAT client's `NB;`.
 // NBnnm, or NBnnmf when filterWidth is given (0-2). Pass filterWidth < 0 to leave it off the
 // command and change only the level and the on/off flag.
 QByteArray setNoiseBlanker(int level, bool on, int filterWidth = -1);
@@ -93,7 +78,8 @@ QByteArray setNoiseBlanker(int level, bool on, int filterWidth = -1);
 // LKn / LK$n - VFO tuning lock, per VFO.
 QByteArray setVfoLock(bool locked, bool subVfo);
 
-// BWnnnn in 10-Hz units, which is the inverse of what RadioState's handleBW parses.
+// BWnnnn in 10-Hz units, which is the inverse of what RadioState's handleBW parses. The radio uses
+// the same form in both directions, so this is also the reply to a CAT client's `BW;`.
 QByteArray setFilterBandwidth(int bwHz);
 
 // ACMzabcdefg; / ACSzabcdefg; / ACTzabc; - antenna configuration from the ANT CFG popups.
@@ -109,10 +95,20 @@ QByteArray setMenuValue(int menuId, int value);
 // NOT the PCX form below - that one is the extended QUERY, and the radio ignores it as a set.
 QByteArray setRfPower(int value, bool qrp);
 
-QByteArray noiseBlanker(bool on);
-QByteArray noiseReduction(bool on);
+// NRnnm: nn is the level, m is on/off - the radio's form in both directions (NR050 is level 05, off).
+QByteArray noiseReduction(int level, bool on);
+// GTn, one digit: 0 off, 1 slow, 2 fast - the radio's form in both directions (GT2 at R40).
 QByteArray agcSpeed(int agc);
-QByteArray vox(bool on);
+// SQnnn / SQ$nnn - the radio's form (SQ010, SQ$005 at R40).
+QByteArray squelch(int level, bool subRx);
+// RG-nn / RG$-nn - the radio's form (RG-00 at R40). RadioState stores the magnitude.
+QByteArray rfGain(int magnitude, bool subRx);
+// The Sub RX form of a two-letter main frame: `$` after the prefix (RT0; -> RT$0;). Every Sub RX
+// reply measured on a K4D at R40 has this shape: RO$+0000, RT$0, GT$2, NB$0301, NR$050, BW$0020, DT$0.
+QByteArray subRx(const QByteArray &mainFrame);
+// VXmn: the radio keeps VOX per mode group (C = CW, V = voice, D = data) and answers a bare `VX;`
+// with the group of the CURRENT mode - measured on a K4D at R40, in DATA: VXD0 while VXC1 was on.
+QByteArray vox(const RadioState &rs);
 QByteArray diversity(bool on);
 QByteArray dataSubMode(int subMode);
 QByteArray aiMode(int level);
