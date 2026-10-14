@@ -21,6 +21,11 @@ CatServer::CatServer(RadioState *state, QObject *parent)
     : QObject(parent), m_server(new QTcpServer(this)), m_radioState(state) {
     m_broadcaster = new CatPushBroadcaster(state, this);
     connect(m_server, &QTcpServer::newConnection, this, &CatServer::onNewConnection);
+    // WHY one restartable timer: a timer per KY message let a short message's timer clear the
+    // count for a longer one sent after it.
+    m_cwDrainTimer = new QTimer(this);
+    m_cwDrainTimer->setSingleShot(true);
+    connect(m_cwDrainTimer, &QTimer::timeout, this, [this]() { m_cwPending = 0; });
 }
 
 CatServer::~CatServer() {
@@ -195,7 +200,12 @@ void CatServer::releasePttIfOwner(QTcpSocket *client) {
     }
     qCInfo(netCat) << "CAT client that asserted PTT is gone - releasing";
     m_pttOwner = nullptr;
-    emit pttRequested(false);
+    if (m_pttOwnerForwarded) {
+        m_pttOwnerForwarded = false;
+        emit catCommandReceived(QStringLiteral("RX;"));
+    } else {
+        emit pttRequested(false);
+    }
 }
 
 QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
@@ -272,15 +282,17 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         const int mode = m_radioState->mode();
         const bool forward =
             !RadioSettings::instance()->audioEnabled() || mode == RadioState::CW || mode == RadioState::CW_R;
+        // Remember who keyed, and how, so the transmission can be ended if that client vanishes.
+        m_pttOwner = key ? client : nullptr;
+        m_pttOwnerForwarded = key && forward;
         if (forward) {
             emit catCommandReceived(key ? QStringLiteral("TX;") : QStringLiteral("RX;"));
         } else {
-            // Remember who keyed so the transmission can be ended if that client vanishes.
-            m_pttOwner = key ? client : nullptr;
             emit pttRequested(key);
         }
         if (!key) {
             m_cwPending = 0;
+            m_cwDrainTimer->stop();
         }
         return QByteArray();
     }
@@ -533,12 +545,14 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
         qCDebug(netCat) << "   PTT request:" << (on ? "ON" : "OFF");
         // Remember who keyed so the transmission can be ended if that client vanishes.
         m_pttOwner = on ? client : nullptr;
+        m_pttOwnerForwarded = false;
         emit pttRequested(on);
         return QByteArray();
     }
     if (prefix == "RX") {
         qCDebug(netCat) << "   PTT request: OFF";
         m_pttOwner = nullptr;
+        m_pttOwnerForwarded = false;
         emit pttRequested(false);
         return QByteArray();
     }
@@ -548,13 +562,18 @@ QByteArray CatServer::handleCommand(const QString &cmd, QTcpSocket *client) {
     if (prefix == "KY") {
         if (args == "0") {
             m_cwPending = 0; // KY0; aborts the pending message
+            m_cwDrainTimer->stop();
         } else {
-            m_cwPending = args.trimmed().length();
-            // The K4 drains the buffer at keyer speed; decay on that schedule.
+            // The K4 drains the buffer at keyer speed; decay on that schedule. Text still keying
+            // from an earlier message is estimated from the time its drain had left to run.
             const int wpm = qMax(1, m_radioState->keyerSpeed());
             const int charsPerSec = qMax(1, wpm / 6);
-            const int clearMs = qMax(500, (m_cwPending * 1000) / charsPerSec);
-            QTimer::singleShot(clearMs, this, [this]() { m_cwPending = 0; });
+            const int stillPending =
+                m_cwDrainTimer->isActive()
+                    ? qMin(m_cwPending, (m_cwDrainTimer->remainingTime() * charsPerSec + 999) / 1000)
+                    : 0;
+            m_cwPending = stillPending + args.trimmed().length();
+            m_cwDrainTimer->start(qMax(500, (m_cwPending * 1000) / charsPerSec));
         }
         emit catCommandReceived(cmd);
         return QByteArray();

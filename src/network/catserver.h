@@ -8,6 +8,7 @@
 #include <QPointer>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QTimer>
 
 class RadioState;
 class TcpClient;
@@ -104,10 +105,14 @@ private:
     // sending RX; does not leave the transmitter keyed — any client's RX; still releases,
     // whoever keyed, because that is the fail-safe direction.
     QTcpSocket *m_pttOwner = nullptr;
+    // True when the owner keyed by a TX; forwarded to the radio (CW, or QK4 audio off) rather than
+    // through the mic gate, so releasing it means sending RX; to the radio.
+    bool m_pttOwnerForwarded = false;
     CatPushBroadcaster *m_broadcaster = nullptr;
     quint16 m_port = 0;
 
     int m_cwPending = 0;    // Approximate chars pending in the K4 CW keyer buffer
+    QTimer *m_cwDrainTimer; // Fires when the pending text should have been sent at keyer speed
     int m_lastRfGain = 20;  // Last non-zero RF gain, for the RG/ toggle
     int m_lastRfGainB = 20; // Last non-zero sub RF gain, for the RG$/ toggle
 };

@@ -656,6 +656,72 @@ private slots:
         client->deleteLater();
     }
 
+    // CW (or QK4 audio off) forwards TX; to the radio instead of gating the mic. A client that
+    // keys that way and then vanishes must still unkey the radio.
+    void testForwardedTxReleasedWhenKeyingClientDisconnects() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        rs.parseCATCommand("MD3;"); // CW
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
+
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+        client->write("TX;");
+        client->flush();
+        QTRY_COMPARE(catSpy.count(), 1);
+        QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
+
+        client->disconnectFromHost();
+        QTRY_COMPARE(catSpy.count(), 2);
+        QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+        client->deleteLater();
+    }
+
+    void testStoppingTheServerReleasesForwardedTx() {
+        RadioSettings::instance()->setAudioEnabled(false);
+        auto restore = qScopeGuard([]() { RadioSettings::instance()->setAudioEnabled(true); });
+        RadioState rs;
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
+        QSignalSpy pttSpy(&server, &CatServer::pttRequested);
+
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+        client->write("TX;");
+        client->flush();
+        QTRY_COMPARE(catSpy.count(), 1);
+
+        server.stop();
+        QCOMPARE(catSpy.count(), 2);
+        QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+        QCOMPARE(pttSpy.count(), 0); // the mic gate was never opened, so it is not touched
+        client->deleteLater();
+    }
+
+    // Unkeying by RX; ends ownership: a later disconnect must not send a second RX;.
+    void testForwardedRxEndsOwnership() {
+        RadioSettings::instance()->setAudioEnabled(true);
+        RadioState rs;
+        rs.parseCATCommand("MD3;"); // CW
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+        QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
+
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+        client->write("TX;RX;");
+        client->flush();
+        QTRY_COMPARE(catSpy.count(), 2);
+
+        client->disconnectFromHost();
+        QTest::qWait(200);
+        QCOMPARE(catSpy.count(), 2);
+        client->deleteLater();
+    }
+
     void testTxToggleCommand() {
         RadioState rs;
         CatServer server(&rs);
@@ -1331,15 +1397,23 @@ private slots:
         QSignalSpy catSpy(&server, &CatServer::catCommandReceived);
         QSignalSpy pttSpy(&server, &CatServer::pttRequested);
 
-        // The K4 is keyed directly, so the toggle resolves to a plain TX; or RX;.
-        sendCommand(server, "TX/;");
+        // The K4 is keyed directly, so the toggle resolves to a plain TX; or RX;. One connection
+        // throughout: a client that drops while keyed is unkeyed on its way out.
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+        client->write("TX/;");
+        client->flush();
+        QTRY_COMPARE(catSpy.count(), 1);
         rs.parseCATCommand("TX;");
-        sendCommand(server, "TX/;");
+        client->write("TX/;");
+        client->flush();
+        QTRY_COMPARE(catSpy.count(), 2);
 
         QCOMPARE(pttSpy.count(), 0);
-        QCOMPARE(catSpy.count(), 2);
         QCOMPARE(catSpy.at(0).at(0).toString(), QString("TX;"));
         QCOMPARE(catSpy.at(1).at(0).toString(), QString("RX;"));
+        client->disconnectFromHost();
+        client->deleteLater();
     }
 
     void testTxToggleForwardedToK4InCwMode() {
@@ -1414,6 +1488,47 @@ private slots:
         QCOMPARE(spy.at(0).at(0).toString(), QString("KY CQ TEST;"));
         // "CQ TEST" is 7 chars pending; KY still reports space available
         QCOMPARE(sendCommand(server, "TB;"), QString("TB700;"));
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY0;"));
+    }
+
+    // A short message's drain timer must not report a longer, later message as already sent.
+    void testOlderKeyerTimerDoesNotClearNewerMessage() {
+        RadioState rs;
+        rs.parseCATCommand("KS060;"); // 10 chars/s: a 1-char message drains in the 500 ms floor
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QSignalSpy spy(&server, &CatServer::catCommandReceived);
+        // One write, so the second message lands while the first one's timer is still running.
+        // (sendCommand() waits out its reply timeout on a SET, which would let that timer fire first.)
+        QTcpSocket *client = connectAndKeepOpen(server.port());
+        QVERIFY(client);
+        client->write(("KY E;KY " + QString(51, 'T') + ";").toUtf8());
+        client->flush();
+        QTRY_COMPARE(spy.count(), 2);
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY1;"));
+
+        QTest::qWait(800); // past the first message's timer, well inside the second's ~5 s
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY1;"));
+        client->disconnectFromHost();
+        client->deleteLater();
+    }
+
+    // Text sent while earlier text is still keying adds to what is outstanding.
+    void testKeyerPendingAccumulatesAcrossMessages() {
+        RadioState rs;
+        rs.parseCATCommand("KS020;");
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        sendCommand(server, "KY " + QString(30, 'T') + ";");
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY0;"));
+        sendCommand(server, "KY " + QString(30, 'T') + ";");
+        QCOMPARE(sendCommand(server, "KY;"), QString("KY1;"));
+
+        sendCommand(server, "KY0;"); // abort clears everything
         QCOMPARE(sendCommand(server, "KY;"), QString("KY0;"));
     }
 
