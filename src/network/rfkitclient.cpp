@@ -8,6 +8,7 @@
 RFKitClient::RFKitClient(QObject *parent)
     : QObject(parent), m_networkManager(new QNetworkAccessManager(this)), m_pollTimer(new QTimer(this)) {
     connect(m_pollTimer, &QTimer::timeout, this, &RFKitClient::onPollTimer);
+    setRequestTimeout(DEFAULT_REQUEST_TIMEOUT_MS);
 }
 
 RFKitClient::~RFKitClient() {
@@ -85,6 +86,10 @@ void RFKitClient::startPolling(int intervalMs) {
 
 void RFKitClient::stopPolling() {
     m_pollTimer->stop();
+}
+
+void RFKitClient::setRequestTimeout(int ms) {
+    m_networkManager->setTransferTimeout(ms);
 }
 
 void RFKitClient::setState(ConnectionState state) {
@@ -178,6 +183,11 @@ void RFKitClient::resetError() {
 
 void RFKitClient::onPollTimer() {
     if (m_state == Disconnected) {
+        return;
+    }
+    // WHY: one round at a time. Against a stalled amplifier each tick used to queue four more
+    // requests behind the ones still waiting; the request timeout ends a stuck round instead.
+    if (!m_pendingPolls.isEmpty()) {
         return;
     }
 

@@ -39,6 +39,9 @@ public:
 
     void startPolling(int intervalMs);
     void stopPolling();
+    // Every request is abandoned after this long. An amplifier that accepts the connection but never
+    // answers otherwise produces no error, so the lost-connection check would never run.
+    void setRequestTimeout(int ms);
 
     // Commands (PUT/POST requests)
     void setOperateMode(bool operate);
@@ -138,6 +141,7 @@ private:
     QVector<AntennaInfo> m_antennas;
 
     static constexpr int MAX_CONSECUTIVE_ERRORS = 3;
+    static constexpr int DEFAULT_REQUEST_TIMEOUT_MS = 3000;
 };
 
 #endif // RFKITCLIENT_H

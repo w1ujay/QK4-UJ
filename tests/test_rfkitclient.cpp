@@ -133,6 +133,28 @@ private slots:
         QTRY_COMPARE(opState.count(), 2);
         QCOMPARE(client.operatingState(), RFKitClient::StateOperate);
     }
+
+    // An amplifier that accepts connections but never answers must not pile up requests, one set
+    // per poll tick, and must eventually be treated as gone.
+    void aStalledAmplifierDoesNotAccumulatePollsAndDisconnects() {
+        FakeRfkitServer server;
+        server.setResponse("/info", R"({"device":"RFKit"})");
+        server.setResponse("/antennas", "[]");
+        for (const char *path : {"/power", "/operate-mode", "/data", "/antennas/active"})
+            server.hold(QString::fromLatin1(path));
+
+        RFKitClient client;
+        client.setRequestTimeout(300);
+        QSignalSpy disconnectedSpy(&client, &RFKitClient::disconnected);
+        connect(&client, &RFKitClient::connected, &client, [&client]() { client.startPolling(20); });
+        client.connectToHost("127.0.0.1", server.port());
+        QTRY_COMPARE(client.connectionState(), RFKitClient::Connected);
+
+        QTest::qWait(250); // ~12 poll ticks, all inside the first round's timeout
+        QVERIFY2(server.heldCount() <= 4, qPrintable(QString("%1 requests in flight").arg(server.heldCount())));
+
+        QTRY_COMPARE_WITH_TIMEOUT(disconnectedSpy.count(), 1, 5000);
+    }
 };
 
 QTEST_GUILESS_MAIN(TestRfkitClient)
