@@ -1,591 +1,424 @@
 name: Release
 
+# WHY a dynamic run-name: a dispatch rehearsal and a real tagged release are the
+# same workflow, so both used to appear in the Actions list titled just "Release".
+# That made a rehearsal indistinguishable at a glance from something that shipped.
+run-name: >-
+  ${{ github.event_name == 'push'
+      && format('Release {0}', github.ref_name)
+      || format('Rehearsal (publishes nothing) — {0}', github.ref_name) }}
+
+# Tagged release: builds all four platforms via the shared _build-*.yml reusable
+# workflows, publishes a GitHub Release, and updates the gh-pages download page.
+#
+# workflow_dispatch runs the SAME build and packaging path as a rehearsal, then
+# stops before Create Release and publish. That makes the release path testable
+# without minting a tag or touching gh-pages. A dispatch can never publish —
+# publishing is gated on the event being a tag push, not on a user-supplied flag.
+
 on:
   push:
     tags:
       - 'v*'
+  workflow_dispatch:
 
-env:
-  CMAKE_BUILD_PARALLEL_LEVEL: 4
+permissions:
+  contents: read
+
+# One release at a time, never cancelled mid-notarization.
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
-  build-macos:
-    runs-on: macos-14
+  version:
+    name: Derive version and check for a tester build
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    permissions:
+      contents: read
+      actions: read
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      is_release: ${{ steps.derive.outputs.is_release }}
     steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          # Tag format: v0.1.0 or v0.1.0-alpha.123
-          # Strip leading 'v' to get version string
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Cache Homebrew downloads
-        uses: actions/cache@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
-          path: |
-            ~/Library/Caches/Homebrew/downloads
-            ~/Library/Caches/Homebrew/api
-          key: brew-macos-${{ hashFiles('.github/workflows/release.yml') }}
-          restore-keys: brew-macos-
+          # Every branch's commits (not their file contents), so a tester build made on
+          # development can be found from a tag on main.
+          fetch-depth: 0
+          filter: blob:none
 
-      - name: Install dependencies
-        run: brew install qt opus hidapi openssl@3 dbus brotli
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Configure CMake
+      - name: Derive version
+        id: derive
         run: |
-          cmake -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DCMAKE_PREFIX_PATH="$(brew --prefix qt)" \
-            -DCMAKE_C_COMPILER_LAUNCHER=sccache \
-            -DCMAKE_CXX_COMPILER_LAUNCHER=sccache \
-            -DQK4_VERSION_FULL="${{ steps.version.outputs.version }}"
-
-      - name: Build
-        run: cmake --build build --config Release
-
-      - name: Create app bundle with dependencies
-        run: |
-          set -e
-
-          APP_BUNDLE="build/QK4.app"
-          FRAMEWORKS="$APP_BUNDLE/Contents/Frameworks"
-
-          # Run macdeployqt to bundle Qt frameworks
-          $(brew --prefix qt)/bin/macdeployqt "$APP_BUNDLE" -verbose=2
-
-          # Copy QtDBus.framework (transitive dependency of QtGui in Homebrew Qt)
-          # Note: qtbase is the actual package containing Qt libraries, qt@6 is just a meta-formula
-          echo "=== Copying QtDBus.framework ==="
-          QTBASE_LIB="$(brew --prefix qtbase)/lib"
-          echo "QtDBus source: $QTBASE_LIB/QtDBus.framework"
-          ls -la "$QTBASE_LIB/QtDBus.framework/Versions/A/" || echo "WARNING: QtDBus not found in qtbase!"
-          cp -R "$QTBASE_LIB/QtDBus.framework" "$FRAMEWORKS/"
-          ls -la "$FRAMEWORKS/QtDBus.framework/Versions/A/" || echo "QtDBus copy failed!"
-
-          # Copy libdbus (dependency of QtDBus)
-          echo "=== Copying libdbus ==="
-          DBUS_LIB="$(brew --prefix dbus)/lib"
-          cp "$DBUS_LIB/libdbus-1.3.dylib" "$FRAMEWORKS/"
-          ln -sf libdbus-1.3.dylib "$FRAMEWORKS/libdbus-1.dylib"
-
-          # Copy brotli libraries (dependency of QtNetwork)
-          echo "=== Copying brotli libraries ==="
-          BROTLI_LIB="$(brew --prefix brotli)/lib"
-          cp "$BROTLI_LIB/libbrotlicommon.1.dylib" "$FRAMEWORKS/"
-          cp "$BROTLI_LIB/libbrotlidec.1.dylib" "$FRAMEWORKS/"
-          cp "$BROTLI_LIB/libbrotlienc.1.dylib" "$FRAMEWORKS/"
-          ln -sf libbrotlicommon.1.dylib "$FRAMEWORKS/libbrotlicommon.dylib"
-          ln -sf libbrotlidec.1.dylib "$FRAMEWORKS/libbrotlidec.dylib"
-          ln -sf libbrotlienc.1.dylib "$FRAMEWORKS/libbrotlienc.dylib"
-
-          # Get OpenSSL paths (resolve symlinks for install_name_tool)
-          OPENSSL_LIB="$(brew --prefix openssl@3)/lib"
-          OPENSSL_REAL="$(realpath $OPENSSL_LIB)"
-
-          # Copy OpenSSL libraries
-          echo "=== Copying OpenSSL libraries ==="
-          cp "$OPENSSL_LIB/libssl.3.dylib" "$FRAMEWORKS/"
-          cp "$OPENSSL_LIB/libcrypto.3.dylib" "$FRAMEWORKS/"
-
-          # Copy Opus library
-          echo "=== Copying Opus library ==="
-          OPUS_LIB="$(brew --prefix opus)/lib"
-          cp "$OPUS_LIB/libopus.0.dylib" "$FRAMEWORKS/"
-          ln -sf libopus.0.dylib "$FRAMEWORKS/libopus.dylib"
-
-          # Copy HIDAPI library
-          echo "=== Copying HIDAPI library ==="
-          HIDAPI_LIB="$(brew --prefix hidapi)/lib"
-          cp "$HIDAPI_LIB/libhidapi.0.dylib" "$FRAMEWORKS/"
-          ln -sf libhidapi.0.dylib "$FRAMEWORKS/libhidapi.dylib"
-
-          # Fix permissions (Homebrew files may be read-only)
-          chmod -R u+rw "$FRAMEWORKS/"
-
-          # Fix OpenSSL library paths
-          echo "=== Fixing library paths ==="
-          install_name_tool -id "@executable_path/../Frameworks/libssl.3.dylib" \
-            "$FRAMEWORKS/libssl.3.dylib"
-          install_name_tool -id "@executable_path/../Frameworks/libcrypto.3.dylib" \
-            "$FRAMEWORKS/libcrypto.3.dylib"
-          install_name_tool -change "$OPENSSL_REAL/libcrypto.3.dylib" \
-            "@executable_path/../Frameworks/libcrypto.3.dylib" \
-            "$FRAMEWORKS/libssl.3.dylib"
-
-          # Fix Opus library path
-          install_name_tool -id "@executable_path/../Frameworks/libopus.0.dylib" \
-            "$FRAMEWORKS/libopus.0.dylib" || true
-
-          # Fix HIDAPI library path
-          install_name_tool -id "@executable_path/../Frameworks/libhidapi.0.dylib" \
-            "$FRAMEWORKS/libhidapi.0.dylib" || true
-
-          # Fix libdbus library path
-          echo "=== Fixing libdbus paths ==="
-          install_name_tool -id "@executable_path/../Frameworks/libdbus-1.3.dylib" \
-            "$FRAMEWORKS/libdbus-1.3.dylib" || true
-
-          # Fix brotli library paths
-          echo "=== Fixing brotli paths ==="
-          install_name_tool -id "@executable_path/../Frameworks/libbrotlicommon.1.dylib" \
-            "$FRAMEWORKS/libbrotlicommon.1.dylib" || true
-          install_name_tool -id "@executable_path/../Frameworks/libbrotlidec.1.dylib" \
-            "$FRAMEWORKS/libbrotlidec.1.dylib" || true
-          install_name_tool -id "@executable_path/../Frameworks/libbrotlienc.1.dylib" \
-            "$FRAMEWORKS/libbrotlienc.1.dylib" || true
-
-          # Fix brotlidec's reference to brotlicommon
-          BROTLI_COMMON_ORIG=$(otool -L "$FRAMEWORKS/libbrotlidec.1.dylib" | grep brotlicommon | awk '{print $1}')
-          if [ -n "$BROTLI_COMMON_ORIG" ]; then
-            install_name_tool -change "$BROTLI_COMMON_ORIG" \
-              "@executable_path/../Frameworks/libbrotlicommon.1.dylib" \
-              "$FRAMEWORKS/libbrotlidec.1.dylib"
-          fi
-
-          # Fix brotlienc's reference to brotlicommon
-          BROTLI_COMMON_ORIG=$(otool -L "$FRAMEWORKS/libbrotlienc.1.dylib" | grep brotlicommon | awk '{print $1}')
-          if [ -n "$BROTLI_COMMON_ORIG" ]; then
-            install_name_tool -change "$BROTLI_COMMON_ORIG" \
-              "@executable_path/../Frameworks/libbrotlicommon.1.dylib" \
-              "$FRAMEWORKS/libbrotlienc.1.dylib"
-          fi
-
-          # Fix QtDBus.framework paths
-          echo "=== Fixing QtDBus.framework paths ==="
-          QTDBUS_BINARY="$FRAMEWORKS/QtDBus.framework/Versions/A/QtDBus"
-          if [ -f "$QTDBUS_BINARY" ]; then
-            install_name_tool -id "@executable_path/../Frameworks/QtDBus.framework/Versions/A/QtDBus" \
-              "$QTDBUS_BINARY"
-
-            # Update QtDBus's reference to libdbus
-            DBUS_ORIG=$(otool -L "$QTDBUS_BINARY" | grep libdbus | awk '{print $1}')
-            if [ -n "$DBUS_ORIG" ]; then
-              echo "Updating QtDBus libdbus reference from: $DBUS_ORIG"
-              install_name_tool -change "$DBUS_ORIG" \
-                "@executable_path/../Frameworks/libdbus-1.3.dylib" \
-                "$QTDBUS_BINARY"
-            fi
-
-            # Update QtGui's reference to QtDBus
-            QTGUI_BINARY="$FRAMEWORKS/QtGui.framework/Versions/A/QtGui"
-            if [ -f "$QTGUI_BINARY" ]; then
-              # Get the original QtDBus path from QtGui
-              QTDBUS_ORIG=$(otool -L "$QTGUI_BINARY" | grep QtDBus | awk '{print $1}')
-              if [ -n "$QTDBUS_ORIG" ]; then
-                echo "Updating QtGui reference from: $QTDBUS_ORIG"
-                install_name_tool -change "$QTDBUS_ORIG" \
-                  "@executable_path/../Frameworks/QtDBus.framework/Versions/A/QtDBus" \
-                  "$QTGUI_BINARY"
-              fi
-            fi
+          if [ "${GITHUB_EVENT_NAME}" = "push" ]; then
+            VERSION="${GITHUB_REF_NAME#v}"
+            IS_RELEASE=true
           else
-            echo "ERROR: QtDBus binary not found at $QTDBUS_BINARY"
-            exit 1
+            VERSION="dryrun-$(git rev-parse --short HEAD)"
+            IS_RELEASE=false
           fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "is_release=$IS_RELEASE" >> $GITHUB_OUTPUT
+          echo "version=$VERSION is_release=$IS_RELEASE"
 
-          echo "=== Frameworks contents ==="
-          ls -la "$FRAMEWORKS/" | head -30
-
-      - name: Import Code Signing Certificate
+      # WHY: testers approve one specific build, then the release is rebuilt from the tag. Nothing
+      # else stops a fix that landed after the tester build from shipping untested. This passes only
+      # if an on-demand build-signed.yml run - a tester build - succeeded on a commit whose shipped
+      # code is identical to the tag's. Pushes to main build automatically and nobody tested those,
+      # so they do not count. Content is compared, not SHAs: the merge commit on main has a new SHA.
+      #
+      # "Shipped code" is everything except what cannot change a package: docs, Markdown, and the
+      # entry-point workflows, which decide when to build and how to publish. The _build-*.yml
+      # builders DO shape the package and are compared. Without that exclusion, v0.7.0-beta.5 would
+      # have been refused over the release.yml fixes made while publishing it.
+      #
+      # A rehearsal reports the answer without enforcing it, so the guard can be exercised without
+      # minting a tag. To release code that has no tester build, dispatch build-signed.yml on it.
+      - name: Check this code had a tester build
         env:
-          APPLE_CERTIFICATE_BASE64: ${{ secrets.APPLE_CERTIFICATE_BASE64 }}
-          APPLE_CERTIFICATE_PASSWORD: ${{ secrets.APPLE_CERTIFICATE_PASSWORD }}
+          GH_TOKEN: ${{ github.token }}
+          IS_RELEASE: ${{ steps.derive.outputs.is_release }}
         run: |
-          # Create temporary keychain
-          KEYCHAIN_PATH=$RUNNER_TEMP/signing.keychain-db
-          KEYCHAIN_PASSWORD=$(openssl rand -base64 32)
+          set -euo pipefail
+          same_shipped_code() {
+            git cat-file -e "$1^{commit}" 2>/dev/null || return 1
+            git diff --quiet --no-renames "$1" HEAD -- . \
+              ':(exclude)docs' ':(exclude)*.md' ':(exclude)LICENSE' \
+              ':(exclude).github/ISSUE_TEMPLATE' ':(exclude).github/workflows' || return 1
+            git diff --quiet --no-renames "$1" HEAD -- '.github/workflows/_build-*.yml'
+          }
 
-          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Import certificate
-          echo "$APPLE_CERTIFICATE_BASE64" | base64 --decode > $RUNNER_TEMP/certificate.p12
-          security import $RUNNER_TEMP/certificate.p12 \
-            -P "$APPLE_CERTIFICATE_PASSWORD" \
-            -A -t cert -f pkcs12 \
-            -k "$KEYCHAIN_PATH"
-
-          # Set keychain for codesign
-          security list-keychain -d user -s "$KEYCHAIN_PATH"
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
-
-          # Verify certificate is available
-          security find-identity -v -p codesigning "$KEYCHAIN_PATH"
-
-      - name: Sign Application
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-        run: |
-          # Sign all frameworks and dylibs first, then the app
-          APP_BUNDLE="build/QK4.app"
-
-          echo "=== Signing frameworks and libraries ==="
-          find "$APP_BUNDLE/Contents/Frameworks" -name "*.dylib" -exec \
-            codesign --force --options runtime --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" {} \;
-
-          find "$APP_BUNDLE/Contents/Frameworks" -name "*.framework" -exec \
-            codesign --force --options runtime --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" {} \;
-
-          echo "=== Signing PlugIns ==="
-          find "$APP_BUNDLE/Contents/PlugIns" -name "*.dylib" -exec \
-            codesign --force --options runtime --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" {} \;
-
-          echo "=== Signing main application with entitlements ==="
-          codesign --force --options runtime \
-            --entitlements "resources/QK4.entitlements" \
-            --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" \
-            "$APP_BUNDLE"
-
-          echo "=== Verifying signature ==="
-          codesign --verify --verbose=2 "$APP_BUNDLE"
-
-          # Check Gatekeeper acceptance
-          spctl --assess --type execute --verbose "$APP_BUNDLE" || echo "Note: spctl may fail without notarization"
-
-      - name: Create and Notarize DMG
-        env:
-          APPLE_TEAM_ID: ${{ secrets.APPLE_TEAM_ID }}
-          APPLE_API_KEY_ID: ${{ secrets.APPLE_API_KEY_ID }}
-          APPLE_API_ISSUER_ID: ${{ secrets.APPLE_API_ISSUER_ID }}
-          APPLE_API_KEY_BASE64: ${{ secrets.APPLE_API_KEY_BASE64 }}
-        run: |
-          APP_BUNDLE="build/QK4.app"
-
-          # Create DMG staging directory with app and Applications symlink
-          echo "=== Creating DMG staging directory ==="
-          mkdir -p dmg-staging
-          # Use ditto for proper macOS bundle handling
-          ditto "$APP_BUNDLE" dmg-staging/QK4.app
-          ln -s /Applications dmg-staging/Applications
-
-          # Ensure filesystem is synced and Spotlight doesn't interfere
-          sync
-          touch dmg-staging/.metadata_never_index
-          sleep 5
-
-          # Create the DMG (retry up to 3 times — hdiutil can fail with
-          # "Resource busy" on CI runners if ditto hasn't fully flushed)
-          echo "=== Creating DMG ==="
-          for attempt in 1 2 3; do
-            if hdiutil create -volname "QK4" \
-              -srcfolder dmg-staging \
-              -ov -format UDZO \
-              -nocrossdev \
-              "QK4-unsigned.dmg"; then
+          MATCH=""
+          CHECKED=0
+          while IFS= read -r sha; do
+            [ -n "${sha}" ] || continue
+            CHECKED=$((CHECKED + 1))
+            if same_shipped_code "${sha}"; then
+              MATCH="${sha}"
               break
             fi
-            echo "hdiutil attempt $attempt failed, retrying in 5s..."
-            sleep 5
-          done
-          test -f "QK4-unsigned.dmg" || { echo "DMG creation failed after 3 attempts"; exit 1; }
+          done < <(gh api "repos/${GITHUB_REPOSITORY}/actions/workflows/build-signed.yml/runs?event=workflow_dispatch&status=success&per_page=100" \
+                     --jq '.workflow_runs[].head_sha')
 
-          # Sign the DMG
-          echo "=== Signing DMG ==="
-          codesign --force --sign "Developer ID Application: Michael Richard Garcia ($APPLE_TEAM_ID)" \
-            "QK4-unsigned.dmg"
-          mv "QK4-unsigned.dmg" "QK4-macos.dmg"
+          if [ -n "${MATCH}" ]; then
+            echo "Tester build found: ${MATCH} ships the same code as ${GITHUB_REF_NAME}."
+            exit 0
+          fi
 
-          # Create API key file for notarization
-          mkdir -p ~/private_keys
-          echo "$APPLE_API_KEY_BASE64" | base64 --decode > ~/private_keys/AuthKey_$APPLE_API_KEY_ID.p8
+          echo "No tester build of this code: none of the ${CHECKED} successful on-demand build-signed.yml runs"
+          echo "built a commit that ships the same code as ${GITHUB_REF_NAME}."
+          echo "Either something changed after the tester build, or none was made."
+          if [ "${IS_RELEASE}" = "true" ]; then
+            echo "::error::Refusing to release code testers never received. Dispatch build-signed.yml on this commit, have it tested, then re-tag."
+            exit 1
+          fi
+          echo "::warning::A tag on this code would be refused."
 
-          # Notarize the DMG
-          echo "=== Submitting DMG for notarization ==="
-          xcrun notarytool submit "QK4-macos.dmg" \
-            --key ~/private_keys/AuthKey_$APPLE_API_KEY_ID.p8 \
-            --key-id "$APPLE_API_KEY_ID" \
-            --issuer "$APPLE_API_ISSUER_ID" \
-            --wait \
-            --timeout 30m
+  macos:
+    needs: version
+    uses: ./.github/workflows/_build-macos.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 30
+    secrets: inherit
 
-          # Staple the notarization ticket to the DMG
-          echo "=== Stapling notarization ticket to DMG ==="
-          xcrun stapler staple "QK4-macos.dmg"
+  windows:
+    needs: version
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 30
+    secrets: inherit
 
-          # Verify
-          echo "=== Verifying DMG ==="
-          xcrun stapler validate "QK4-macos.dmg"
-          spctl --assess --type open --context context:primary-signature "QK4-macos.dmg" || echo "spctl check completed"
+  raspberry-pi:
+    needs: version
+    uses: ./.github/workflows/_build-pi.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 30
+    secrets: inherit
 
-          # Show package info
-          echo "=== Release DMG created ==="
-          ls -lh QK4-macos.dmg
-
-          # Clean up
-          rm -rf dmg-staging ~/private_keys
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: QK4-macos
-          path: QK4-macos.dmg
-
-  build-windows:
-    runs-on: windows-latest
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: version
-        shell: bash
-        run: |
-          # Tag format: v0.1.0 or v0.1.0-alpha.123
-          # Strip leading 'v' to get version string
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\vcpkg\installed
-            C:\vcpkg\packages
-          key: vcpkg-win-${{ hashFiles('.github/workflows/release.yml') }}
-          restore-keys: |
-            vcpkg-win-
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7.*'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2019_64'
-          modules: 'qtmultimedia qtshadertools qtserialport'
-          cache: true
-
-      - name: Setup vcpkg
-        run: |
-          cd C:\vcpkg
-          .\bootstrap-vcpkg.bat
-
-      - name: Install dependencies
-        run: vcpkg install opus:x64-windows hidapi:x64-windows openssl:x64-windows
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Configure CMake
-        run: cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache -DQK4_VERSION_FULL="${{ steps.version.outputs.version }}"
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Create release package
-        run: |
-          mkdir QK4-windows
-          copy build\QK4.exe QK4-windows\
-
-          # Use windeployqt to bundle Qt DLLs
-          windeployqt --release --no-translations QK4-windows\QK4.exe
-
-          # Copy vcpkg DLLs (opus, hidapi, openssl)
-          copy C:\vcpkg\installed\x64-windows\bin\opus.dll QK4-windows\
-          copy C:\vcpkg\installed\x64-windows\bin\hidapi.dll QK4-windows\
-          copy C:\vcpkg\installed\x64-windows\bin\libssl-3-x64.dll QK4-windows\
-          copy C:\vcpkg\installed\x64-windows\bin\libcrypto-3-x64.dll QK4-windows\
-
-          Compress-Archive -Path QK4-windows -DestinationPath QK4-windows.zip
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: QK4-windows
-          path: QK4-windows.zip
-
-  build-raspberry-pi:
-    runs-on: ubuntu-24.04
-    steps:
-      - uses: actions/checkout@v4
-
-      - name: Extract version from tag
-        id: version
-        run: |
-          VERSION=${GITHUB_REF_NAME#v}
-          echo "version=$VERSION" >> $GITHUB_OUTPUT
-          echo "Extracted version: $VERSION"
-
-      - name: Cache Pi build dependencies
-        uses: actions/cache@v4
-        with:
-          path: |
-            /tmp/pi-apt-cache
-            /tmp/pi-ccache
-          key: pi-arm64-${{ hashFiles('.github/scripts/build-pi.sh') }}
-          restore-keys: pi-arm64-
-
-      - name: Cross-compile for ARM64 in Debian Trixie
-        run: |
-          mkdir -p /tmp/pi-apt-cache /tmp/pi-ccache
-          docker run --rm \
-            -v "${{ github.workspace }}:/workspace" \
-            -v /tmp/pi-apt-cache:/var/cache/apt/archives \
-            -v /tmp/pi-ccache:/ccache \
-            -e CCACHE_DIR=/ccache \
-            -w /workspace \
-            debian:trixie \
-            bash /workspace/.github/scripts/build-pi.sh "${{ steps.version.outputs.version }}"
-          # Fix ownership so actions/cache can tar the files (Docker writes as root)
-          sudo chown -R $(id -u):$(id -g) /tmp/pi-apt-cache /tmp/pi-ccache
-
-      - name: Upload artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: QK4-raspberry-pi
-          path: QK4-raspberry-pi-arm64.tar.gz
+  flatpak:
+    needs: version
+    uses: ./.github/workflows/_build-flatpak.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 30
+    secrets: inherit
 
   release:
-    needs: [build-macos, build-windows, build-raspberry-pi]
+    needs: [version, macos, windows, raspberry-pi, flatpak]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
+          # WHY a full clone and not a partial one: git-cliff needs the whole
+          # history to build release notes, and it is built on libgit2, which has
+          # no support for promisor repositories. Adding `filter: blob:none` here
+          # looks safe — git-cliff only reports commit messages — but it walks
+          # object headers and cannot lazily fetch what a partial clone omitted,
+          # so it dies with "object not found - cannot read header". Verified in
+          # run 31953337858.
           fetch-depth: 0
 
       - name: Install git-cliff
+        # Pinned so release-notes formatting can't change between releases
+        # without a deliberate bump.
         run: |
-          GC_URL=$(gh release view --repo orhun/git-cliff --json assets --jq '.assets[] | select(.name | test("x86_64-unknown-linux-gnu.tar.gz$")) | .url')
-          curl -sSL "$GC_URL" | tar xz
+          GC_VERSION=2.13.1
+          curl -sSL "https://github.com/orhun/git-cliff/releases/download/v${GC_VERSION}/git-cliff-${GC_VERSION}-x86_64-unknown-linux-gnu.tar.gz" | tar xz
           sudo mv git-cliff-*/git-cliff /usr/local/bin/
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: QK4-macos
+          name: ${{ needs.macos.outputs.artifact-name }}
 
       - name: Download Windows artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: QK4-windows
+          name: ${{ needs.windows.outputs.artifact-name }}
+          path: QK4-windows
 
       - name: Download Raspberry Pi artifact
-        uses: actions/download-artifact@v4
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: QK4-raspberry-pi
+          name: ${{ needs.raspberry-pi.outputs.artifact-name }}
+
+      - name: Download Flatpak artifact
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.flatpak.outputs.artifact-name }}
+
+      - name: Package Windows release asset
+        # WHY here and not in the builder: actions/upload-artifact wraps every upload
+        # in its own zip, so the builder ships a plain directory to keep the Actions
+        # download a single unwrap. The user-facing asset must be one self-contained
+        # file, so the .zip is assembled once, here, for both the Release and Pages.
+        run: zip -qr "QK4-${{ needs.version.outputs.version }}-windows.zip" QK4-windows
 
       - name: Generate release notes
         run: git-cliff --latest --strip header -o release_notes.md
 
+      - name: Generate checksums
+        run: |
+          sha256sum \
+            "QK4-${{ needs.version.outputs.version }}-macos.dmg" \
+            "QK4-${{ needs.version.outputs.version }}-windows.zip" \
+            "QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz" \
+            "QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak" \
+            > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Rehearsal summary
+        if: needs.version.outputs.is_release != 'true'
+        run: |
+          {
+            echo "### Release rehearsal \`${{ needs.version.outputs.version }}\`"
+            echo
+            echo "All four platforms built, notes generated, checksums computed."
+            echo "**No GitHub Release created. gh-pages untouched.**"
+            echo
+            echo '```'
+            cat SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Hand assembled assets to publish
+        # The publish job needs the exact files attached to the Release, including
+        # the Windows zip assembled above. Passing them as one artifact keeps that
+        # assembly in a single place.
+        #
+        # Deliberately NOT gated on is_release: uploading during a rehearsal is what
+        # makes the assembled assets inspectable before a real tag is ever cut.
+        # Publishing stays gated on the publish job itself.
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: release-assets-${{ needs.version.outputs.version }}
+          path: |
+            QK4-${{ needs.version.outputs.version }}-macos.dmg
+            QK4-${{ needs.version.outputs.version }}-windows.zip
+            QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz
+            QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak
+          retention-days: 7
+
       - name: Create Release
-        uses: softprops/action-gh-release@v2
+        if: needs.version.outputs.is_release == 'true'
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
         with:
           files: |
-            QK4-macos.dmg
-            QK4-windows.zip
-            QK4-raspberry-pi-arm64.tar.gz
+            QK4-${{ needs.version.outputs.version }}-macos.dmg
+            QK4-${{ needs.version.outputs.version }}-windows.zip
+            QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz
+            QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak
+            SHA256SUMS.txt
           body_path: release_notes.md
           prerelease: ${{ contains(github.ref, 'alpha') || contains(github.ref, 'beta') }}
 
   publish:
-    needs: [release]
+    # Updates the download page. gh-pages carries the site and releases.json only —
+    # the binaries themselves are Release assets, addressed by URL, never committed
+    # to this branch.
+    #
+    # WHY no job-level is_release gate: everything here except the final push is
+    # rehearsable, and releases.json generation is the step most likely to break
+    # the download page. Only "Commit and push" is gated, so a dispatch exercises
+    # the whole path and publishes nothing.
+    needs: [version, macos, windows, raspberry-pi, flatpak, release]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: write
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           ref: gh-pages
 
-      - name: Download macOS artifact
-        uses: actions/download-artifact@v4
+      - name: Download assembled release assets
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
         with:
-          name: QK4-macos
-          path: artifacts/macos
+          name: release-assets-${{ needs.version.outputs.version }}
+          path: artifacts
 
-      - name: Download Windows artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: QK4-windows
-          path: artifacts/windows
-
-      - name: Download Raspberry Pi artifact
-        uses: actions/download-artifact@v4
-        with:
-          name: QK4-raspberry-pi
-          path: artifacts/raspberry-pi
-
-      - name: Update downloads and releases.json
+      - name: Generate releases.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IS_RELEASE: ${{ needs.version.outputs.is_release }}
         run: |
-          TAG="${GITHUB_REF_NAME}"
-          VERSION="${TAG#v}"
+          set -euo pipefail
+
+          if [ "$IS_RELEASE" = "true" ]; then
+            TAG="${GITHUB_REF_NAME}"
+          else
+            TAG="rehearsal-${VERSION}"
+          fi
           DATE=$(date -u +%Y-%m-%d)
 
-          # Remove old downloads, add new
+          # WHY the downloads live on the Release and not on this branch: gh-pages
+          # is a git branch, so committing a binary here stores it forever even
+          # after a later commit deletes it. Rotating each release in and out still
+          # left ~1 GB of superseded builds in history, which every clone of the
+          # repository then had to fetch. Release assets are stored outside git,
+          # so the branch stays at a few kilobytes no matter how many tags ship.
+          BASE_URL="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}"
+
+          # Platform table — adding a platform is a data change here, nothing else
+          # in this step needs editing. Format: <releases.json key>|<filename>
+          PLATFORMS=(
+            "macos|QK4-${VERSION}-macos.dmg"
+            "windows|QK4-${VERSION}-windows.zip"
+            "raspberry-pi|QK4-${VERSION}-raspberry-pi-arm64.tar.gz"
+            "linux|QK4-${VERSION}-linux-x86_64.flatpak"
+          )
+
+          # One-time removal of the binaries this branch used to host. git add -A
+          # in the commit step stages the deletion; nothing recreates it.
           rm -rf downloads/
-          mkdir -p "downloads/$TAG"
-          cp artifacts/macos/QK4-macos.dmg "downloads/$TAG/"
-          cp artifacts/windows/QK4-windows.zip "downloads/$TAG/"
-          cp artifacts/raspberry-pi/QK4-raspberry-pi-arm64.tar.gz "downloads/$TAG/"
 
-          # Compute human-readable sizes
-          SZ_MAC=$(du -h "downloads/$TAG/QK4-macos.dmg" | cut -f1 | xargs)
-          SZ_WIN=$(du -h "downloads/$TAG/QK4-windows.zip" | cut -f1 | xargs)
-          SZ_PI=$(du -h "downloads/$TAG/QK4-raspberry-pi-arm64.tar.gz" | cut -f1 | xargs)
+          # WHY jq and not a heredoc: a hand-maintained JSON template silently
+          # produces invalid JSON on a missing comma, and index.html fails closed —
+          # one bad entry takes down every platform's download card.
+          ASSETS='{}'
+          for entry in "${PLATFORMS[@]}"; do
+            KEY="${entry%%|*}"
+            FILE="${entry#*|}"
 
-          # Compute SHA256 hashes
-          HASH_MAC=$(sha256sum "downloads/$TAG/QK4-macos.dmg" | cut -d' ' -f1)
-          HASH_WIN=$(sha256sum "downloads/$TAG/QK4-windows.zip" | cut -d' ' -f1)
-          HASH_PI=$(sha256sum "downloads/$TAG/QK4-raspberry-pi-arm64.tar.gz" | cut -d' ' -f1)
+            if [ ! -f "artifacts/$FILE" ]; then
+              echo "ERROR: expected release asset missing: artifacts/$FILE"
+              exit 1
+            fi
 
-          # Detect prerelease
-          if echo "$TAG" | grep -qE 'alpha|beta'; then
-            PRERELEASE=true
-          else
-            PRERELEASE=false
-          fi
+            SZ=$(du -h "artifacts/$FILE" | cut -f1 | xargs)
+            HASH=$(sha256sum "artifacts/$FILE" | cut -d' ' -f1)
 
-          # Build releases.json
-          cat > releases.json <<EOF
-          {
-            "tag": "$TAG",
-            "version": "$VERSION",
-            "date": "$DATE",
-            "prerelease": $PRERELEASE,
-            "assets": {
-              "macos": {
-                "name": "QK4-macos.dmg",
-                "url": "./downloads/$TAG/QK4-macos.dmg",
-                "size": "$SZ_MAC",
-                "sha256": "$HASH_MAC"
-              },
-              "windows": {
-                "name": "QK4-windows.zip",
-                "url": "./downloads/$TAG/QK4-windows.zip",
-                "size": "$SZ_WIN",
-                "sha256": "$HASH_WIN"
-              },
-              "raspberry-pi": {
-                "name": "QK4-raspberry-pi-arm64.tar.gz",
-                "url": "./downloads/$TAG/QK4-raspberry-pi-arm64.tar.gz",
-                "size": "$SZ_PI",
-                "sha256": "$HASH_PI"
-              }
-            }
-          }
-          EOF
+            ASSETS=$(jq -n \
+              --argjson acc "$ASSETS" \
+              --arg k "$KEY" --arg n "$FILE" \
+              --arg u "$BASE_URL/$FILE" \
+              --arg s "$SZ" --arg h "$HASH" \
+              '$acc + {($k): {name: $n, url: $u, size: $s, sha256: $h}}')
+          done
 
-          # Clean up artifacts directory
+          if echo "$TAG" | grep -qE 'alpha|beta'; then PRERELEASE=true; else PRERELEASE=false; fi
+
+          jq -n \
+            --arg tag "$TAG" \
+            --arg version "$VERSION" \
+            --arg date "$DATE" \
+            --argjson prerelease "$PRERELEASE" \
+            --argjson assets "$ASSETS" \
+            '{tag: $tag, version: $version, date: $date, prerelease: $prerelease, assets: $assets}' \
+            > releases.json
+
           rm -rf artifacts/
 
+      - name: Validate releases.json
+        env:
+          VERSION: ${{ needs.version.outputs.version }}
+          IS_RELEASE: ${{ needs.version.outputs.is_release }}
+        run: |
+          set -euo pipefail
+          jq empty releases.json || { echo "ERROR: releases.json is not valid JSON"; exit 1; }
+
+          # Every asset must carry the four fields index.html reads, and every
+          # URL must address this release's own assets.
+          jq -e 'has("tag") and has("version") and has("date") and has("prerelease")
+                 and (.assets | length > 0)' releases.json > /dev/null \
+            || { echo "ERROR: releases.json missing required top-level fields"; exit 1; }
+
+          TAG=$(jq -r '.tag' releases.json)
+          EXPECTED_PREFIX="https://github.com/${GITHUB_REPOSITORY}/releases/download/${TAG}/"
+
+          FAIL=0
+          for key in $(jq -r '.assets | keys[]' releases.json); do
+            jq -e --arg k "$key" '.assets[$k] | has("name") and has("url") and has("size") and has("sha256")' \
+              releases.json > /dev/null || { echo "ERROR: asset '$key' missing fields"; FAIL=1; }
+            URL=$(jq -r --arg k "$key" '.assets[$k].url' releases.json)
+            NAME=$(jq -r --arg k "$key" '.assets[$k].name' releases.json)
+
+            # Catches a filename drifting apart between PLATFORMS and the files:
+            # list in Create Release — the two are maintained separately, and a
+            # mismatch would render a card pointing at a 404.
+            case "$URL" in
+              "${EXPECTED_PREFIX}${NAME}") ;;
+              *) echo "ERROR: asset '$key' URL is not this release's '$NAME': $URL"; FAIL=1 ;;
+            esac
+
+            # WHY only on a real release: a rehearsal's tag is deliberately not a
+            # real ref, so there is no Release to resolve against. On a tag the
+            # Release already exists (this job needs: release), so the download
+            # users will click can be proven to work before the page ships.
+            if [ "$IS_RELEASE" = "true" ]; then
+              CODE=$(curl -sIL -o /dev/null -w '%{http_code}' "$URL")
+              if [ "$CODE" = "200" ]; then
+                echo "ok $key -> $URL"
+              else
+                echo "ERROR: asset '$key' not downloadable (HTTP $CODE): $URL"
+                FAIL=1
+              fi
+            fi
+          done
+          exit $FAIL
+
+      - name: Rehearsal summary
+        if: needs.version.outputs.is_release != 'true'
+        run: |
+          {
+            echo "### gh-pages rehearsal — nothing pushed"
+            echo
+            echo 'Generated and validated `releases.json`:'
+            echo '```json'
+            cat releases.json
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"
+
       - name: Commit and push to gh-pages
+        if: needs.version.outputs.is_release == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"

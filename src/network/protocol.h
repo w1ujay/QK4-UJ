@@ -4,7 +4,15 @@
 #include <QObject>
 #include <QByteArray>
 
-// K4 Protocol Constants
+// K4 Protocol Constants.
+//
+// WHY the binary framing exists:
+// Every byte the K4/0 server emits — CAT ASCII, Opus audio, PAN spectrum, MiniPAN — is wrapped in
+// a fixed frame so a single TCP read can contain any mix of payload types. Layout:
+//   [4-byte START_MARKER][4-byte big-endian payload length][payload...][4-byte END_MARKER]
+// Total header/trailer is 12 bytes. The payload's first byte is the PayloadType enum below; the
+// parser (`Protocol::parse`) re-assembles frames across TCP read boundaries. The markers are
+// mirror-imaged (FE FD FC FB vs FB FC FD FE) so a corrupted stream cannot confuse one for the other.
 namespace K4Protocol {
 
 // Packet markers (inline to avoid ODR violations - single definition across all TUs)
@@ -24,7 +32,7 @@ constexpr quint16 DEFAULT_PORT = 9205; // Unencrypted (SHA-384 auth)
 constexpr quint16 TLS_PORT = 9204;     // TLS/PSK encrypted
 
 // Timing constants
-constexpr int PING_INTERVAL_MS = 1000;       // 1 second (matches SIRC update interval)
+constexpr int PING_INTERVAL_MS = 1000;       // 1 second
 constexpr int CONNECTION_TIMEOUT_MS = 10000; // 10 seconds
 constexpr int AUTH_TIMEOUT_MS = 5000;        // 5 seconds for auth response
 
@@ -90,8 +98,9 @@ public:
     // Parse incoming raw data, extracts complete K4 packets
     void parse(const QByteArray &data);
 
-    // Build a K4 packet from payload
-    static QByteArray buildPacket(const QByteArray &payload);
+    // Discard any partly received packet. Called at every connection boundary: bytes left over from
+    // one session must never be joined to the next session's.
+    void reset() { m_buffer.clear(); }
 
     // Build a CAT command packet
     static QByteArray buildCATPacket(const QString &command);
@@ -101,20 +110,25 @@ public:
 
     // Build TX audio packet (Opus encoded data with K4 audio header)
     // sequence: 0-255, wrapping counter for packet ordering
-    // encodeMode: 0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float (default)
-    static QByteArray buildAudioPacket(const QByteArray &audioData, quint8 sequence, quint8 encodeMode = 0x03);
+    // encodeMode: 0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode)
+    static QByteArray buildAudioPacket(const QByteArray &audioData, quint8 sequence, quint8 encodeMode = 0x03,
+                                       quint16 frameSamples = 240);
 
 signals:
     void audioDataReady(const QByteArray &opusData);
+    void audioSequenceReceived(quint8 seq);
     // receiver: 0 = Main (VFO A), 1 = Sub (VFO B)
-    void spectrumDataReady(int receiver, const QByteArray &spectrumData, qint64 centerFreq, qint32 sampleRate,
-                           float noiseFloor);
-    void miniSpectrumDataReady(int receiver, const QByteArray &spectrumData);
+    void spectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount, qint64 centerFreq,
+                           qint32 sampleRate, float noiseFloor);
+    void miniSpectrumDataReady(int receiver, const QByteArray &payload, int binsOffset, int binCount);
     void catResponseReceived(const QString &response);
     void packetReceived(quint8 type, const QByteArray &payload);
 
 private:
     void processPacket(const QByteArray &packet);
+
+    // Build a K4 packet from payload (used internally by buildCATPacket/buildAudioPacket)
+    static QByteArray buildPacket(const QByteArray &payload);
 
     QByteArray m_buffer;
 };

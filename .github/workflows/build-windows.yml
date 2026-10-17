@@ -1,90 +1,57 @@
 name: Build Windows
 
+run-name: Build Windows ${{ github.ref_name }}
+
+# Fork-only (QK4-UJ) on-demand Windows build.
+#
+# WHY this file exists: the fork's default branch still carries an older
+# build-windows.yml, so the Actions UI lists "Build Windows" from there and then
+# runs this same path from whichever branch is selected. Unlike upstream's
+# build.yml it builds Windows only, so it needs no macOS signing secrets and a
+# fork run stays green. The build steps themselves live in _build-windows.yml.
+
 on:
   workflow_dispatch:
-  push:
-    branches: [main]
+    inputs:
+      version_suffix:
+        description: 'Optional suffix appended to "<branch>-<sha>" (e.g. "rc1"); leave blank for none.'
+        required: false
+        default: ''
 
-env:
-  CMAKE_BUILD_PARALLEL_LEVEL: 4
+permissions:
+  contents: read
+
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build:
-    runs-on: windows-latest
+  version:
+    name: Derive version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0
 
-      - name: Cache vcpkg packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            C:\vcpkg\installed
-            C:\vcpkg\packages
-          key: vcpkg-win-build-${{ hashFiles('.github/workflows/build-windows.yml') }}
-          restore-keys: |
-            vcpkg-win-build-
-
-      - name: Install Qt
-        uses: jurplel/install-qt-action@v4
-        with:
-          version: '6.7.*'
-          host: 'windows'
-          target: 'desktop'
-          arch: 'win64_msvc2019_64'
-          modules: 'qtmultimedia qtshadertools qtserialport'
-          cache: true
-
-      - name: Setup vcpkg
+      - name: Derive version
+        id: derive
+        env:
+          SUFFIX: ${{ inputs.version_suffix }}
         run: |
-          cd C:\vcpkg
-          .\bootstrap-vcpkg.bat
+          # Slashes are legal in ref names but not in filenames.
+          BRANCH=$(echo "${GITHUB_REF_NAME}" | tr '/' '-')
+          SHORT_SHA=$(git rev-parse --short HEAD)
+          VERSION="${BRANCH}-${SHORT_SHA}"
+          if [ -n "$SUFFIX" ]; then
+            VERSION="${VERSION}-${SUFFIX}"
+          fi
+          echo "version=$VERSION" >> $GITHUB_OUTPUT
+          echo "Derived version: $VERSION"
 
-      - name: Install dependencies
-        run: |
-          vcpkg install opus:x64-windows hidapi:x64-windows openssl:x64-windows
-
-      - name: Setup MSVC environment
-        uses: ilammy/msvc-dev-cmd@v1
-        with:
-          arch: x64
-
-      - name: Setup sccache
-        uses: mozilla-actions/sccache-action@v0.0.9
-
-      - name: Configure CMake
-        run: |
-          cmake -B build -G Ninja -DCMAKE_TOOLCHAIN_FILE=C:/vcpkg/scripts/buildsystems/vcpkg.cmake -DCMAKE_BUILD_TYPE=Release -DCMAKE_C_COMPILER_LAUNCHER=sccache -DCMAKE_CXX_COMPILER_LAUNCHER=sccache
-
-      - name: Build
-        run: cmake --build build
-
-      - name: Verify executable
-        run: |
-          if (Test-Path build/QK4.exe) {
-            Write-Host "Build successful"
-            exit 0
-          } else {
-            Write-Host "Build failed - executable not found"
-            exit 1
-          }
-
-      - name: Bundle dependencies
-        run: |
-          mkdir QK4-windows
-          copy build\QK4.exe QK4-windows\
-
-          # Use windeployqt to bundle Qt DLLs
-          windeployqt --release --no-translations QK4-windows\QK4.exe
-
-          # Copy vcpkg DLLs (opus, hidapi, openssl)
-          copy C:\vcpkg\installed\x64-windows\bin\opus.dll QK4-windows\
-          copy C:\vcpkg\installed\x64-windows\bin\hidapi.dll QK4-windows\
-          copy C:\vcpkg\installed\x64-windows\bin\libssl-3-x64.dll QK4-windows\
-          copy C:\vcpkg\installed\x64-windows\bin\libcrypto-3-x64.dll QK4-windows\
-
-      - name: Upload build artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: QK4-windows
-          path: QK4-windows/
-          retention-days: 7
+  windows:
+    needs: version
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}

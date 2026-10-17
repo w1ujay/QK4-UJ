@@ -1,9 +1,20 @@
 #include "menumodel.h"
+#include <QSet>
 #include <QUrl>
-#include <QDebug>
 #include <algorithm>
 
 MenuModel::MenuModel(QObject *parent) : QObject(parent) {}
+
+QString MenuModel::resolvedName(const MenuItem &item) const {
+    static const QString kPlaceholder = QStringLiteral("<n>");
+    if (!item.name.contains(kPlaceholder)) {
+        return item.name;
+    }
+    auto it = m_items.constFind(XVTR_BAND_SELECT_ID);
+    const int band = (it != m_items.constEnd()) ? it->currentValue : 1;
+    QString resolved = item.name;
+    return resolved.replace(kPlaceholder, QString::number(band));
+}
 
 void MenuModel::addMenuItem(const MenuItem &item) {
     m_items[item.id] = item;
@@ -119,6 +130,10 @@ QStringList MenuModel::getCategories() const {
 
 void MenuModel::clear() {
     m_items.clear();
+    // WHY this has to be announced: getMenuItem/getAllItems/filterByName hand out raw MenuItem *
+    // into m_items, and the menu overlay keeps one per row for the lifetime of the overlay. A
+    // silent clear left those rows pointing at freed memory, and the next ME update after a
+    // reconnect dereferenced them.
     emit modelCleared();
 }
 
@@ -186,7 +201,6 @@ bool MenuModel::parseMEDF(const QString &medfLine) {
         item.options.append(urlDecode(parts[i]));
     }
 
-    // Add to model
     addMenuItem(item);
 
     return true;

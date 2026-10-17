@@ -1,11 +1,30 @@
 #include "kpa1500client.h"
-#include <QDebug>
+#include "kpa1500antennas.h"
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(netKpa, "net.kpa")
+
+// KPA1500 band number to label (same numbering as K4 BN command)
+static QString bandNumberToLabel(const QString &bn) {
+    static const QMap<int, QString> map = {
+        {0, "160m"}, {1, "80m"}, {2, "60m"}, {3, "40m"}, {4, "30m"}, {5, "20m"},
+        {6, "17m"},  {7, "15m"}, {8, "12m"}, {9, "10m"}, {10, "6m"},
+    };
+    bool ok;
+    int num = bn.toInt(&ok);
+    if (ok && map.contains(num))
+        return map.value(num);
+    return bn; // fallback to raw value
+}
 
 // Poll commands - based on KPA1500 Programming Reference
 // ^AI = ATU Inline state, ^AN = Antenna selection
-// Note: ^FS is Fan Speed (not fault status), removed from polling
+// Note: ^FS is Fan Speed (not fault status), removed from polling.
+// ^VM1 (PA voltage) and ^VM2 (PA current) were removed — nothing in QK4
+// displays them today; if/when a UI consumer is added, restore them here
+// alongside the parser branches and re-introduce paVoltage/paCurrent state.
 const QString KPA1500Client::POLL_COMMANDS =
-    "^BN;^WS;^TM;^VI;^FC;^OS;^FL;^AI;^AN;^IP;^SN;^PC;^VM1;^VM2;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
+    "^BN;^WS;^TM;^RVM;^FC;^OS;^FL;^AI;^AM;^AN;^IP;^SN;^PC;^VM3;^VM5;^LR;^CR;^PWF;^PWR;^PWD;";
 
 KPA1500Client::KPA1500Client(QObject *parent)
     : QObject(parent), m_socket(new QTcpSocket(this)), m_pollTimer(new QTimer(this)), m_port(1500),
@@ -34,6 +53,7 @@ void KPA1500Client::connectToHost(const QString &host, quint16 port) {
     m_host = host;
     m_port = port;
     m_receiveBuffer.clear();
+    resetAntennaState();
 
     setState(Connecting);
     m_socket->connectToHost(host, port);
@@ -69,6 +89,30 @@ void KPA1500Client::sendCommand(const QString &command) {
     m_socket->flush();
 }
 
+void KPA1500Client::selectNextAntenna() {
+    sendCommand(QStringLiteral("^AN+;^AN;"));
+}
+
+int KPA1500Client::antennaConnector(int antenna) const {
+    // WHY fixed for 1 and 2: the V3 reference requires antenna 1 on ANT1 and antenna 2 on ANT2, so
+    // they need no map and read correctly before it arrives.
+    if (antenna == 1 || antenna == 2)
+        return antenna;
+    if (antenna < 1 || antenna > m_enableMap.size())
+        return 0;
+    return m_enableMap[antenna - 1];
+}
+
+void KPA1500Client::requestEnableMap() {
+    if (m_bandNumber >= 0)
+        sendCommand(QStringLiteral("^AE%1ALL;").arg(m_bandNumber, 2, 10, QLatin1Char('0')));
+}
+
+void KPA1500Client::resetAntennaState() {
+    m_bandNumber = -1;
+    m_enableMap.clear();
+}
+
 void KPA1500Client::startPolling(int intervalMs) {
     if (m_state == Connected && intervalMs > 0) {
         m_pollTimer->start(intervalMs);
@@ -89,21 +133,35 @@ void KPA1500Client::setState(ConnectionState state) {
 }
 
 void KPA1500Client::onSocketConnected() {
-    qDebug() << "KPA1500Client: Connected to" << m_host << ":" << m_port;
+    // WHY: control commands are small writes; without TCP_NODELAY they can be coalesced into
+    // 40 ms Nagle/delayed-ACK windows. KeepAlive handles NAT timeout on long-running sessions.
+    m_socket->setSocketOption(QAbstractSocket::LowDelayOption, 1);
+    m_socket->setSocketOption(QAbstractSocket::KeepAliveOption, 1);
+    qCDebug(netKpa) << "KPA1500Client: Connected to" << m_host << ":" << m_port;
     setState(Connected);
     emit connected();
 }
 
 void KPA1500Client::onSocketDisconnected() {
-    qDebug() << "KPA1500Client: Disconnected";
+    qCDebug(netKpa) << "KPA1500Client: Disconnected";
     stopPolling();
     setState(Disconnected);
     emit disconnected();
 }
 
 void KPA1500Client::onReadyRead() {
+    // WHY: cap the receive buffer per CONVENTIONS.md Rule 5. KPA1500 responses are short and
+    // always ';'-terminated; 64KB is generous headroom for split reads. A malformed response
+    // that never terminates would otherwise grow this unbounded.
+    static constexpr int kMaxBufferSize = 64 * 1024;
     QByteArray data = m_socket->readAll();
     m_receiveBuffer.append(QString::fromLatin1(data));
+    if (m_receiveBuffer.size() > kMaxBufferSize) {
+        qCWarning(netKpa) << "Buffer overflow (" << m_receiveBuffer.size() << "bytes) — disconnecting";
+        m_receiveBuffer.clear();
+        disconnectFromHost();
+        return;
+    }
 
     // Parse complete responses (terminated by ';')
     parseResponse(m_receiveBuffer);
@@ -112,7 +170,7 @@ void KPA1500Client::onReadyRead() {
 void KPA1500Client::onSocketError(QAbstractSocket::SocketError error) {
     Q_UNUSED(error)
     QString errorString = m_socket->errorString();
-    qWarning() << "KPA1500Client: Socket error:" << errorString;
+    qCWarning(netKpa) << "KPA1500Client: Socket error:" << errorString;
     emit errorOccurred(errorString);
 
     stopPolling();
@@ -154,21 +212,40 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
     }
 
     // Parse based on command prefix
-    // ^BN - Band Name
+    // ^BN - Band Number (convert to label e.g. "20m")
     if (cmd.startsWith("BN")) {
-        QString band = cmd.mid(2);
-        if (m_bandName != band) {
-            m_bandName = band;
-            emit bandChanged(band);
+        QString band = bandNumberToLabel(cmd.mid(2));
+        m_bandName = band;
+        bool ok;
+        const int number = cmd.mid(2).toInt(&ok);
+        if (ok && number != m_bandNumber) {
+            // Enabled antennas are per band, so a new band needs its own map.
+            m_bandNumber = number;
+            m_enableMap.clear();
+            emit bandNumberChanged(number);
+            requestEnableMap();
+        }
+    }
+    // ^AEbbALL - antenna enable map for band bb: 32 chars, D / 1 / 2 per antenna 1-32
+    else if (cmd.startsWith("AE") && cmd.mid(4, 3) == QLatin1String("ALL")) {
+        bool ok;
+        const int band = cmd.mid(2, 2).toInt(&ok);
+        const QVector<int> map = Kpa1500Antennas::parseEnableMap(cmd.mid(7));
+        if (ok && band == m_bandNumber && !map.isEmpty()) {
+            const int before = antennaConnector(m_antenna);
+            m_enableMap = map;
+            const int after = antennaConnector(m_antenna);
+            if (after != before)
+                emit antennaConnectorChanged(after);
         }
     }
     // ^SN - Serial Number
     else if (cmd.startsWith("SN")) {
         m_serialNumber = cmd.mid(2);
     }
-    // ^VI - Firmware Version Info
-    else if (cmd.startsWith("VI")) {
-        m_firmwareVersion = cmd.mid(2);
+    // ^RVM - Firmware Revision (format: ^RVMnn.nn;)
+    else if (cmd.startsWith("RVM")) {
+        m_firmwareVersion = cmd.mid(3);
     }
     // ^OS - Operate/Standby Mode (0=Standby, 1=Operate)
     else if (cmd.startsWith("OS")) {
@@ -245,48 +322,36 @@ void KPA1500Client::parseSingleResponse(const QString &response) {
             emit powerChanged(m_forwardPower, m_reflectedPower, m_drivePower);
         }
     }
-    // ^VM1 - PA Voltage
-    else if (cmd.startsWith("VM1")) {
-        bool ok;
-        double voltage = cmd.mid(3).toDouble(&ok);
-        if (ok) {
-            // VM1 reports in millivolts, convert to volts
-            voltage = voltage / 1000.0;
-            if (m_paVoltage != voltage) {
-                m_paVoltage = voltage;
-                emit paVoltageChanged(voltage);
-            }
-        }
-    }
-    // ^VM2 - PA Current
-    else if (cmd.startsWith("VM2")) {
-        bool ok;
-        double current = cmd.mid(3).toDouble(&ok);
-        if (ok) {
-            // VM2 reports in milliamps, convert to amps
-            current = current / 1000.0;
-            if (m_paCurrent != current) {
-                m_paCurrent = current;
-                emit paCurrentChanged(current);
-            }
-        }
-    }
     // ^AN - Antenna Select (returns ^ANx; where x=1-9, or ^ANxx; for 10-32)
     else if (cmd.startsWith("AN")) {
         bool ok;
         int antenna = cmd.mid(2).toInt(&ok);
-        if (ok && antenna >= 1 && antenna <= 32 && m_antenna != antenna) {
+        if (ok && antenna >= 1 && antenna <= Kpa1500Antennas::kMaxAntenna && m_antenna != antenna) {
             m_antenna = antenna;
             emit antennaChanged(antenna);
+            // A sub-antenna the cached map doesn't route (map not read yet, or the operator changed
+            // the amp's configuration) - read the map again rather than show a wrong connector.
+            if (antennaConnector(antenna) == 0)
+                requestEnableMap();
         }
     }
-    // ^AI - ATU Inline (returns ^AI1; for inline, ^AI0; for bypassed)
+    // ^AI - ATU Inline relay state (^AI1; = relays inline, ^AI0; = relays bypassed)
     else if (cmd.startsWith("AI")) {
         if (cmd.length() >= 3) {
             bool inline_ = (cmd[2] == '1');
             if (m_atuInline != inline_) {
                 m_atuInline = inline_;
                 emit atuInlineChanged(inline_);
+            }
+        }
+    }
+    // ^AM - ATU Mode (^AMI; = inline/enabled, ^AMB; = bypassed/disabled)
+    else if (cmd.startsWith("AM")) {
+        if (cmd.length() >= 3) {
+            bool modeInline = (cmd[2] == 'I');
+            if (m_atuModeInline != modeInline) {
+                m_atuModeInline = modeInline;
+                emit atuModeChanged(modeInline);
             }
         }
     }

@@ -5,7 +5,14 @@
 #include <QTcpSocket>
 #include <QTimer>
 #include <QMap>
+#include <QVector>
 
+/**
+ * @brief TCP client for a KPA1500 linear amplifier's remote head server. Polls the amp with
+ *        `POLL_COMMANDS` on a user-configurable interval, parses the pipelined responses, and
+ *        exposes cached state (power, SWR, voltage/current, temperature, band, ATU mode +
+ *        inline state, operating state, faults, firmware). Drives Kpa1500MiniPanel + Kpa1500Page.
+ */
 class KPA1500Client : public QObject {
     Q_OBJECT
 
@@ -30,24 +37,31 @@ public:
     ConnectionState connectionState() const;
 
     void sendCommand(const QString &command);
+
+    // Step to the next antenna enabled on the current band (^AN+;), exactly like the amp's own
+    // ANTENNA button, then read back the result. Never enables or configures an antenna.
+    void selectNextAntenna();
     void startPolling(int intervalMs);
     void stopPolling();
 
     // State getters
     QString bandName() const { return m_bandName; }
+    int bandNumber() const { return m_bandNumber; } // ^BN: 0-10, -1 until known
     double forwardPower() const { return m_forwardPower; }
     double reflectedPower() const { return m_reflectedPower; }
     double drivePower() const { return m_drivePower; }
     double swr() const { return m_swr; }
-    double paVoltage() const { return m_paVoltage; }
-    double paCurrent() const { return m_paCurrent; }
     double paTemperature() const { return m_paTemperature; }
     OperatingState operatingState() const { return m_operatingState; }
     FaultStatus faultStatus() const { return m_faultStatus; }
     QString faultCode() const { return m_faultCode; }
     bool atuPresent() const { return m_atuPresent; }
-    bool atuInline() const { return m_atuInline; }
+    bool atuModeInline() const { return m_atuModeInline; } // ^AM: ATU mode (enabled/disabled)
+    bool atuInline() const { return m_atuInline; }         // ^AI: ATU relay state (in-circuit/bypassed)
     int antenna() const { return m_antenna; }
+    // Connector (1 = ANT1, 2 = ANT2) an antenna is routed through on the current band, from the
+    // amp's ^AEbbALL enable map. 0 when disabled or the map has not been read yet.
+    int antennaConnector(int antenna) const;
     QString serialNumber() const { return m_serialNumber; }
     QString firmwareVersion() const { return m_firmwareVersion; }
 
@@ -58,16 +72,16 @@ signals:
     void errorOccurred(const QString &error);
 
     // Data update signals
-    void bandChanged(const QString &band);
     void powerChanged(double forward, double reflected, double drive);
     void swrChanged(double swr);
-    void paVoltageChanged(double voltage);
-    void paCurrentChanged(double current);
     void paTemperatureChanged(double tempC);
     void operatingStateChanged(OperatingState state);
     void faultStatusChanged(FaultStatus status, const QString &faultCode);
-    void atuInlineChanged(bool inline_);
+    void atuModeChanged(bool inline_);   // ^AM: ATU mode toggled
+    void atuInlineChanged(bool inline_); // ^AI: ATU relay state changed
     void antennaChanged(int antenna);
+    void antennaConnectorChanged(int connector); // connector of the active antenna became known/changed
+    void bandNumberChanged(int bandNumber);
 
 private slots:
     void onSocketConnected();
@@ -80,6 +94,8 @@ private:
     void setState(ConnectionState state);
     void parseResponse(const QString &response);
     void parseSingleResponse(const QString &response);
+    void requestEnableMap();
+    void resetAntennaState();
 
     QTcpSocket *m_socket;
     QTimer *m_pollTimer;
@@ -94,18 +110,19 @@ private:
 
     // Cached state values
     QString m_bandName;
+    int m_bandNumber = -1;
+    QVector<int> m_enableMap; // connector per antenna 1-32 for m_bandNumber; empty until read
     double m_forwardPower = 0.0;
     double m_reflectedPower = 0.0;
     double m_drivePower = 0.0;
     double m_swr = 1.0;
-    double m_paVoltage = 0.0;
-    double m_paCurrent = 0.0;
     double m_paTemperature = 0.0;
     OperatingState m_operatingState = StateUnknown;
     FaultStatus m_faultStatus = FaultNone;
     QString m_faultCode;
     bool m_atuPresent = false;
-    bool m_atuInline = false;
+    bool m_atuModeInline = false; // ^AM: ATU mode (I=inline/enabled, B=bypassed/disabled)
+    bool m_atuInline = false;     // ^AI: ATU relay state (1=relays inline, 0=relays bypassed)
     int m_antenna = 1;
     QString m_serialNumber;
     QString m_firmwareVersion;

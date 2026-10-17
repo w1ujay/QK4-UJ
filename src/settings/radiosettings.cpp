@@ -1,4 +1,34 @@
 #include "radiosettings.h"
+#include "audio/rxoutputstage.h"
+#include "utils/windowfit.h"
+#include <algorithm>
+#include <cmath>
+
+// Starting point for the TCI transmit level: 25% on the cubic curve is 0.0156x, measured on a K4 as
+// keeping ALC at or below 5 on an injected signal, WITH WSJT-X'S OWN OUTPUT AT 80%.
+//
+// That pairing is the whole measurement - 25% on its own means nothing, because there are two gain
+// stages in series and the client owns the first one. 80% is recorded because it is a common
+// setting, not a required one; an operator running their client hotter or quieter moves this to
+// suit, which is why the control is a slider and why the help text gives them the ALC criterion
+// instead of a number to copy.
+//
+// WHY QK4 NEEDS ITS OWN CONTROL AT ALL, when WSJT-X already has an output slider: the client's
+// slider is not QK4's to spend. The same WSJT-X installation is commonly used against other
+// programs and other radios, where its output level is already set to suit them. Asking the
+// operator to retune it for QK4 would break those setups every time they switch. This control is
+// the one that belongs to this path, so the client's level can stay where the rest of their
+// station needs it.
+//
+// WHY THIS DEFAULT CARRIES MORE WEIGHT THAN MIC GAIN'S: the K4 has a settable line-in level for its
+// soundcard input and another for the rear 3.5 mm jack, but NONE for LAN audio. There is no
+// radio-side trim on this path, so this gain and the client's own output level are the only two
+// controls in the chain. That also means a bad default cannot be absorbed at the radio the way a
+// hot line input can.
+//
+// It coincides with the Mic Gain default by measurement, not derivation - the two are tuned against
+// different sources and different meters, and either may move without the other.
+static constexpr int kTciTxGainDefault = 25;
 
 static const QByteArray obfuscationKey = "K4RemoteObfuscation";
 
@@ -26,7 +56,16 @@ RadioSettings *RadioSettings::instance() {
 }
 
 RadioSettings::RadioSettings(QObject *parent)
-    : QObject(parent), m_lastSelectedIndex(-1), m_kpodEnabled(false), m_settings("QK4", "QK4") {
+    : QObject(parent), m_lastSelectedIndex(-1), m_kpodEnabled(false),
+      // Same store as QSettings("QK4", "QK4") - on every platform the two resolve to the identical
+      // file - but named through defaultFormat() so it can be REDIRECTED.
+      //
+      // WHY THAT MATTERS: Qt's two-argument QSettings(org, app) constructor ignores
+      // QSettings::setDefaultFormat() and always uses NativeFormat, which on macOS is the
+      // CFPreferences domain. A test therefore had NO way to point this singleton anywhere else,
+      // and one that tried ran against a developer's real preferences and deleted every saved
+      // radio. Spelling the format out is the whole fix: setDefaultFormat() now reaches this.
+      m_settings(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("QK4"), QStringLiteral("QK4")) {
     load();
 }
 
@@ -34,8 +73,48 @@ QVector<RadioEntry> RadioSettings::radios() const {
     return m_radios;
 }
 
+int RadioSettings::connectAtStartupIndex() const {
+    for (int i = 0; i < m_radios.size(); ++i) {
+        if (m_radios[i].connectAtStartup) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+int RadioSettings::indexOfRadioNamed(const QString &name) const {
+    if (name.isEmpty()) {
+        return -1;
+    }
+    for (int i = 0; i < m_radios.size(); ++i) {
+        if (m_radios[i].name.compare(name, Qt::CaseInsensitive) == 0) {
+            return i;
+        }
+    }
+    return -1;
+}
+
+void RadioSettings::setConnectAtStartupRadio(int index) {
+    // Clearing every other entry is the whole point: the flag means "the radio QK4 opens with",
+    // which only has meaning for one. Enforcing it here rather than in the dialog covers a
+    // settings file edited by hand or restored from a backup.
+    bool changed = false;
+    for (int i = 0; i < m_radios.size(); ++i) {
+        const bool wanted = (i == index);
+        if (m_radios[i].connectAtStartup != wanted) {
+            m_radios[i].connectAtStartup = wanted;
+            changed = true;
+        }
+    }
+    if (changed) {
+        save();
+        emit radiosChanged();
+    }
+}
+
 void RadioSettings::addRadio(const RadioEntry &radio) {
     m_radios.append(radio);
+    sortRadios();
     save();
     emit radiosChanged();
 }
@@ -54,6 +133,7 @@ void RadioSettings::removeRadio(int index) {
 void RadioSettings::updateRadio(int index, const RadioEntry &radio) {
     if (index >= 0 && index < m_radios.size()) {
         m_radios[index] = radio;
+        sortRadios();
         save();
         emit radiosChanged();
     }
@@ -132,18 +212,6 @@ void RadioSettings::setKpa1500PollInterval(int intervalMs) {
     }
 }
 
-QPoint RadioSettings::kpa1500WindowPosition() const {
-    int x = m_settings.value("kpa1500/windowX", 0).toInt();
-    int y = m_settings.value("kpa1500/windowY", 0).toInt();
-    return QPoint(x, y);
-}
-
-void RadioSettings::setKpa1500WindowPosition(const QPoint &pos) {
-    m_settings.setValue("kpa1500/windowX", pos.x());
-    m_settings.setValue("kpa1500/windowY", pos.y());
-    m_settings.sync();
-}
-
 int RadioSettings::volume() const {
     return m_settings.value("audio/volume", 45).toInt();
 }
@@ -162,6 +230,306 @@ void RadioSettings::setSubVolume(int value) {
     value = qBound(0, value, 100);
     m_settings.setValue("audio/subVolume", value);
     m_settings.sync();
+}
+
+int RadioSettings::textDecodeFontSize(bool subRx) const {
+    // Default 9 px matches K4Styles::Dimensions::FontSizeNormal — keep first-launch look.
+    const int defaultSize = 9;
+    int value = m_settings.value(subRx ? "textDecode/subFontSize" : "textDecode/mainFontSize", defaultSize).toInt();
+    return qBound(7, value, 24);
+}
+
+void RadioSettings::setTextDecodeFontSize(bool subRx, int sizePx) {
+    sizePx = qBound(7, sizePx, 24);
+    m_settings.setValue(subRx ? "textDecode/subFontSize" : "textDecode/mainFontSize", sizePx);
+    m_settings.sync();
+}
+
+int RadioSettings::iaruRegion() const {
+    // 1/2/3 = IARU regions, 4 = US (FCC). Default Region 2 (Americas).
+    return qBound(1, m_settings.value("station/iaruRegion", 2).toInt(), 4);
+}
+
+void RadioSettings::setIaruRegion(int region) {
+    region = qBound(1, region, 4);
+    if (iaruRegion() != region) {
+        m_settings.setValue("station/iaruRegion", region);
+        m_settings.sync();
+        emit iaruRegionChanged(region);
+    }
+}
+
+QString RadioSettings::callSign() const {
+    return m_settings.value("station/callSign", "").toString();
+}
+
+void RadioSettings::setCallSign(const QString &callSign) {
+    m_settings.setValue("station/callSign", callSign.trimmed().toUpper());
+    m_settings.sync();
+}
+
+QString RadioSettings::gridSquare() const {
+    return m_settings.value("station/gridSquare", "").toString();
+}
+
+void RadioSettings::setGridSquare(const QString &grid) {
+    m_settings.setValue("station/gridSquare", grid.trimmed());
+    m_settings.sync();
+}
+
+QString RadioSettings::operatorName() const {
+    return m_settings.value("station/operatorName", "").toString();
+}
+
+void RadioSettings::setOperatorName(const QString &name) {
+    m_settings.setValue("station/operatorName", name.trimmed());
+    m_settings.sync();
+}
+
+QString RadioSettings::qth() const {
+    return m_settings.value("station/qth", "").toString();
+}
+
+void RadioSettings::setQth(const QString &qth) {
+    m_settings.setValue("station/qth", qth.trimmed());
+    m_settings.sync();
+}
+
+bool RadioSettings::bandPlanOverlayEnabled() const {
+    return m_settings.value("station/bandPlanOverlay", false).toBool();
+}
+
+void RadioSettings::setBandPlanOverlayEnabled(bool enabled) {
+    if (bandPlanOverlayEnabled() != enabled) {
+        m_settings.setValue("station/bandPlanOverlay", enabled);
+        m_settings.sync();
+        emit bandPlanOverlayEnabledChanged(enabled);
+    }
+}
+
+// ============== Audio Master Enable ==============
+
+bool RadioSettings::audioEnabled() const {
+    return m_audioEnabled;
+}
+
+void RadioSettings::setAudioEnabled(bool enabled) {
+    if (m_audioEnabled != enabled) {
+        m_audioEnabled = enabled;
+        save();
+        emit audioEnabledChanged(enabled);
+    }
+}
+
+// ============== RFKit Amplifier Settings ==============
+
+QString RadioSettings::rfkitHost() const {
+    return m_rfkitHost;
+}
+
+void RadioSettings::setRfkitHost(const QString &host) {
+    if (m_rfkitHost != host) {
+        m_rfkitHost = host;
+        save();
+        emit rfkitSettingsChanged();
+    }
+}
+
+quint16 RadioSettings::rfkitPort() const {
+    return m_rfkitPort;
+}
+
+void RadioSettings::setRfkitPort(quint16 port) {
+    if (m_rfkitPort != port) {
+        m_rfkitPort = port;
+        save();
+        emit rfkitSettingsChanged();
+    }
+}
+
+bool RadioSettings::rfkitEnabled() const {
+    return m_rfkitEnabled;
+}
+
+void RadioSettings::setRfkitEnabled(bool enabled) {
+    if (m_rfkitEnabled != enabled) {
+        m_rfkitEnabled = enabled;
+        save();
+        emit rfkitEnabledChanged(enabled);
+    }
+}
+
+int RadioSettings::rfkitPollInterval() const {
+    return m_rfkitPollInterval;
+}
+
+void RadioSettings::setRfkitPollInterval(int intervalMs) {
+    intervalMs = qBound(100, intervalMs, 10000);
+    if (m_rfkitPollInterval != intervalMs) {
+        m_rfkitPollInterval = intervalMs;
+        save();
+        emit rfkitPollIntervalChanged(intervalMs);
+    }
+}
+
+QPoint RadioSettings::rfkitWindowPosition() const {
+    int x = m_settings.value("rfkit/windowX", 0).toInt();
+    int y = m_settings.value("rfkit/windowY", 0).toInt();
+    return QPoint(x, y);
+}
+
+void RadioSettings::setRfkitWindowPosition(const QPoint &pos) {
+    m_settings.setValue("rfkit/windowX", pos.x());
+    m_settings.setValue("rfkit/windowY", pos.y());
+}
+
+bool RadioSettings::rfkitLowPowerEnabled() const {
+    return m_rfkitLowPowerEnabled;
+}
+
+void RadioSettings::setRfkitLowPowerEnabled(bool enabled) {
+    if (m_rfkitLowPowerEnabled != enabled) {
+        m_rfkitLowPowerEnabled = enabled;
+        save();
+        emit rfkitLowPowerChanged();
+    }
+}
+
+double RadioSettings::rfkitMaxDrivePower() const {
+    return m_rfkitMaxDrivePower;
+}
+
+void RadioSettings::setRfkitMaxDrivePower(double watts) {
+    watts = qBound(0.1, watts, 100.0);
+    if (!qFuzzyCompare(m_rfkitMaxDrivePower, watts)) {
+        m_rfkitMaxDrivePower = watts;
+        save();
+        emit rfkitLowPowerChanged();
+    }
+}
+
+bool RadioSettings::rfkitTempFahrenheit() const {
+    return m_rfkitTempFahrenheit;
+}
+
+void RadioSettings::setRfkitTempFahrenheit(bool fahrenheit) {
+    if (m_rfkitTempFahrenheit != fahrenheit) {
+        m_rfkitTempFahrenheit = fahrenheit;
+        save();
+        emit rfkitTempUnitChanged(fahrenheit);
+    }
+}
+
+// ============== Mini View Window Settings ==============
+
+QPoint RadioSettings::miniViewWindowPosition() const {
+    int x = m_settings.value("miniview/windowX", 0).toInt();
+    int y = m_settings.value("miniview/windowY", 0).toInt();
+    return QPoint(x, y);
+}
+
+void RadioSettings::setMiniViewWindowPosition(const QPoint &pos) {
+    m_settings.setValue("miniview/windowX", pos.x());
+    m_settings.setValue("miniview/windowY", pos.y());
+}
+
+bool RadioSettings::miniViewShowBand() const {
+    return m_settings.value("miniview/showBand", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowBand(bool show) {
+    m_settings.setValue("miniview/showBand", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowMode() const {
+    return m_settings.value("miniview/showMode", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowMode(bool show) {
+    m_settings.setValue("miniview/showMode", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowSpots() const {
+    return m_settings.value("miniview/showSpots", true).toBool();
+}
+
+void RadioSettings::setMiniViewShowSpots(bool show) {
+    m_settings.setValue("miniview/showSpots", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::miniViewShowPanadapter() const {
+    return m_settings.value("miniview/showPanadapter", false).toBool();
+}
+
+void RadioSettings::setMiniViewShowPanadapter(bool show) {
+    m_settings.setValue("miniview/showPanadapter", show);
+    emit miniViewSettingsChanged();
+}
+
+bool RadioSettings::temperatureInFahrenheit() const {
+    return m_settings.value("ui/temperatureFahrenheit", false).toBool();
+}
+
+void RadioSettings::setTemperatureInFahrenheit(bool fahrenheit) {
+    if (temperatureInFahrenheit() != fahrenheit) {
+        m_settings.setValue("ui/temperatureFahrenheit", fahrenheit);
+        m_settings.sync();
+        emit temperatureInFahrenheitChanged(fahrenheit);
+    }
+}
+
+namespace {
+
+// An unknown saved value (hand-edited, or a step since removed) falls back to Auto: the one
+// setting that cannot leave the window larger than the screen.
+int sanitizeInterfaceScale(int percent) {
+    for (int allowed : RadioSettings::kInterfaceScales)
+        if (percent == allowed)
+            return percent;
+    return RadioSettings::kInterfaceScaleAuto;
+}
+
+double sanitizeAutoScaleFactor(double factor) {
+    return std::isfinite(factor) ? std::clamp(factor, WindowFit::kMinScale, WindowFit::kMaxScale)
+                                 : WindowFit::kMaxScale;
+}
+
+} // namespace
+
+int RadioSettings::interfaceScale() const {
+    return sanitizeInterfaceScale(m_settings.value("ui/interfaceScale", kInterfaceScaleAuto).toInt());
+}
+
+void RadioSettings::setInterfaceScale(int percent) {
+    percent = sanitizeInterfaceScale(percent);
+    if (interfaceScale() != percent) {
+        m_settings.setValue("ui/interfaceScale", percent);
+        m_settings.sync();
+        emit interfaceScaleChanged(percent);
+    }
+}
+
+double RadioSettings::autoScaleFactor() const {
+    return sanitizeAutoScaleFactor(m_settings.value("ui/autoScaleFactor", WindowFit::kMaxScale).toDouble());
+}
+
+void RadioSettings::setAutoScaleFactor(double factor) {
+    m_settings.setValue("ui/autoScaleFactor", sanitizeAutoScaleFactor(factor));
+    m_settings.sync();
+}
+
+double RadioSettings::startupInterfaceScale(bool *isAuto) {
+    const QSettings store(QSettings::defaultFormat(), QSettings::UserScope, QStringLiteral("QK4"),
+                          QStringLiteral("QK4"));
+    const int percent = sanitizeInterfaceScale(store.value("ui/interfaceScale", kInterfaceScaleAuto).toInt());
+    if (isAuto)
+        *isAuto = percent == kInterfaceScaleAuto;
+    if (percent == kInterfaceScaleAuto)
+        return sanitizeAutoScaleFactor(store.value("ui/autoScaleFactor", WindowFit::kMaxScale).toDouble());
+    return percent / 100.0;
 }
 
 int RadioSettings::micGain() const {
@@ -230,6 +598,97 @@ void RadioSettings::setCatServerPort(quint16 port) {
     }
 }
 
+bool RadioSettings::ulanziEnabled() const {
+    return m_ulanziEnabled;
+}
+
+void RadioSettings::setUlanziEnabled(bool enabled) {
+    if (m_ulanziEnabled != enabled) {
+        m_ulanziEnabled = enabled;
+        save();
+        emit ulanziEnabledChanged(enabled);
+    }
+}
+
+quint16 RadioSettings::ulanziPort() const {
+    return m_ulanziPort;
+}
+
+void RadioSettings::setUlanziPort(quint16 port) {
+    // Clamp to valid port range (1024-65535), as for the CAT server
+    port = qBound(quint16(1024), port, quint16(65535));
+    if (m_ulanziPort != port) {
+        m_ulanziPort = port;
+        save();
+        emit ulanziPortChanged(port);
+    }
+}
+
+bool RadioSettings::tciServerEnabled() const {
+    return m_tciServerEnabled;
+}
+
+void RadioSettings::setTciServerEnabled(bool enabled) {
+    if (m_tciServerEnabled != enabled) {
+        m_tciServerEnabled = enabled;
+        save();
+        emit tciServerEnabledChanged(enabled);
+    }
+}
+
+quint16 RadioSettings::tciServerPort() const {
+    return m_tciServerPort;
+}
+
+void RadioSettings::setTciServerPort(quint16 port) {
+    // Clamp to valid port range (1024-65535)
+    port = qBound(quint16(1024), port, quint16(65535));
+    if (m_tciServerPort != port) {
+        m_tciServerPort = port;
+        save();
+        emit tciServerPortChanged(port);
+    }
+}
+
+bool RadioSettings::tciAudioEnabled() const {
+    return m_tciAudioEnabled;
+}
+
+void RadioSettings::setTciAudioEnabled(bool enabled) {
+    if (m_tciAudioEnabled != enabled) {
+        m_tciAudioEnabled = enabled;
+        save();
+        emit tciAudioEnabledChanged(enabled);
+    }
+}
+
+int RadioSettings::tciTxGain() const {
+    return m_settings.value("tci/txGain", kTciTxGainDefault).toInt();
+}
+
+void RadioSettings::setTciTxGain(int value) {
+    value = qBound(0, value, 100);
+    const int oldValue = m_settings.value("tci/txGain", kTciTxGainDefault).toInt();
+    if (oldValue != value) {
+        m_settings.setValue("tci/txGain", value);
+        m_settings.sync();
+        emit tciTxGainChanged(value);
+    }
+}
+
+int RadioSettings::rxAudioBoostDb() const {
+    return RxOutputStage::snapBoostDb(m_settings.value("audio/rxBoostDb", 0).toInt());
+}
+
+void RadioSettings::setRxAudioBoostDb(int db) {
+    db = RxOutputStage::snapBoostDb(db);
+    if (rxAudioBoostDb() != db) {
+        m_settings.setValue("audio/rxBoostDb", db);
+        m_settings.sync();
+        emit rxAudioBoostDbChanged(db);
+    }
+}
+
 QMap<QString, MacroEntry> RadioSettings::macros() const {
     return m_macros;
 }
@@ -260,14 +719,6 @@ void RadioSettings::setMacro(const QString &functionId, const QString &label, co
             save();
             emit macrosChanged();
         }
-    }
-}
-
-void RadioSettings::clearMacro(const QString &functionId) {
-    if (m_macros.contains(functionId)) {
-        m_macros.remove(functionId);
-        save();
-        emit macrosChanged();
     }
 }
 
@@ -320,6 +771,23 @@ void RadioSettings::setSidetoneVolume(int value) {
     }
 }
 
+// =============================================================================
+// KPOD+ Keyer Settings
+// =============================================================================
+
+int RadioSettings::kpodPlusEncodeMode() const {
+    return m_kpodPlusEncodeMode;
+}
+
+void RadioSettings::setKpodPlusEncodeMode(int mode) {
+    mode = qBound(0, mode, 1);
+    if (m_kpodPlusEncodeMode != mode) {
+        m_kpodPlusEncodeMode = mode;
+        save();
+        emit kpodPlusSettingsChanged();
+    }
+}
+
 EqPreset RadioSettings::rxEqPreset(int index) const {
     if (index >= 0 && index < 4) {
         return m_rxEqPresets[index];
@@ -366,6 +834,71 @@ void RadioSettings::clearTxEqPreset(int index) {
     }
 }
 
+QVector<DxClusterEntry> RadioSettings::dxClusters() const {
+    return m_dxClusters;
+}
+
+void RadioSettings::addDxCluster(const DxClusterEntry &entry) {
+    m_dxClusters.append(entry);
+    save();
+    emit dxClusterSettingsChanged();
+}
+
+void RadioSettings::removeDxCluster(int index) {
+    if (index >= 0 && index < m_dxClusters.size()) {
+        m_dxClusters.removeAt(index);
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+void RadioSettings::updateDxCluster(int index, const DxClusterEntry &entry) {
+    if (index >= 0 && index < m_dxClusters.size()) {
+        m_dxClusters[index] = entry;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+int RadioSettings::dxClusterSpotAge() const {
+    return m_dxClusterSpotAge;
+}
+
+void RadioSettings::setDxClusterSpotAge(int seconds) {
+    seconds = qBound(300, seconds, 1800); // 5-30 minutes
+    if (m_dxClusterSpotAge != seconds) {
+        m_dxClusterSpotAge = seconds;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+QString RadioSettings::dxClusterCallsign() const {
+    return m_dxClusterCallsign;
+}
+
+void RadioSettings::setDxClusterCallsign(const QString &callsign) {
+    QString upper = callsign.trimmed().toUpper();
+    if (m_dxClusterCallsign != upper) {
+        m_dxClusterCallsign = upper;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
+int RadioSettings::dxClusterSpotFontSize() const {
+    return m_dxClusterSpotFontSize;
+}
+
+void RadioSettings::setDxClusterSpotFontSize(int sizePx) {
+    sizePx = qBound(8, sizePx, 16); // mirrors K4Styles::Dimensions::FontSizeSpot{Min,Max}
+    if (m_dxClusterSpotFontSize != sizePx) {
+        m_dxClusterSpotFontSize = sizePx;
+        save();
+        emit dxClusterSettingsChanged();
+    }
+}
+
 void RadioSettings::load() {
     int count = m_settings.beginReadArray("radios");
     m_radios.clear();
@@ -378,12 +911,28 @@ void RadioSettings::load() {
         entry.port = m_settings.value("port").toUInt();
         entry.useTls = m_settings.value("useTls", false).toBool();
         entry.identity = m_settings.value("identity").toString();
-        entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus Float)
+        entry.encodeMode = m_settings.value("encodeMode", 3).toInt();             // Default EM3 (Opus)
         entry.streamingLatency = m_settings.value("streamingLatency", 3).toInt(); // Default SL3
-        entry.displayFps = m_settings.value("displayFps", 30).toInt();            // Default 30 FPS
+        entry.displayFps = m_settings.value("displayFps", 15).toInt();            // Default 15 FPS
+        entry.connectAtStartup = m_settings.value("connectAtStartup", false).toBool();
         m_radios.append(entry);
     }
     m_settings.endArray();
+    sortRadios();
+
+    // Keep the "at most one" rule true even for a settings file that was not written by us - a
+    // hand edit, or a backup from before the rule existed. First flagged entry wins; the rest are
+    // cleared so startup cannot depend on list order.
+    bool seenStartupRadio = false;
+    for (RadioEntry &entry : m_radios) {
+        if (!entry.connectAtStartup) {
+            continue;
+        }
+        if (seenStartupRadio) {
+            entry.connectAtStartup = false;
+        }
+        seenStartupRadio = true;
+    }
 
     m_lastSelectedIndex = m_settings.value("lastSelectedIndex", -1).toInt();
     m_kpodEnabled = m_settings.value("kpodEnabled", false).toBool();
@@ -397,12 +946,45 @@ void RadioSettings::load() {
     // CAT Server settings (migrate from old rigctld keys if present)
     m_catServerEnabled = m_settings.value("catServer/enabled", m_settings.value("rigctld/enabled", false)).toBool();
     m_catServerPort = m_settings.value("catServer/port", m_settings.value("rigctld/port", 9299)).toUInt();
+    m_ulanziEnabled = m_settings.value("ulanzi/enabled", false).toBool();
+    m_ulanziPort = m_settings.value("ulanzi/port", 9410).toUInt();
+    m_tciServerEnabled = m_settings.value("tciServer/enabled", false).toBool();
+    m_tciServerPort = m_settings.value("tciServer/port", 50001).toUInt();
+    m_tciAudioEnabled = m_settings.value("tciServer/audio", true).toBool();
+
+    // DX Cluster settings
+    int dxCount = m_settings.beginReadArray("dxClusters");
+    m_dxClusters.clear();
+    for (int i = 0; i < dxCount; ++i) {
+        m_settings.setArrayIndex(i);
+        DxClusterEntry entry;
+        entry.host = m_settings.value("host").toString();
+        entry.port = m_settings.value("port", 7000).toUInt();
+        entry.callsign = m_settings.value("callsign").toString();
+        entry.autoConnect = m_settings.value("autoConnect", false).toBool();
+        m_dxClusters.append(entry);
+    }
+    m_settings.endArray();
+    m_dxClusterSpotAge = m_settings.value("dxCluster/spotAge", 600).toInt();
+    m_dxClusterCallsign = m_settings.value("dxCluster/callsign", "").toString();
+    m_dxClusterSpotFontSize = qBound(8, m_settings.value("dxCluster/spotFontSize", 11).toInt(), 16);
+
+    // Seed default cluster entry on first run
+    if (m_dxClusters.isEmpty()) {
+        DxClusterEntry rbn;
+        rbn.host = "telnet.reversebeacon.net";
+        rbn.port = 7300;
+        m_dxClusters.append(rbn);
+    }
 
     // HaliKey settings
     m_halikeyPortName = m_settings.value("halikey/portName", "").toString();
     m_halikeyEnabled = m_settings.value("halikey/enabled", false).toBool();
     m_halikeyDeviceType = m_settings.value("halikey/deviceType", 0).toInt();
     m_sidetoneVolume = m_settings.value("halikey/sidetoneVolume", 30).toInt();
+
+    // KPOD+ keyer settings
+    m_kpodPlusEncodeMode = m_settings.value("kpodPlus/encodeMode", 0).toInt();
 
     // Macro settings
     int macroCount = m_settings.beginReadArray("macros");
@@ -454,6 +1036,26 @@ void RadioSettings::load() {
             }
         }
     }
+
+    // Audio master enable
+    m_audioEnabled = m_settings.value("audio/enabled", true).toBool();
+
+    // RFKit Amplifier settings
+    m_rfkitHost = m_settings.value("rfkit/host", "").toString();
+    m_rfkitPort = m_settings.value("rfkit/port", 8080).toUInt();
+    m_rfkitEnabled = m_settings.value("rfkit/enabled", false).toBool();
+    m_rfkitPollInterval = m_settings.value("rfkit/pollInterval", 1000).toInt();
+    m_rfkitLowPowerEnabled = m_settings.value("rfkit/lowPowerEnabled", false).toBool();
+    m_rfkitMaxDrivePower = m_settings.value("rfkit/maxDrivePower", 1.5).toDouble();
+    m_rfkitTempFahrenheit = m_settings.value("rfkit/tempFahrenheit", false).toBool();
+}
+
+void RadioSettings::sortRadios() {
+    std::sort(m_radios.begin(), m_radios.end(), [](const RadioEntry &a, const RadioEntry &b) {
+        QString nameA = a.name.isEmpty() ? a.host : a.name;
+        QString nameB = b.name.isEmpty() ? b.host : b.name;
+        return nameA.compare(nameB, Qt::CaseInsensitive) < 0;
+    });
 }
 
 void RadioSettings::save() {
@@ -469,6 +1071,7 @@ void RadioSettings::save() {
         m_settings.setValue("encodeMode", m_radios[i].encodeMode);
         m_settings.setValue("streamingLatency", m_radios[i].streamingLatency);
         m_settings.setValue("displayFps", m_radios[i].displayFps);
+        m_settings.setValue("connectAtStartup", m_radios[i].connectAtStartup);
     }
     m_settings.endArray();
 
@@ -484,12 +1087,20 @@ void RadioSettings::save() {
     // CAT Server settings
     m_settings.setValue("catServer/enabled", m_catServerEnabled);
     m_settings.setValue("catServer/port", m_catServerPort);
+    m_settings.setValue("ulanzi/enabled", m_ulanziEnabled);
+    m_settings.setValue("ulanzi/port", m_ulanziPort);
+    m_settings.setValue("tciServer/enabled", m_tciServerEnabled);
+    m_settings.setValue("tciServer/port", m_tciServerPort);
+    m_settings.setValue("tciServer/audio", m_tciAudioEnabled);
 
     // HaliKey settings
     m_settings.setValue("halikey/portName", m_halikeyPortName);
     m_settings.setValue("halikey/enabled", m_halikeyEnabled);
     m_settings.setValue("halikey/deviceType", m_halikeyDeviceType);
     m_settings.setValue("halikey/sidetoneVolume", m_sidetoneVolume);
+
+    // KPOD+ keyer settings
+    m_settings.setValue("kpodPlus/encodeMode", m_kpodPlusEncodeMode);
 
     // Macro settings
     m_settings.beginWriteArray("macros");
@@ -501,6 +1112,20 @@ void RadioSettings::save() {
         m_settings.setValue("command", it->command);
     }
     m_settings.endArray();
+
+    // DX Cluster settings
+    m_settings.beginWriteArray("dxClusters");
+    for (int j = 0; j < m_dxClusters.size(); ++j) {
+        m_settings.setArrayIndex(j);
+        m_settings.setValue("host", m_dxClusters[j].host);
+        m_settings.setValue("port", m_dxClusters[j].port);
+        m_settings.setValue("callsign", m_dxClusters[j].callsign);
+        m_settings.setValue("autoConnect", m_dxClusters[j].autoConnect);
+    }
+    m_settings.endArray();
+    m_settings.setValue("dxCluster/spotAge", m_dxClusterSpotAge);
+    m_settings.setValue("dxCluster/callsign", m_dxClusterCallsign);
+    m_settings.setValue("dxCluster/spotFontSize", m_dxClusterSpotFontSize);
 
     // RX EQ Presets (4 slots)
     for (int j = 0; j < 4; ++j) {
@@ -525,6 +1150,18 @@ void RadioSettings::save() {
         }
         m_settings.setValue(prefix + "bands", bandsList.join(","));
     }
+
+    // Audio master enable
+    m_settings.setValue("audio/enabled", m_audioEnabled);
+
+    // RFKit Amplifier settings
+    m_settings.setValue("rfkit/host", m_rfkitHost);
+    m_settings.setValue("rfkit/port", m_rfkitPort);
+    m_settings.setValue("rfkit/enabled", m_rfkitEnabled);
+    m_settings.setValue("rfkit/pollInterval", m_rfkitPollInterval);
+    m_settings.setValue("rfkit/lowPowerEnabled", m_rfkitLowPowerEnabled);
+    m_settings.setValue("rfkit/maxDrivePower", m_rfkitMaxDrivePower);
+    m_settings.setValue("rfkit/tempFahrenheit", m_rfkitTempFahrenheit);
 
     m_settings.sync();
 }

@@ -1,5 +1,5 @@
-cmake_minimum_required(VERSION 3.16)
-project(QK4 VERSION 0.2.0 LANGUAGES CXX)
+cmake_minimum_required(VERSION 3.21)
+project(QK4 VERSION 0.7.0 LANGUAGES CXX)
 
 # Full version string can include prerelease info (e.g., "0.1.0-alpha.123")
 # CI sets this via -DQK4_VERSION_FULL="x.y.z-prerelease"
@@ -15,8 +15,19 @@ set(CMAKE_AUTOMOC ON)
 set(CMAKE_AUTORCC ON)
 set(CMAKE_AUTOUIC ON)
 
+# Tests only: configure the unit tests and stop before the app, so only the Qt modules the tests
+# link - all of them in qtbase - need to exist. WHY: the weekly ThreadSanitizer job builds Qt itself
+# with -sanitize thread (a distro Qt hides its own locking from TSan and every cross-thread queued
+# call reports as a race), and building Multimedia, ShaderTools, SerialPort and Svg too would cost
+# hours for modules no test uses.
+option(QK4_TESTS_ONLY "Configure only the unit tests (no app); needs just qtbase" OFF)
+
 # Core Qt components (GuiPrivate handled separately for cross-platform compatibility)
-find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg)
+if(QK4_TESTS_ONLY)
+    find_package(Qt6 REQUIRED COMPONENTS Core Gui Widgets Network Test)
+else()
+    find_package(Qt6 REQUIRED COMPONENTS Core Widgets Network Multimedia ShaderTools Gui SerialPort Svg Test)
+endif()
 
 # GuiPrivate is needed for QRhi access but may not have CMake config on all platforms
 if(APPLE)
@@ -54,10 +65,17 @@ if(APPLE)
     set(HIDAPI_PREFIX "/opt/homebrew/opt/hidapi")
     set(HIDAPI_INCLUDE_DIRS "${HIDAPI_PREFIX}/include")
     set(HIDAPI_LIBRARIES "${HIDAPI_PREFIX}/lib/libhidapi.dylib")
+
+    set(LIBUSB_PREFIX "/opt/homebrew/opt/libusb")
+    set(LIBUSB_INCLUDE_DIRS "${LIBUSB_PREFIX}/include")
+    set(LIBUSB_LIBRARIES "${LIBUSB_PREFIX}/lib/libusb-1.0.dylib")
 elseif(WIN32)
     # Windows with vcpkg
     find_package(Opus CONFIG REQUIRED)
     find_package(hidapi CONFIG REQUIRED)
+    # libusb doesn't provide CMake config files; use find_path/find_library
+    find_path(LIBUSB_INCLUDE_DIRS NAMES libusb-1.0/libusb.h REQUIRED)
+    find_library(LIBUSB_LIBRARIES NAMES usb-1.0 libusb-1.0 REQUIRED)
     set(OPUS_INCLUDE_DIRS "")
     set(HIDAPI_INCLUDE_DIRS "")
     set(OPUS_LIBRARIES Opus::opus)
@@ -67,75 +85,227 @@ else()
     find_package(PkgConfig REQUIRED)
     pkg_check_modules(OPUS REQUIRED opus)
     pkg_check_modules(HIDAPI REQUIRED hidapi-libusb)
+    pkg_check_modules(LIBUDEV REQUIRED libudev)
+    pkg_check_modules(LIBUSB REQUIRED libusb-1.0>=1.0.21)
+endif()
+
+if(QK4_TESTS_ONLY)
+    enable_testing()
+    add_subdirectory(tests)
+    return()
 endif()
 set(SOURCES
     src/main.cpp
     src/mainwindow.cpp
+    src/utils/radioutils.cpp
+    src/utils/bandplan.cpp
+    src/controllers/connectioncontroller.cpp
+    src/controllers/hardwarecontroller.cpp
+    src/controllers/audiocontroller.cpp
+    src/controllers/spectrumcontroller.cpp
+    src/controllers/dxclustercontroller.cpp
+    src/controllers/textdecodecontroller.cpp
+    src/controllers/statusbarcontroller.cpp
+    src/controllers/menucontroller.cpp
+    src/controllers/tcicontroller.cpp
+    src/controllers/antennaconfigcontroller.cpp
+    src/controllers/featuremenucontroller.cpp
+    src/controllers/popupmanager.cpp
+    src/controllers/kpa1500uicontroller.cpp
+    src/controllers/rfkituicontroller.cpp
+    src/controllers/miniviewcontroller.cpp
+    src/controllers/modepopupcontroller.cpp
+    src/controllers/bandnavigationcontroller.cpp
+    src/controllers/buttonrowdispatcher.cpp
+    src/controllers/macrocontroller.cpp
+    src/controllers/processingdisplaycontroller.cpp
+    src/controllers/antennadisplaycontroller.cpp
+    src/controllers/vforowindicatorcontroller.cpp
+    src/controllers/ritxitcontroller.cpp
+    src/controllers/modelabelcontroller.cpp
+    src/controllers/vfofrequencycontroller.cpp
+    src/controllers/subdivindicatorcontroller.cpp
+    src/controllers/txstatecontroller.cpp
+    src/controllers/sidecontroldisplaycontroller.cpp
+    src/controllers/sidecontrolscrollcontroller.cpp
+    src/controllers/rightsidecontroller.cpp
+    src/controllers/memorybuttonscontroller.cpp
+    src/controllers/cwcontroller.cpp
+    src/controllers/transmitcontroller.cpp
     src/network/tcpclient.cpp
     src/network/protocol.cpp
+    src/network/networkmetrics.cpp
     src/network/kpa1500client.cpp
+    src/network/kpa1500antennas.cpp
+    src/network/dxclusterclient.cpp
     src/network/catserver.cpp
+    src/network/ulanziserver.cpp
+    src/network/catframes.cpp
+    src/network/cwmacro.cpp
+    src/network/catpushbroadcaster.cpp
+    src/network/k4discovery.cpp
+    src/network/rfkitclient.cpp
+    src/network/websocketframe.cpp
+    src/network/websocketserver.cpp
+    src/network/tciprotocol.cpp
+    src/network/tciaudioframe.cpp
+    src/network/tciserver.cpp
+    src/network/tciserverstate.cpp
+    src/network/tciaudiobridge.cpp
+    src/dsp/audioupsampler.cpp
     src/audio/audioengine.cpp
     src/audio/opusdecoder.cpp
     src/audio/opusencoder.cpp
     src/audio/sidetonegenerator.cpp
     src/dsp/panadapter_rhi.cpp
     src/dsp/minipan_rhi.cpp
+    src/dsp/bandplanstrip.cpp
+    src/dsp/spectrumscale.cpp
+    src/dsp/waterfallgeometry.cpp
     src/settings/radiosettings.cpp
+    src/settings/interfacescale.cpp
     src/models/radiostate.cpp
+    src/models/radiostate/antennastate.cpp
+    src/models/radiostate/audioeffectsstate.cpp
+    src/models/radiostate/datacontrolstate.cpp
+    src/models/radiostate/frequencyvfostate.cpp
+    src/models/radiostate/levelsstate.cpp
+    src/models/radiostate/modefilterstate.cpp
+    src/models/radiostate/powerstate.cpp
+    src/models/radiostate/processingstate.cpp
+    src/models/radiostate/qskcontrolstate.cpp
+    src/models/radiostate/rxtxmeterstate.cpp
+    src/models/radiostate/spectrumdisplaystate.cpp
+    src/models/radiostate/textdecodestate.cpp
+    src/models/radiostate/xvtrbandstate.cpp
     src/models/menumodel.cpp
-    src/ui/radiomanagerdialog.cpp
-    src/ui/dualcontrolbutton.cpp
-    src/ui/sidecontrolpanel.cpp
-    src/ui/bottommenubar.cpp
-    src/ui/menuoverlay.cpp
-    src/ui/micmeterwidget.cpp
-    src/ui/vfowidget.cpp
-    src/ui/frequencydisplaywidget.cpp
-    src/ui/vforowwidget.cpp
-    src/ui/filterindicatorwidget.cpp
-    src/ui/bandpopupwidget.cpp
-    src/ui/buttonrowpopup.cpp
-    src/ui/displaypopupwidget.cpp
-    src/ui/optionsdialog.cpp
-    src/ui/rightsidepanel.cpp
-    src/ui/featuremenubar.cpp
-    src/ui/modepopupwidget.cpp
-    src/ui/txmeterwidget.cpp
-    src/ui/fnpopupwidget.cpp
-    src/ui/rxeqpopupwidget.cpp
-    src/ui/antennacfgpopup.cpp
-    src/ui/lineoutpopup.cpp
-    src/ui/lineinpopup.cpp
-    src/ui/micinputpopup.cpp
-    src/ui/micconfigpopup.cpp
-    src/ui/voxpopup.cpp
-    src/ui/ssbbwpopup.cpp
-    src/ui/textdecodewindow.cpp
-    src/ui/macrodialog.cpp
-    src/ui/notificationwidget.cpp
-    src/ui/k4styles.cpp
-    src/ui/k4popupbase.cpp
-    src/ui/kpa1500panel.cpp
-    src/ui/kpa1500window.cpp
-    src/ui/sidecontroloverlay.cpp
-    src/ui/monoverlay.cpp
-    src/ui/baloverlay.cpp
-    src/ui/wheelaccumulator.cpp
+    src/ui/dialogs/radiomanagerdialog.cpp
+    src/ui/widgets/dualcontrolbutton.cpp
+    src/ui/widgets/sidecontrolpanel.cpp
+    src/ui/widgets/bottommenubar.cpp
+    src/ui/overlays/menuoverlay.cpp
+    src/ui/overlays/mousevfoindicator.cpp
+    src/ui/widgets/vfowidget.cpp
+    src/ui/widgets/frequencydisplaywidget.cpp
+    src/ui/widgets/vforowwidget.cpp
+    src/ui/widgets/filterindicatorwidget.cpp
+    src/ui/popups/bandpopupwidget.cpp
+    src/ui/popups/buttonrowpopup.cpp
+    src/ui/widgets/displaymenubutton.cpp
+    src/ui/widgets/controlgroupwidget.cpp
+    src/ui/widgets/togglegroupwidget.cpp
+    src/ui/popups/displaypopupwidget.cpp
+    src/ui/dialogs/optionsdialog.cpp
+    src/ui/pages/aboutpage.cpp
+    src/ui/pages/stationpage.cpp
+    src/ui/pages/displaypage.cpp
+    src/ui/pages/audioinputpage.cpp
+    src/ui/pages/audiooutputpage.cpp
+    src/ui/pages/rigcontrolpage.cpp
+    src/ui/pages/tciserverpage.cpp
+    src/ui/pages/cwkeyerpage.cpp
+    src/ui/pages/kpodpage.cpp
+    src/ui/pages/ulanzipage.cpp
+    src/ui/pages/kpa1500page.cpp
+    src/ui/pages/rfkitpage.cpp
+    src/ui/pages/dxclusterpage.cpp
+    src/ui/overlays/dxspotoverlay.cpp
+    src/ui/widgets/rightsidepanel.cpp
+    src/ui/widgets/featuremenubar.cpp
+    src/ui/popups/modepopupwidget.cpp
+    src/ui/widgets/txmeterwidget.cpp
+    src/ui/widgets/nethealthwidget.cpp
+    src/ui/widgets/nethealthpopup.cpp
+    src/ui/widgets/icontextlabel.cpp
+    src/ui/widgets/powerstatusbutton.cpp
+    src/ui/popups/fnpopupwidget.cpp
+    src/ui/popups/rxeqpopupwidget.cpp
+    src/ui/popups/antennacfgpopup.cpp
+    src/ui/popups/lineoutpopup.cpp
+    src/ui/popups/lineinpopup.cpp
+    src/ui/popups/micinputpopup.cpp
+    src/ui/popups/micconfigpopup.cpp
+    src/ui/popups/voxpopup.cpp
+    src/ui/popups/ssbbwpopup.cpp
+    src/ui/popups/keyingweightpopup.cpp
+    src/ui/popups/confirmpopup.cpp
+    src/ui/popups/softwarelistpopup.cpp
+    src/ui/dialogs/textdecodewindow.cpp
+    src/ui/dialogs/macrodialog.cpp
+    src/ui/widgets/notificationwidget.cpp
+    src/ui/styling/k4styles.cpp
+    src/ui/styling/k4glyphs.cpp
+    src/ui/popups/k4popupbase.cpp
+    src/ui/widgets/kpa1500minipanel.cpp
+    src/ui/overlays/sidecontroloverlay.cpp
+    src/ui/overlays/monoverlay.cpp
+    src/ui/overlays/baloverlay.cpp
+    src/utils/wheelaccumulator.cpp
+    src/ui/rfkitpanel.cpp
+    src/ui/rfkitwindow.cpp
+    src/ui/miniviewwindow.cpp
     src/hardware/kpoddevice.cpp
+    src/hardware/kpodhidworker.cpp
+    src/hardware/kpodplusdevice.cpp
+    src/hardware/kpodplususbworker.cpp
     src/hardware/halikeydevice.cpp
     src/hardware/halikeyworkerbase.cpp
     src/hardware/halikeyv14worker.cpp
     src/hardware/halikeymidiworker.cpp
+    src/hardware/iambickeyer.cpp
     third_party/rtmidi/RtMidi.cpp
 )
 
+if(UNIX AND NOT APPLE)
+    list(APPEND SOURCES src/hardware/kpodudevworker.cpp)
+endif()
+
 set(HEADERS
     src/mainwindow.h
+    src/utils/radioutils.h
+    src/utils/bandplan.h
+    src/controllers/connectioncontroller.h
+    src/controllers/hardwarecontroller.h
+    src/controllers/audiocontroller.h
+    src/controllers/spectrumcontroller.h
+    src/controllers/dxclustercontroller.h
+    src/controllers/textdecodecontroller.h
+    src/controllers/statusbarcontroller.h
+    src/controllers/menucontroller.h
+    src/controllers/antennaconfigcontroller.h
+    src/controllers/featuremenucontroller.h
+    src/controllers/popupmanager.h
+    src/controllers/kpa1500uicontroller.h
+    src/controllers/rfkituicontroller.h
+    src/controllers/miniviewcontroller.h
+    src/controllers/modepopupcontroller.h
+    src/controllers/bandnavigationcontroller.h
+    src/controllers/buttonrowdispatcher.h
+    src/controllers/macrocontroller.h
+    src/controllers/processingdisplaycontroller.h
+    src/controllers/antennadisplaycontroller.h
+    src/controllers/vforowindicatorcontroller.h
+    src/controllers/ritxitcontroller.h
+    src/controllers/modelabelcontroller.h
+    src/controllers/vfofrequencycontroller.h
+    src/controllers/subdivindicatorcontroller.h
+    src/controllers/txstatecontroller.h
+    src/controllers/sidecontroldisplaycontroller.h
+    src/controllers/sidecontrolscrollcontroller.h
+    src/controllers/rightsidecontroller.h
+    src/controllers/memorybuttonscontroller.h
+    src/controllers/cwcontroller.h
     src/network/tcpclient.h
     src/network/protocol.h
+    src/network/networkmetrics.h
     src/network/kpa1500client.h
+    src/network/dxclusterclient.h
     src/network/catserver.h
+    src/network/ulanziserver.h
+    src/network/catframes.h
+    src/network/catpushbroadcaster.h
+    src/network/k4discovery.h
+    src/network/rfkitclient.h
     src/audio/audioengine.h
     src/audio/opusdecoder.h
     src/audio/opusencoder.h
@@ -143,59 +313,102 @@ set(HEADERS
     src/dsp/panadapter_rhi.h
     src/dsp/minipan_rhi.h
     src/settings/radiosettings.h
+    src/settings/interfacescale.h
     src/models/radiostate.h
+    src/models/radiostate/antennastate.h
+    src/models/radiostate/datacontrolstate.h
+    src/models/radiostate/frequencyvfostate.h
+    src/models/radiostate/levelsstate.h
+    src/models/radiostate/modefilterstate.h
+    src/models/radiostate/processingstate.h
+    src/models/radiostate/qskcontrolstate.h
+    src/models/radiostate/textdecodestate.h
+    src/models/radiostate/xvtrbandstate.h
     src/models/menumodel.h
-    src/ui/radiomanagerdialog.h
-    src/ui/dualcontrolbutton.h
-    src/ui/sidecontrolpanel.h
-    src/ui/bottommenubar.h
-    src/ui/menuoverlay.h
-    src/ui/micmeterwidget.h
-    src/ui/vfowidget.h
-    src/ui/frequencydisplaywidget.h
-    src/ui/vforowwidget.h
-    src/ui/filterindicatorwidget.h
-    src/ui/bandpopupwidget.h
-    src/ui/buttonrowpopup.h
-    src/ui/displaypopupwidget.h
-    src/ui/optionsdialog.h
-    src/ui/rightsidepanel.h
-    src/ui/featuremenubar.h
-    src/ui/modepopupwidget.h
-    src/ui/txmeterwidget.h
-    src/ui/fnpopupwidget.h
-    src/ui/rxeqpopupwidget.h
-    src/ui/antennacfgpopup.h
-    src/ui/lineoutpopup.h
-    src/ui/lineinpopup.h
-    src/ui/micinputpopup.h
-    src/ui/micconfigpopup.h
-    src/ui/voxpopup.h
-    src/ui/ssbbwpopup.h
-    src/ui/textdecodewindow.h
-    src/ui/macrodialog.h
-    src/ui/notificationwidget.h
-    src/ui/k4styles.h
-    src/ui/k4popupbase.h
-    src/ui/kpa1500panel.h
-    src/ui/kpa1500window.h
-    src/ui/sidecontroloverlay.h
-    src/ui/monoverlay.h
-    src/ui/baloverlay.h
-    src/ui/wheelaccumulator.h
+    src/utils/macroids.h
+    src/ui/dialogs/radiomanagerdialog.h
+    src/ui/widgets/dualcontrolbutton.h
+    src/ui/widgets/sidecontrolpanel.h
+    src/ui/widgets/bottommenubar.h
+    src/ui/overlays/menuoverlay.h
+    src/ui/overlays/mousevfoindicator.h
+    src/ui/widgets/vfowidget.h
+    src/ui/widgets/frequencydisplaywidget.h
+    src/ui/widgets/vforowwidget.h
+    src/ui/widgets/filterindicatorwidget.h
+    src/ui/popups/bandpopupwidget.h
+    src/ui/popups/buttonrowpopup.h
+    src/ui/widgets/displaymenubutton.h
+    src/ui/widgets/controlgroupwidget.h
+    src/ui/widgets/togglegroupwidget.h
+    src/ui/popups/displaypopupwidget.h
+    src/ui/dialogs/optionsdialog.h
+    src/ui/pages/aboutpage.h
+    src/ui/pages/stationpage.h
+    src/ui/pages/displaypage.h
+    src/ui/pages/audioinputpage.h
+    src/ui/pages/audiooutputpage.h
+    src/ui/pages/rigcontrolpage.h
+    src/ui/pages/cwkeyerpage.h
+    src/ui/pages/kpodpage.h
+    src/ui/pages/ulanzipage.h
+    src/ui/pages/kpa1500page.h
+    src/ui/pages/rfkitpage.h
+    src/ui/pages/dxclusterpage.h
+    src/ui/overlays/dxspotoverlay.h
+    src/ui/widgets/rightsidepanel.h
+    src/ui/widgets/featuremenubar.h
+    src/ui/popups/modepopupwidget.h
+    src/ui/widgets/txmeterwidget.h
+    src/ui/widgets/nethealthwidget.h
+    src/ui/widgets/nethealthpopup.h
+    src/ui/popups/fnpopupwidget.h
+    src/ui/popups/rxeqpopupwidget.h
+    src/ui/popups/antennacfgpopup.h
+    src/ui/popups/lineoutpopup.h
+    src/ui/popups/lineinpopup.h
+    src/ui/popups/micinputpopup.h
+    src/ui/popups/micconfigpopup.h
+    src/ui/popups/voxpopup.h
+    src/ui/popups/ssbbwpopup.h
+    src/ui/popups/keyingweightpopup.h
+    src/ui/popups/softwarelistpopup.h
+    src/ui/dialogs/textdecodewindow.h
+    src/ui/dialogs/macrodialog.h
+    src/ui/widgets/notificationwidget.h
+    src/ui/styling/k4styles.h
+    src/ui/styling/k4constants.h
+    src/utils/windowfit.h
+    src/ui/popups/k4popupbase.h
+    src/ui/widgets/kpa1500minipanel.h
+    src/ui/overlays/sidecontroloverlay.h
+    src/ui/overlays/monoverlay.h
+    src/ui/overlays/baloverlay.h
+    src/utils/wheelaccumulator.h
+    src/ui/rfkitpanel.h
+    src/ui/rfkitwindow.h
+    src/ui/miniviewwindow.h
     src/hardware/kpoddevice.h
+    src/hardware/kpodhidworker.h
+    src/hardware/kpodplusdevice.h
+    src/hardware/kpodplususbworker.h
     src/hardware/halikeydevice.h
     src/hardware/halikeyworkerbase.h
     src/hardware/halikeyv14worker.h
     src/hardware/halikeymidiworker.h
+    src/hardware/iambickeyer.h
 )
+
+if(UNIX AND NOT APPLE)
+    list(APPEND HEADERS src/hardware/kpodudevworker.h)
+endif()
 
 # On macOS, create an app bundle
 if(APPLE)
     set(MACOSX_BUNDLE_BUNDLE_NAME ${PROJECT_NAME})
     set(MACOSX_BUNDLE_BUNDLE_VERSION ${QK4_VERSION_FULL})
     set(MACOSX_BUNDLE_SHORT_VERSION_STRING ${QK4_VERSION_FULL})
-    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.ai5qk.qk4")
+    set(MACOSX_BUNDLE_GUI_IDENTIFIER "com.kf5o.qk4")
     set(MACOSX_BUNDLE_ICON_FILE QK4.icns)
 
     # Set the icon file as a resource
@@ -227,7 +440,13 @@ target_include_directories(${PROJECT_NAME} PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/third_party/rtmidi
     ${OPUS_INCLUDE_DIRS}
     ${HIDAPI_INCLUDE_DIRS}
+    ${LIBUSB_INCLUDE_DIRS}
 )
+
+if(UNIX AND NOT APPLE)
+    target_include_directories(${PROJECT_NAME} PRIVATE ${LIBUDEV_INCLUDE_DIRS})
+    target_link_libraries(${PROJECT_NAME} PRIVATE ${LIBUDEV_LIBRARIES})
+endif()
 
 # Pass version to source code as compile definition
 target_compile_definitions(${PROJECT_NAME} PRIVATE
@@ -251,6 +470,7 @@ target_link_libraries(${PROJECT_NAME} PRIVATE
     Qt6::SerialPort
     ${OPUS_LIBRARIES}
     ${HIDAPI_LIBRARIES}
+    ${LIBUSB_LIBRARIES}
 )
 
 # Link GuiPrivate if found via CMake, otherwise private headers are included manually
@@ -289,8 +509,8 @@ qt6_add_shaders(${PROJECT_NAME} "panadapter_shaders"
     FILES
         src/dsp/shaders/spectrum.vert
         src/dsp/shaders/spectrum.frag
-        src/dsp/shaders/spectrum_blue.vert
-        src/dsp/shaders/spectrum_blue_amp.frag
+        src/dsp/shaders/spectrum_fill.vert
+        src/dsp/shaders/spectrum_fill.frag
         src/dsp/shaders/waterfall.vert
         src/dsp/shaders/waterfall.frag
         src/dsp/shaders/overlay.vert
@@ -313,9 +533,18 @@ qt_add_resources(${PROJECT_NAME} "icons"
     PREFIX "/"
     BASE "resources"
     FILES
+        resources/icons/arrow-down.svg
+        resources/icons/arrow-up.svg
         resources/icons/globe.svg
         resources/icons/help.svg
 )
+
+# =============================================================================
+# Tests
+# =============================================================================
+
+enable_testing()
+add_subdirectory(tests)
 
 # =============================================================================
 # Deployment / Bundling - Create self-contained distributable app
@@ -373,6 +602,10 @@ if(APPLE)
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${HIDAPI_LIBRARIES}"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
+        # Copy libusb library
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${LIBUSB_LIBRARIES}"
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/"
         # Fix OpenSSL library paths - use real Cellar path for -change
         COMMAND install_name_tool -id "@executable_path/../Frameworks/libssl.3.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libssl.3.dylib"
@@ -389,6 +622,9 @@ if(APPLE)
         # Fix HIDAPI library path
         COMMAND install_name_tool -id "@executable_path/../Frameworks/libhidapi.dylib"
             "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libhidapi.dylib" || true
+        # Fix libusb library path
+        COMMAND install_name_tool -id "@executable_path/../Frameworks/libusb-1.0.dylib"
+            "${CMAKE_BINARY_DIR}/${PROJECT_NAME}.app/Contents/Frameworks/libusb-1.0.dylib" || true
         # Re-sign the app bundle (required after modifying libraries)
         # Uses ad-hoc signing by default; set CODESIGN_IDENTITY for Developer ID
         COMMAND codesign --force --deep --sign "$ENV{CODESIGN_IDENTITY}"

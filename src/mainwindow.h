@@ -6,113 +6,86 @@
 #include <QPushButton>
 #include <QMenuBar>
 #include <QMenu>
-#include <QProgressBar>
 #include <QTimer>
-#include <QStackedWidget>
-#include "network/tcpclient.h"
+#include <QThread>
+#include "controllers/connectioncontroller.h"
 #include "settings/radiosettings.h"
 #include "models/radiostate.h"
-#include "ui/vfowidget.h"
-#include "ui/wheelaccumulator.h"
+#include "ui/widgets/vfowidget.h"
+#include "utils/radioutils.h"
 
-class PanadapterRhiWidget;
-class AudioEngine;
-class OpusDecoder;
-class OpusEncoder;
+class AudioController;
+class TransmitController;
+class SpectrumController;
+class StatusBarController;
 class SideControlPanel;
 class RightSidePanel;
 class BottomMenuBar;
-class MenuModel;
-class MenuOverlayWidget;
-class BandPopupWidget;
-class ButtonRowPopup;
-class DisplayPopupWidget;
-class FnPopupWidget;
-class RxEqPopupWidget;
-class AntennaCfgPopupWidget;
-class LineOutPopupWidget;
-class LineInPopupWidget;
-class MicInputPopupWidget;
-class MicConfigPopupWidget;
-class VoxPopupWidget;
-class SsbBwPopupWidget;
-class TextDecodeWindow;
-class MacroDialog;
+class MenuController;
+class PopupManager;
+class BandNavigationController;
+class ButtonRowDispatcher;
+class MacroController;
+class ProcessingDisplayController;
+class VfoRowIndicatorController;
+class RitXitController;
+class ModeLabelController;
+class VfoFrequencyController;
+class SubDivIndicatorController;
+class TxStateController;
+class SideControlDisplayController;
+class SideControlScrollController;
+class RightSideController;
+class MemoryButtonsController;
+class AntennaConfigController;
+class AntennaDisplayController;
+class TextDecodeController;
 class FilterIndicatorWidget;
-class FeatureMenuBar;
-class ModePopupWidget;
-class KpodDevice;
-class HalikeyDevice;
-class TxMeterWidget;
-class KPA1500Client;
-class KPA1500Window;
+class FeatureMenuController;
+class ModePopupController;
+class HardwareController;
+class CwController;
+class DxClusterController;
+class KPA1500UiController;
+class RFKitUiController;
+class MiniViewController;
 class CatServer;
+class TciController;
+class OptionsDialog;
 class NotificationWidget;
 class VfoRowWidget;
-class SidetoneGenerator;
-
+class RadioManagerDialog;
 class MainWindow : public QMainWindow {
     Q_OBJECT
 
 public:
-    // Panadapter display modes
-    enum class PanadapterMode { MainOnly, Dual, SubOnly };
-
     explicit MainWindow(QWidget *parent = nullptr);
     ~MainWindow();
 
-    // Switch between Main only, Dual (A+B), and Sub only display
-    void setPanadapterMode(PanadapterMode mode);
+    // Names a radio to open instead of the one ticked in the list - the --connect command-line
+    // option, so a desktop shortcut can target a particular K4. Must be set before the event loop
+    // runs, because the startup connect fires on its first pass.
+    void setStartupRadioOverride(const QString &name) { m_startupRadioOverride = name; }
 
 protected:
     bool eventFilter(QObject *watched, QEvent *event) override;
-    void showEvent(QShowEvent *event) override;
-    void changeEvent(QEvent *event) override;
     void keyPressEvent(QKeyEvent *event) override;
+    void moveEvent(QMoveEvent *event) override;
+    void closeEvent(QCloseEvent *event) override;
 
 private slots:
-    void onConnectClicked();
-    void onDisconnectClicked();
-    void onStateChanged(TcpClient::ConnectionState state);
-    void onError(const QString &error);
-    void onAuthenticated();
-    void onAuthenticationFailed();
+    void onConnectionStateChanged(TcpClient::ConnectionState state);
+    void onConnectionError(const QString &error);
+    void onHardwareError(const QString &error);
+    void onRadioReady();
     void onCatResponse(const QString &response);
-    void onFrequencyChanged(quint64 freq);
-    void onFrequencyBChanged(quint64 freq);
-    void onModeChanged(RadioState::Mode mode);
-    void onModeBChanged(RadioState::Mode mode);
-    void onSMeterChanged(double value);
-    void onSMeterBChanged(double value);
-    void onBandwidthChanged(int bw);
-    void onBandwidthBChanged(int bw);
-    void onRfPowerChanged(double watts, bool isQrp);
-    void onSupplyVoltageChanged(double volts);
-    void onSupplyCurrentChanged(double amps);
-    void onSwrChanged(double swr);
-    void onSplitChanged(bool enabled);
-    void onAntennaChanged(int txAnt, int rxAntMain, int rxAntSub);
-    void onAntennaNameChanged(int index, const QString &name);
-    void onVoxChanged(bool enabled);
-    void onQskEnabledChanged(bool enabled);
-    void onTestModeChanged(bool enabled);
-    void onAtuModeChanged(int mode);
-    void onRitXitChanged(bool ritEnabled, bool xitEnabled, int offset);
-    void onMessageBankChanged(int bank);
-    void onProcessingChanged();
-    void onProcessingChangedB();
-    void onSpectrumData(int receiver, const QByteArray &data, qint64 centerFreq, qint32 sampleRate, float noiseFloor);
-    void onMiniSpectrumData(int receiver, const QByteArray &data);
-    void onAudioData(const QByteArray &opusData);
     void showRadioManager();
     void connectToRadio(const RadioEntry &radio);
-    void updateDateTime();
-    void showMenuOverlay();
-    void onMenuValueChangeRequested(int menuId, const QString &action);
-    void onMenuModelValueChanged(int menuId, int newValue);
-    void onBandSelected(const QString &bandName);
-    void updateBandSelection(int bandNum);
-    void updateBandSelectionB(int bandNum);
+
+    // Connects to the radio flagged connectAtStartup, if any. Deferred to the event loop rather
+    // than run in the constructor - see the call site.
+    void connectToStartupRadio();
+
     void toggleDisplayPopup();
     void toggleBandPopup();
     void toggleFnPopup();
@@ -121,219 +94,166 @@ private slots:
     void toggleTxPopup();
     void closeAllPopups();
 
-    // KPOD slots
-    void onKpodEncoderRotated(int ticks);
-    void onKpodRockerChanged(int position);
-    void onKpodPollError(const QString &error);
-    void onKpodEnabledChanged(bool enabled);
-
-    // KPA1500 slots
-    void onKpa1500Connected();
-    void onKpa1500Disconnected();
-    void onKpa1500Error(const QString &error);
-    void onKpa1500EnabledChanged(bool enabled);
-    void onKpa1500SettingsChanged();
-    void updateKpa1500Status();
-
-    // Error/notification from K4 (ERxx: messages)
-    void onErrorNotification(int errorCode, const QString &message);
-
-    // PTT slots
-    void onPttPressed();
-    void onPttReleased();
-    void onMicrophoneFrame(const QByteArray &s16leData);
-
-    // Display FPS (synthetic menu item)
-    void onDisplayFpsChanged(int fps);
-
-    // Fn popup / macro slots
-    void onFnFunctionTriggered(const QString &functionId);
-    void executeMacro(const QString &functionId);
-    void openMacroDialog();
-
-    // MAIN RX / SUB RX popup slots
-    void onMainRxButtonClicked(int index);
-    void onMainRxButtonRightClicked(int index);
-    void onSubRxButtonClicked(int index);
-    void onSubRxButtonRightClicked(int index);
-
 private:
+    QString m_startupRadioOverride;
+
+    // WHY: the width the window has always opened at. Height is whatever the layout needs.
+    static constexpr int kPreferredWidth = 1340;
+
     void setupMenuBar();
     void setupUi();
-    void setupTopStatusBar(QWidget *parent);
+    void sizeToScreen();
     void setupVfoSection(QWidget *parent);
-    void setupSpectrumPlaceholder(QWidget *parent);
+
+    void setupControllers();
+    void setupNotificationWidget();
+    void setupConnectionWiring();
+    void setupRadioStateWiring();
+    void setupSpectrumDataRouting();
+    void setupHardwareController();
+
+    // VFO tuning shared by the wheel, arrow keys, digit tuning, and the mini view.
+    // All respect connection state and VFO lock; tuneVfoBySteps snaps to the step grid first.
+    void tuneVfoToFrequency(bool vfoB, qint64 freq);
+    void tuneVfoBySteps(bool vfoB, int steps);
+    void tuneVfoByHz(bool vfoB, qint64 deltaHz);
+    // Up/Down (no modifiers) tunes VFO A, or VFO B while B SET is on. Returns true if handled.
+    bool handleTuneKey(QKeyEvent *event);
+    // Last un-echoed digit-tune target per VFO, so rapid Up/Down presses don't collapse into one step
+    RadioUtils::PendingTune m_pendingDigitTuneA;
+    RadioUtils::PendingTune m_pendingDigitTuneB;
+    void setupCatServer();
+    // Show the Options dialog, creating it on first use. page is an OptionsDialog::Page, or -1 to
+    // leave the current page selected (int keeps OptionsDialog forward-declared here).
+    void openOptionsDialog(int page = -1);
+
     void updateConnectionState(TcpClient::ConnectionState state);
-    QString formatFrequency(quint64 freq);
-    void updateModeLabels();
+    // Disconnect-path helper — owners of their own state each implement a
+    // reset method (VFOWidget::resetToDefaults, SideControlPanel::resetToDefaults,
+    // StatusBarController::clearReadings, SpectrumController::clearDisplays,
+    // KPA1500UiController::disconnectFromHost, RadioState::reset). This helper
+    // covers only the labels MainWindow still owns directly.
+    void resetUiForDisconnect();
 
-    // Band and mini pan helpers
-    int getBandFromFrequency(quint64 freq);
-    bool areVfosOnDifferentBands();
-    void checkAndHideMiniPanB();
+    // Closes menu overlay, antenna-config popups, and mode popup — i.e.,
+    // every popup NOT owned by PopupManager. Used by the per-popup toggle
+    // handlers so PopupManager::toggleX can still see its target popup's
+    // current visibility state (toggle-close must work).
+    void closeNonPopupManagerPopups();
 
-    TcpClient *m_tcpClient;
-    RadioState *m_radioState;
-    QTimer *m_clockTimer;
+    ConnectionController *m_connectionController = nullptr;
+    RadioState *m_radioState = nullptr;
 
-    // Audio
-    AudioEngine *m_audioEngine;
-    OpusDecoder *m_opusDecoder;
-    OpusEncoder *m_opusEncoder;
+    // Audio controller owns AudioEngine, Opus codecs, audio thread, and PTT state
+    AudioController *m_audioController = nullptr;
+    TransmitController *m_transmitController = nullptr;
 
-    // PTT state
-    bool m_pttActive = false;
-    quint8 m_txSequence = 0;
+    // Spectrum controller owns panadapters, span buttons, VFO indicators, and spectrum wiring
+    SpectrumController *m_spectrumController = nullptr;
 
-    // Top status bar
-    QLabel *m_titleLabel;
-    QLabel *m_dateTimeLabel;
-    QLabel *m_powerLabel;
-    QLabel *m_swrLabel;
-    QLabel *m_voltageLabel;
-    QLabel *m_currentLabel;
-    QLabel *m_connectionStatusLabel;
-    QLabel *m_kpa1500StatusLabel;
-    KPA1500Window *m_kpa1500Window;
+    // Top status bar — owned by StatusBarController (see src/controllers/).
+    StatusBarController *m_statusBarController = nullptr;
 
-    // VFO widgets (modular, reusable components)
-    VFOWidget *m_vfoA;
-    VFOWidget *m_vfoB;
-
-    // NOTE: TX meters are now integrated into VFOWidgets as multifunction S/Po meters
-    // (see VFOWidget::m_txMeter - displays S-meter when RX, Po when TX)
+    // VFO widgets (modular, reusable components). Each owns its own multifunction S/Po/ALC/COMP/
+    // SWR/Id meter (VFOWidget::m_txMeter) so there is no standalone TX meter member here.
+    VFOWidget *m_vfoA = nullptr;
+    VFOWidget *m_vfoB = nullptr;
 
     // Mode labels (in center section, not in VFOWidget)
-    QLabel *m_modeALabel;
-    QLabel *m_modeBLabel;
+    QLabel *m_modeALabel = nullptr;
+    QLabel *m_modeBLabel = nullptr;
 
     // RX Antenna labels (in antenna row below VFOs)
-    QLabel *m_rxAntALabel;
-    QLabel *m_rxAntBLabel;
+    QLabel *m_rxAntALabel = nullptr;
+    QLabel *m_rxAntBLabel = nullptr;
 
     // Center section - first row with absolute positioning
-    VfoRowWidget *m_vfoRow;
+    VfoRowWidget *m_vfoRow = nullptr;
 
     // Center section labels (pointers to VfoRowWidget children)
-    QWidget *m_vfoASquare; // VfoSquareWidget - used for event filter
-    QLabel *m_txTriangle;  // Left triangle (pointing at A) - shown when split OFF
-    QLabel *m_txTriangleB; // Right triangle (pointing at B) - shown when split ON
-    QLabel *m_txIndicator;
-    QWidget *m_vfoBSquare; // VfoSquareWidget - used for event filter
-    QLabel *m_splitLabel;
-    QLabel *m_bSetLabel;
-    QLabel *m_subLabel; // SUB indicator (green when sub RX enabled)
-    QLabel *m_divLabel; // DIV indicator (green when diversity enabled)
-    QLabel *m_msgBankLabel;
-    QWidget *m_ritXitBox;
-    QLabel *m_ritLabel;
-    QLabel *m_xitLabel;
-    QLabel *m_ritXitValueLabel;
-    QLabel *m_atuLabel;
-    FilterIndicatorWidget *m_filterAWidget; // VFO A filter indicator
-    FilterIndicatorWidget *m_filterBWidget; // VFO B filter indicator
+    QWidget *m_vfoASquare = nullptr; // VfoSquareWidget - used for event filter
+    QLabel *m_txTriangle = nullptr;  // Left triangle (pointing at A) - shown when split OFF
+    QLabel *m_txTriangleB = nullptr; // Right triangle (pointing at B) - shown when split ON
+    QLabel *m_txIndicator = nullptr;
+    QWidget *m_vfoBSquare = nullptr; // VfoSquareWidget - used for event filter
+    QLabel *m_splitLabel = nullptr;
+    QLabel *m_subLabel = nullptr; // SUB indicator (green when sub RX enabled)
+    QLabel *m_divLabel = nullptr; // DIV indicator (green when diversity enabled)
+    QLabel *m_msgBankLabel = nullptr;
+    QWidget *m_ritXitBox = nullptr;
+    QLabel *m_ritLabel = nullptr;
+    QLabel *m_xitLabel = nullptr;
+    QLabel *m_ritXitValueLabel = nullptr;
+    QLabel *m_atuLabel = nullptr;
+    FilterIndicatorWidget *m_filterAWidget = nullptr; // VFO A filter indicator
+    FilterIndicatorWidget *m_filterBWidget = nullptr; // VFO B filter indicator
 
-    // Memory buttons (M1-M4, REC, STORE, RCL)
-    QPushButton *m_m1Btn;
-    QPushButton *m_m2Btn;
-    QPushButton *m_m3Btn;
-    QPushButton *m_m4Btn;
-    QPushButton *m_recBtn;
-    QPushButton *m_storeBtn;
-    QPushButton *m_rclBtn;
-    QLabel *m_voxLabel;
-    QLabel *m_qskLabel;
-    QLabel *m_testLabel;
-    QLabel *m_txAntennaLabel;
+    // Memory buttons (M1-M4, REC, STORE, RCL) live in
+    // MemoryButtonsController — no pointers retained here.
+    QLabel *m_voxLabel = nullptr;
+    QLabel *m_qskLabel = nullptr;
+    QLabel *m_txAntennaLabel = nullptr;
 
-    // Spectrum/Waterfall displays (QRhiWidget - Metal/DirectX/Vulkan)
-    PanadapterRhiWidget *m_panadapterA; // VFO A (Main RX)
-    PanadapterRhiWidget *m_panadapterB; // VFO B (Sub RX) - for future use
-    QWidget *m_spectrumContainer;
-
-    // Span control buttons (overlay on panadapter A)
-    QPushButton *m_spanUpBtn;
-    QPushButton *m_spanDownBtn;
-    QPushButton *m_centerBtn;
-
-    // Span control buttons (overlay on panadapter B)
-    QPushButton *m_spanUpBtnB;
-    QPushButton *m_spanDownBtnB;
-    QPushButton *m_centerBtnB;
-
-    // VFO indicator badges (bottom-left corner of waterfall)
-    QLabel *m_vfoIndicatorA;
-    QLabel *m_vfoIndicatorB;
-
-    // Panadapter display mode
-    PanadapterMode m_panadapterMode = PanadapterMode::MainOnly;
+    // Server Manager (RadioManagerDialog) shown modeless + toggled by the side-panel globe icon;
+    // null when closed (see showRadioManager()).
+    RadioManagerDialog *m_radioManager = nullptr;
 
     // Control panels (L-shaped layout)
-    SideControlPanel *m_sideControlPanel;
-    RightSidePanel *m_rightSidePanel;
-    BottomMenuBar *m_bottomMenuBar;
+    SideControlPanel *m_sideControlPanel = nullptr;
+    RightSidePanel *m_rightSidePanel = nullptr;
+    BottomMenuBar *m_bottomMenuBar = nullptr;
 
-    // Menu system
-    MenuModel *m_menuModel;
-    MenuOverlayWidget *m_menuOverlay;
-    BandPopupWidget *m_bandPopup;
-    DisplayPopupWidget *m_displayPopup;
-    FnPopupWidget *m_fnPopup;
-    MacroDialog *m_macroDialog;
-    ButtonRowPopup *m_mainRxPopup;
-    ButtonRowPopup *m_subRxPopup;
-    ButtonRowPopup *m_txPopup;
-    RxEqPopupWidget *m_rxEqPopup;
-    RxEqPopupWidget *m_txEqPopup;
-    LineOutPopupWidget *m_lineOutPopup;
-    LineInPopupWidget *m_lineInPopup;
-    MicInputPopupWidget *m_micInputPopup;
-    MicConfigPopupWidget *m_micConfigPopup;
-    VoxPopupWidget *m_voxPopup;
-    SsbBwPopupWidget *m_ssbBwPopup;
-    TextDecodeWindow *m_textDecodeWindowMain;
-    TextDecodeWindow *m_textDecodeWindowSub;
-    AntennaCfgPopupWidget *m_mainRxAntCfgPopup;
-    AntennaCfgPopupWidget *m_subRxAntCfgPopup;
-    AntennaCfgPopupWidget *m_txAntCfgPopup;
-    FeatureMenuBar *m_featureMenuBar;
-    ModePopupWidget *m_modePopup;
+    // Menu system — owned by MenuController (src/controllers/).
+    MenuController *m_menuController = nullptr;
+    PopupManager *m_popupManager = nullptr;
+    BandNavigationController *m_bandNavController = nullptr;
+    ButtonRowDispatcher *m_buttonRowDispatcher = nullptr;
+    MacroController *m_macroController = nullptr;
+    ProcessingDisplayController *m_processingDisplayController = nullptr;
+    VfoRowIndicatorController *m_vfoRowIndicatorController = nullptr;
+    RitXitController *m_ritXitController = nullptr;
+    ModeLabelController *m_modeLabelController = nullptr;
+    VfoFrequencyController *m_vfoFrequencyController = nullptr;
+    SubDivIndicatorController *m_subDivIndicatorController = nullptr;
+    TxStateController *m_txStateController = nullptr;
+    SideControlDisplayController *m_sideControlDisplayController = nullptr;
+    SideControlScrollController *m_sideControlScrollController = nullptr;
+    RightSideController *m_rightSideController = nullptr;
+    MemoryButtonsController *m_memoryButtonsController = nullptr;
+    TextDecodeController *m_textDecodeController = nullptr;
+    AntennaConfigController *m_antennaCfgController = nullptr;
+    AntennaDisplayController *m_antennaDisplayController = nullptr;
+    FeatureMenuController *m_featureMenuController = nullptr;
+    ModePopupController *m_modePopupController = nullptr;
 
-    RadioEntry m_currentRadio;
-    int m_currentBandNum = -1;  // Current band number for VFO A (BN command)
-    int m_currentBandNumB = -1; // Current band number for VFO B (BN$ command)
+    // Hardware controller (owns KPOD, HaliKey, IambicKeyer, SidetoneGenerator and their threads)
+    HardwareController *m_hardwareController = nullptr;
+    CwController *m_cwController = nullptr;
 
-    // KPOD device
-    KpodDevice *m_kpodDevice;
+    // KPA1500 amplifier UI controller (owns the KPA1500Client)
+    KPA1500UiController *m_kpa1500UiController = nullptr;
 
-    // HaliKey CW paddle device
-    HalikeyDevice *m_halikeyDevice;
-    QTimer *m_ditRepeatTimer;
-    QTimer *m_dahRepeatTimer;
+    // RFKit amplifier UI controller (owns the RFKitClient and floating window)
+    RFKitUiController *m_rfkitUiController;
 
-    // Local sidetone generator for CW keying
-    SidetoneGenerator *m_sidetoneGenerator;
+    // Mini view UI controller (owns the parentless MiniViewWindow)
+    MiniViewController *m_miniViewController;
 
-    // KPA1500 amplifier client
-    KPA1500Client *m_kpa1500Client;
+    // DX Cluster controller
+    DxClusterController *m_dxClusterController = nullptr;
 
     // CAT server for external app integration (WSJT-X, MacLoggerDX, etc.)
-    CatServer *m_catServer;
+    CatServer *m_catServer = nullptr;
+
+    // TCI server: the same job over a WebSocket, carrying audio as well as CAT. Independent of
+    // CatServer - neither goes through the other.
+    TciController *m_tciController = nullptr;
+
+    // Persistent Options dialog (lazy-created on first open)
+    OptionsDialog *m_optionsDialog = nullptr;
 
     // Notification popup for K4 error/status messages (ERxx:)
-    NotificationWidget *m_notificationWidget;
-
-    // Debounce timer for RX EQ slider changes
-    QTimer *m_rxEqDebounceTimer;
-
-    // Debounce timer for TX EQ slider changes
-    QTimer *m_txEqDebounceTimer;
-
-    // K4 "Mouse L/R Button QSY" menu setting
-    int m_mouseQsyMode = 0;      // 0=Left Only, 1=L=A R=B
-    int m_mouseQsyMenuId = -999; // Menu ID from MEDF (sentinel = not yet discovered)
-
-    WheelAccumulator m_ritWheelAccumulator;
+    NotificationWidget *m_notificationWidget = nullptr;
 };
 
 #endif // MAINWINDOW_H

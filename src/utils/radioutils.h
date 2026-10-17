@@ -1,0 +1,221 @@
+#ifndef RADIOUTILS_H
+#define RADIOUTILS_H
+
+#include <QString>
+#include <QVector>
+#include <QtGlobal>
+
+/**
+ * @brief Shared radio utility functions and constants.
+ *
+ * Centralizes frequency, band, and span calculations used by
+ * MainWindow, SpectrumController, and HardwareController.
+ * No duplicated static functions — all callers use this namespace.
+ */
+namespace RadioUtils {
+
+// K4 span range: 5 kHz to 368 kHz
+// UP (zoom out): +1 kHz until 144 kHz, then +4 kHz until 368 kHz
+// DOWN (zoom in): -4 kHz until 140 kHz, then -1 kHz until 5 kHz
+constexpr int SPAN_MIN = 5000;
+constexpr int SPAN_MAX = 368000;
+constexpr int SPAN_THRESHOLD_UP = 144000;
+constexpr int SPAN_THRESHOLD_DOWN = 140000;
+
+// K4 keyer speed range. The manual gives "from 8 to 100 WPM" and the KS command documents the
+// same, so a speed outside it cannot come from the radio.
+constexpr int KEYER_WPM_MIN = 8;
+constexpr int KEYER_WPM_MAX = 100;
+
+/// Dit unit length in ms for a keyer speed, clamped to the K4's range.
+///
+/// WHY this is shared rather than written out at each site: three places derive an element length
+/// from the speed — the local iambic keyer's element clock, the sidetone's PCM block length, and
+/// the KZL element length sent to the K4 — and they have to agree exactly. They did not: the
+/// sidetone clamped to 5-60 WPM while the keyer clamped not at all, so above 60 WPM the sidetone
+/// built longer blocks than the keyer's element interval and fell further behind on every element,
+/// with no recovery until keying stopped. One conversion, one clamp, no drift.
+inline int ditMsForWpm(int wpm) {
+    return 1200 / qBound(KEYER_WPM_MIN, wpm, KEYER_WPM_MAX);
+}
+
+/// Convert VT tuning step index (0-5) to Hz.
+/// Returns 1000 Hz for out-of-range values.
+int tuningStepToHz(int step);
+
+/// VT tuning step for a frequency-display digit, counted from the right (0 = 1 Hz digit).
+/// Digits 0-4 (1 Hz to 10 kHz) map to VT0-VT4; any other digit returns -1 because the K4 has no
+/// tuning step above 10 kHz (VT5 wraps back to 100 Hz).
+int tuningStepForDigit(int digitFromRight);
+
+/// Convert frequency (Hz) to K4 band number (0=160m ... 10=6m, 16=XVTR).
+/// Returns -1 for out-of-band frequencies.
+int getBandFromFrequency(quint64 freq);
+
+/// Get next span step up (zoom out) from current span in Hz.
+/// Clamps at SPAN_MAX.
+int getNextSpanUp(int currentSpan);
+
+/// Get next span step down (zoom in) from current span in Hz.
+/// Clamps at SPAN_MIN.
+int getNextSpanDown(int currentSpan);
+
+/// Span after one zoom step: zooming in narrows the span (getNextSpanDown), zooming out widens it
+/// (getNextSpanUp). The one place that decides which way a + or - span control goes.
+int spanAfterZoom(int currentSpan, bool zoomIn);
+
+/// Next K4 filter preset when cycling like the front panel: 1 -> 3 -> 2 -> 1.
+/// Returns -1 for anything outside 1-3 (preset not known yet).
+int nextFilterPreset(int currentPreset);
+
+/// Build an 8-band EQ CAT command string (e.g., "RE+00-02+04..." or "TE+00...").
+/// prefix is "RE" (RX) or "TE" (TX), bands must have exactly 8 values in [-16, +16].
+QString buildEqCommand(const QString &prefix, const QVector<int> &bands);
+
+/// Convert SL tier (0-7) to Opus frame size in samples per channel at 12kHz.
+/// SL0=240 (20ms), SL1-2=480 (40ms), SL3-5=720 (60ms), SL6-7=1440 (120ms).
+/// Returns 720 (SL3 default) for out-of-range values.
+int slTierToFrameSamples(int sl);
+
+// --- RX jitter-buffer self-correction watermarks ---------------------------
+// The AudioEngine RX queue can ratchet up a permanent latency backlog after a
+// stall (e.g. PTT mic init / output-device rebuild). These watermarks let the
+// queue trim itself back down. They are expressed as MULTIPLES OF THE CURRENT
+// PACKET SIZE (one decoded K4 SL-bundle) — never fixed milliseconds — so the
+// buffer scales with the operator's chosen SL tier: SL0's 20ms packets get a
+// small buffer, SL7's 120ms packets get a proportionally larger one. A fixed-ms
+// target would sit below one packet at high SL and drop every packet.
+constexpr int JITTER_TARGET_PACKETS = 2;     // trim-to depth after a stall
+constexpr int JITTER_HIGH_WATER_PACKETS = 5; // trigger; must exceed normal jitter (~1 pkt)
+
+/// SL-scaled trim-to depth in bytes for the RX jitter buffer, given the current
+/// decoded packet size in bytes. Returns 0 for non-positive input.
+int jitterTargetBytes(int pktBytes);
+
+/// SL-scaled high-water mark in bytes: once the RX queue exceeds this, it trims
+/// back down to jitterTargetBytes(). Returns 0 for non-positive input.
+int jitterHighWaterBytes(int pktBytes);
+
+// --- K4 panadapter fixed-tune display mode ---------------------------------
+// The K4 encodes the panadapter tuning mode across two CAT params: #FXT
+// (0=track, 1=fixed) and #FXA (0-4). WARNING: Elecraft uses TWO naming
+// systems and they do NOT line up intuitively. The programmer's reference
+// names #FXA by behavior; the front panel shows different labels. We mirror
+// the front-panel labels (what the user sees on the radio), verified against
+// hardware 2026-05-28:
+//   #FXA  reference name       front-panel label (what QK4 shows)
+//   ----  -------------------  --------------------------------
+//    0    FULL SPAN            FIXED1
+//    1    HALF SPAN            FIXED2
+//    2    SLIDE EDGE           SLIDE1
+//    3    STATIC               STATIC
+//    4    SLIDE NEAR EDGE      SLIDE2
+//   (#FXT0 = TRACK, regardless of #FXA)
+// WHY centralized: the inbound parse and the outbound command builder must
+// agree, or the displayed mode desyncs from the radio (the historical
+// SLIDE1<->FIXED2 bug, caused by mis-associating the two naming systems).
+// One mapping here makes divergence impossible.
+enum class FixedTuneMode { Track = 0, Slide1, Slide2, Fixed1, Fixed2, Static };
+
+/// Decode raw #FXT/#FXA into a FixedTuneMode. fxt==0 is always Track (FXA
+/// ignored); unknown fxa values fall back to Track.
+FixedTuneMode fixedTuneModeFromCat(int fxt, int fxa);
+
+/// Build the CAT command that sets the K4 to `mode`, setting both #FXT and
+/// #FXA deterministically (no reliance on the radio's prior FXA). Does NOT
+/// include a read-back GET; callers append "#FXA;#FXT;" when they need the
+/// radio to confirm (the K4 does not echo these SETs at AI4).
+QString fixedTuneSetCommand(FixedTuneMode mode);
+
+/// Snap an absolute frequency DOWN to the nearest multiple of stepHz, zeroing the
+/// digits below the current tuning step (e.g. 7277380 @ 100 Hz -> 7277300). No-op
+/// when already aligned or stepHz <= 0. Used by every tune path so dial/scroll/drag
+/// land on the same step boundary the dimmed-digit display indicates.
+qint64 snapFreqToStep(qint64 freq, int stepHz);
+
+/// Convert a Celsius reading to Fahrenheit, rounded to the nearest degree.
+/// Display-only: warning/critical thresholds stay in Celsius so a given physical
+/// temperature keeps its colour whichever unit is shown.
+int celsiusToFahrenheit(int celsius);
+
+/// True if s is a strictly-valid dotted IPv4 address: exactly 4 dot-separated
+/// octets, each parseable 0-255, none with a leading zero. Rejects "192.168.1",
+/// "192.168.100.500", "1.2.3.4.5", "010.0.0.1". (QHostAddress is NOT used here —
+/// it leniently accepts partial forms like "192.168.1" as 192.168.0.1.)
+bool isValidIpv4(const QString &s);
+
+/// True if s is a valid host the K4 connection layer can use: a strict IPv4,
+/// an IPv6 literal, or an RFC-1123 hostname (incl. mDNS ".local" names like
+/// "k4.local", "K4-SN00045.local"). Trims input; empty -> false.
+bool isValidHostOrIp(const QString &s);
+
+/// Frequency after moving `steps` tuning steps from `freq`: snap to the step grid first
+/// (like the panadapter wheel), then add steps * stepHz. Callers reject results <= 0.
+qint64 stepTunedFrequency(qint64 freq, int steps, int stepHz);
+
+/// Hz offset from the mini-pan center line for a click at `x` in a widget `width` wide
+/// that displays `spanHz`. Returns 0 when width <= 0.
+int miniPanOffsetHz(double x, double width, int spanHz);
+
+/// Dial frequency for a target VFO when a mini-pan is clicked `offsetHz` from its center.
+/// The mini-pan center is the source receive frequency: dial + sourceRitHz, shifted by
+/// sourcePitchSign * cwPitchHz (+1 CW, -1 CW-R, 0 otherwise). The target dial undoes its own
+/// pitch and RIT the same way, so the target receives exactly at the clicked frequency.
+/// Pass 0 for a RIT offset that isn't enabled.
+qint64 miniPanClickToDialHz(qint64 sourceDialHz, int sourcePitchSign, int offsetHz, int targetPitchSign, int cwPitchHz,
+                            int sourceRitHz, int targetRitHz);
+
+/// Number of bare frequency queries for one VFO ("FA;" for VFO A, "FB;" for VFO B) in a CAT command
+/// string, which may hold several commands. Tokens are matched whole, so a SET ("FA07031415;") and CW
+/// text ending in those letters ("KY CQ DE W1FA;", which reaches the radio via a macro or a logger)
+/// are not counted.
+int frequencyQueryCount(const QString &commands, bool vfoB);
+
+/// Remembers where un-echoed relative tunes (Up/Down on a frequency-entry digit) sent a VFO, so rapid
+/// presses build on each other instead of all starting from the last radio reply.
+/// Each request is sent as SET + query, so exactly one frequency reply answers it, in order. A reply
+/// matching its request means accepted; any other reply means rejected (or the VFO moved elsewhere),
+/// which drops everything pending so the next press builds on the radio's real frequency.
+class PendingTune {
+public:
+    static constexpr qint64 HOLD_MS = 1000;
+
+    /// Frequency the next relative tune should start from: the newest in-flight target while
+    /// one is waiting and the last press is younger than HOLD_MS, otherwise radioHz.
+    qint64 base(qint64 radioHz, qint64 nowMs) const;
+    void sent(qint64 targetHz, qint64 nowMs);
+    /// Account for a bare FA;/FB; query for this VFO. Other paths (pan click, spot click) send their
+    /// own, and the answer is indistinguishable by value from a refused tune — both carry the
+    /// unchanged frequency — so it is matched by position instead. A query this VFO's own tune sent
+    /// is already accounted for by sent() and is skipped here.
+    void queryObserved();
+    /// Feed every frequency reply for this VFO, including ones that leave the frequency unchanged.
+    void radioReplied(qint64 radioHz);
+    /// Stop building on in-flight targets (e.g. a direct tune took over); their replies are still expected.
+    void clear();
+    /// Forget everything, including replies still owed — only when the connection is dropped, since TCP
+    /// otherwise delivers every reply (possibly late).
+    void reset();
+
+private:
+    // One reply is owed per entry, in send order, so each reply answers the head of the queue.
+    enum class Expect {
+        Target,    // a digit tune still waiting to be confirmed
+        Abandoned, // a tune given up on; its reply is still coming and means nothing now
+        Foreign    // someone else's query; its reply says nothing about a digit tune
+    };
+    struct Expected {
+        Expect kind;
+        qint64 targetHz; // only meaningful for Target
+    };
+
+    void abandonTargets();
+
+    QVector<Expected> m_expected; // replies still owed, oldest first
+    int m_selfQueries = 0;        // queries sent by our own tunes, not yet seen by queryObserved()
+    qint64 m_lastSentMs = 0;
+};
+
+} // namespace RadioUtils
+
+#endif // RADIOUTILS_H

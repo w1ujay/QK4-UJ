@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>QK4</title>
+  <style>
+    body { margin: 0; padding: 10px 12px; font: 13px -apple-system, "Segoe UI", sans-serif; color: #e8e8e8; background: transparent; }
+    [hidden] { display: none !important; }
+    label { display: grid; grid-template-columns: 90px 1fr; align-items: center; gap: 8px; margin-bottom: 8px; }
+    select, input { width: 100%; box-sizing: border-box; }
+    p { color: #aeb3ba; line-height: 1.35; margin: 6px 0 0; }
+  </style>
+</head>
+<body>
+  <form id="settings">
+    <label id="slot-row">Slot
+      <select name="slot">
+        <option value="1">1</option><option value="2">2</option><option value="3">3</option>
+        <option value="4">4</option><option value="5">5</option><option value="6">6</option>
+        <option value="7">7</option>
+      </select>
+    </label>
+    <label>QK4 port
+      <input name="port" type="number" min="1024" max="65535" value="9410">
+    </label>
+  </form>
+  <p>Enable "Ulanzi Dial" in QK4's Options and use the same port there. Each QK4 Button runs the
+    Ulanzi.&lt;slot&gt;T (tap) and Ulanzi.&lt;slot&gt;H (hold) macros you set up in QK4.</p>
+  <script src="libs/js/constants.js"></script>
+  <script src="libs/js/eventEmitter.js"></script>
+  <script src="libs/js/timers.js"></script>
+  <script src="libs/js/utils.js"></script>
+  <script src="libs/js/ulanziApi.js"></script>
+  <script src="inspector.js"></script>
+</body>
+</html>

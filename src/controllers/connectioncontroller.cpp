@@ -1,0 +1,121 @@
+#include "connectioncontroller.h"
+#include "network/networkmetrics.h"
+#include "network/protocol.h"
+#include "models/radiostate.h"
+#include "utils/macroids.h"
+#include "utils/radioutils.h"
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(qk4Connection, "qk4.connection")
+
+ConnectionController::ConnectionController(RadioState *radioState, QObject *parent)
+    : QObject(parent), m_tcpClient(new TcpClient(nullptr)), m_radioState(radioState) {
+    // Move TcpClient (+ Protocol, socket, timers as children) to dedicated I/O thread
+    // so network data flows independently of UI work
+    m_ioThread = new QThread(this);
+    m_ioThread->setObjectName("I/O");
+    m_tcpClient->moveToThread(m_ioThread);
+    m_ioThread->start();
+
+    // NetworkMetrics tracks connection health (latency, buffer, packet loss)
+    m_networkMetrics = new NetworkMetrics(this);
+
+    // Wire TcpClient signals to our internal handlers
+    connect(m_tcpClient, &TcpClient::stateChanged, this, &ConnectionController::onStateChanged);
+    connect(m_tcpClient, &TcpClient::errorOccurred, this, &ConnectionController::connectionError);
+    connect(m_tcpClient, &TcpClient::authenticated, this, &ConnectionController::radioReady);
+
+    // Re-emit Protocol signals so callers don't need tcpClient()->protocol() chains
+    auto *protocol = m_tcpClient->protocol();
+    connect(protocol, &Protocol::catResponseReceived, this, &ConnectionController::catResponseReceived);
+    connect(protocol, &Protocol::spectrumDataReady, this, &ConnectionController::spectrumDataReceived);
+    connect(protocol, &Protocol::miniSpectrumDataReady, this, &ConnectionController::miniSpectrumDataReceived);
+
+    // Network health metrics
+    connect(m_tcpClient, &TcpClient::latencyChanged, m_networkMetrics, &NetworkMetrics::onLatencyChanged);
+    connect(m_tcpClient, &TcpClient::connected, m_networkMetrics,
+            [this]() { m_networkMetrics->onConnectionStateChanged(true); });
+    connect(m_tcpClient, &TcpClient::disconnected, m_networkMetrics,
+            [this]() { m_networkMetrics->onConnectionStateChanged(false); });
+}
+
+ConnectionController::~ConnectionController() {
+    disconnect(this);
+    if (m_ioThread) {
+        QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::BlockingQueuedConnection);
+        m_ioThread->quit();
+        m_ioThread->wait(2000);
+    }
+    delete m_tcpClient; // No parent, must delete manually
+}
+
+void ConnectionController::connectToRadio(const RadioEntry &radio) {
+    qCDebug(qk4Connection) << "connectToRadio: isConnected=" << m_tcpClient->isConnected()
+                           << "connectionState=" << m_tcpClient->connectionState();
+    if (m_tcpClient->isConnected()) {
+        QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
+    }
+
+    m_currentRadio = radio;
+
+    // Load startup macro so TcpClient can send it before RDY (state dump reflects changes)
+    MacroEntry startupMacro = RadioSettings::instance()->macro(MacroIds::Startup);
+    QString macroToSend = startupMacro.command;
+    if (!macroToSend.isEmpty()) {
+        QString forbidden = MacroIds::checkForbiddenStartupCommand(macroToSend);
+        if (!forbidden.isEmpty()) {
+            qWarning() << "Startup macro blocked: contains forbidden command" << forbidden;
+            macroToSend.clear();
+        }
+    }
+    // WHY on every attempt, even when empty: TcpClient only clears its copy after sending it on a
+    // successful auth. A macro queued for an attempt that failed would otherwise survive into the
+    // next one and run although the operator has since removed or changed it.
+    QMetaObject::invokeMethod(m_tcpClient, "setStartupMacro", Qt::QueuedConnection, Q_ARG(QString, macroToSend));
+
+    qCDebug(qk4Connection) << "Connecting to" << radio.host << ":" << radio.port
+                           << (radio.useTls ? "(TLS/PSK)" : "(unencrypted)") << "encodeMode:" << radio.encodeMode
+                           << "streamingLatency:" << radio.streamingLatency;
+    QMetaObject::invokeMethod(m_tcpClient, "connectToHost", Qt::QueuedConnection, Q_ARG(QString, radio.host),
+                              Q_ARG(quint16, radio.port), Q_ARG(QString, radio.password), Q_ARG(bool, radio.useTls),
+                              Q_ARG(QString, radio.identity), Q_ARG(int, radio.encodeMode),
+                              Q_ARG(int, radio.streamingLatency));
+}
+
+void ConnectionController::disconnectFromRadio() {
+    QMetaObject::invokeMethod(m_tcpClient, "disconnectFromHost", Qt::QueuedConnection);
+}
+
+void ConnectionController::sendCAT(const QString &command) {
+    m_tcpClient->sendCAT(command);
+    // WHY here: every frequency query in the app goes through this one call, so PendingTune can be
+    // told about queries it didn't send without each call site remembering to. Whole tokens only —
+    // macros and forwarded logger commands carry arbitrary CW text through here ("KY CQ DE W1FA;").
+    //
+    // WHY the guard: TcpClient drops the command unless it is Connected (its m_connected mirrors
+    // that same state), and a dropped command is never answered. Announcing it anyway would leave an
+    // expected reply that outlives the disconnect reset and swallows a real one later. The state can
+    // still change before the queued write lands; the disconnect path clears the queue for that.
+    if (!m_tcpClient->isConnected())
+        return;
+    for (int i = RadioUtils::frequencyQueryCount(command, false); i > 0; --i)
+        emit frequencyQuerySent(false);
+    for (int i = RadioUtils::frequencyQueryCount(command, true); i > 0; --i)
+        emit frequencyQuerySent(true);
+}
+
+void ConnectionController::sendRawPacket(const QByteArray &packet) {
+    m_tcpClient->sendRaw(packet);
+}
+
+bool ConnectionController::isConnected() const {
+    return m_tcpClient->isConnected();
+}
+
+TcpClient::ConnectionState ConnectionController::connectionState() const {
+    return m_tcpClient->connectionState();
+}
+
+void ConnectionController::onStateChanged(TcpClient::ConnectionState state) {
+    emit connectionStateChanged(state);
+}

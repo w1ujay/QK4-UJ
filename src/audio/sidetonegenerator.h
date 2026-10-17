@@ -5,53 +5,66 @@
 #include <QAudioSink>
 #include <QIODevice>
 #include <QByteArray>
+#include <QMediaDevices>
 #include <QtMath>
+#include <atomic>
 
-class QTimer;
-
+/**
+ * @brief Local CW sidetone synth. Lives on its own thread (HardwareController's m_sidetoneThread)
+ *        so audio output never blocks the keyer or UI. IambicKeyer drives `playSingleDit/Dah` per
+ *        element for both HaliKey transports (V1.4 serial and MIDI); when the KPOD+ owns the CW
+ *        path, CwController suppresses this local sidetone entirely. Each element is written as a
+ *        complete PCM block (tone + inter-element space) and always plays to completion.
+ *        All public slots are Q_INVOKABLE and expected to be posted via QueuedConnection.
+ */
 class SidetoneGenerator : public QObject {
     Q_OBJECT
 public:
     explicit SidetoneGenerator(QObject *parent = nullptr);
     ~SidetoneGenerator();
 
-    void setFrequency(int hz);
-    void setVolume(float volume);
-    void setKeyerSpeed(int wpm);
+    Q_INVOKABLE void setFrequency(int hz);
+    Q_INVOKABLE void setVolume(float volume);
+    Q_INVOKABLE void setKeyerSpeed(int wpm);
 
-    // Start repeating element while paddle is held (V14 modem-line interface)
-    void startDit();
-    void startDah();
-    void stopElement(); // Call when paddle is released
+    // Initialize/shutdown audio (called on sidetone thread via invokeMethod)
+    Q_INVOKABLE void start();
+    Q_INVOKABLE void stop();
+    Q_INVOKABLE void setOutputDevice(const QString &deviceId);
 
-    // Play a single element without repeat (MIDI interface — K4 keyer handles repeat)
-    void playSingleDit();
-    void playSingleDah();
+    // Play a single element (one per IambicKeyer::elementStarted)
+    Q_INVOKABLE void playSingleDit();
+    Q_INVOKABLE void playSingleDah();
 
 signals:
-    // Emitted when repeat timer fires (for sending KZ commands)
-    void ditRepeated();
-    void dahRepeated();
-
-private slots:
-    void onRepeatTimer();
 
 private:
     void initAudio();
     void playElement(int durationMs);
     int ditDurationMs() const;
     int dahDurationMs() const;
-
-    enum Element { ElementNone, ElementDit, ElementDah };
+    // WHY: when the user leaves the speaker on "System Default" (empty device id),
+    // follow the OS default live instead of caching it for the session — same
+    // pattern as AudioEngine. Without this, a default-device change (or hot-unplug)
+    // left the sink on a stale/dead device and the sidetone went silent.
+    void onSystemDefaultOutputChanged();
 
     QAudioSink *m_audioSink = nullptr;
     QIODevice *m_pushDevice = nullptr;
-    QTimer *m_repeatTimer = nullptr;
-    int m_frequency = 600;
-    float m_volume = 0.3f;
-    int m_keyerWpm = 20;
+    QString m_selectedOutputDeviceId;
+    QString m_activeOutputDeviceId;          // id of the device the sink was actually opened on
+    QMediaDevices *m_mediaDevices = nullptr; // OS device/default-change monitor
+    std::atomic<int> m_frequency{600};
+    std::atomic<float> m_volume{0.3f};
+    std::atomic<int> m_keyerWpm{20};
     double m_phase = 0.0;
-    Element m_currentElement = ElementNone;
+
+    // Pre-allocated PCM scratch buffer. Worst case is 5 WPM dah (720 ms tone +
+    // 240 ms inter-element space) at 48 kHz × 2 bytes = ~92 kB. Sized to
+    // 128 kB so a future slower-keyer mode doesn't realloc. Previously
+    // playElement() allocated a fresh QByteArray per CW element (7+ allocs/sec
+    // during keying). resize() against the pre-sized capacity is alloc-free.
+    QByteArray m_elementBuffer;
 };
 
 #endif // SIDETONEGENERATOR_H

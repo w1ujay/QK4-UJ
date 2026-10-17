@@ -1,0 +1,113 @@
+#ifndef STATUSBARCONTROLLER_H
+#define STATUSBARCONTROLLER_H
+
+#include <QObject>
+
+class ConnectionController;
+class ConfirmPopup;
+class IconTextLabel;
+class NetHealthWidget;
+class NetworkMetrics;
+class PowerStatusButton;
+class QLabel;
+class QTimer;
+class QWidget;
+class RadioState;
+
+// Owns the top status bar: title, date/time clock, at-a-glance metric slots
+// (temperature, voltage), KPA1500 status, K4 connection status, NetHealthWidget,
+// and the K4 remote-power button on the right.
+//
+// Observes RadioState directly for voltage and power-state updates so MainWindow
+// no longer needs to route those slots. The bar dropped its W / SWR / A readouts
+// (redundant with the rest of the UI); future at-a-glance fields are added as
+// IconTextLabel instances and wired to whatever RadioState signal feeds them.
+//
+// The power button on the right is the click target for the K4 remote power-off
+// flow: a ConfirmPopup is shown above it, and on confirm the controller sends
+// "PS0;" via the injected ConnectionController. The K4 closes the socket; the
+// normal disconnected flow handles the cleanup.
+//
+// See PATTERNS.md → Controller Pattern.
+class QPushButton;
+
+class StatusBarController : public QObject {
+    Q_OBJECT
+
+public:
+    StatusBarController(RadioState *radioState, ConnectionController *connectionController,
+                        NetworkMetrics *networkMetrics, QWidget *parentWidget, QObject *parent = nullptr);
+    ~StatusBarController() override;
+
+    // Container widget — MainWindow adds this into its top layout.
+    QWidget *widget() const;
+
+    // Task-level API.
+    void setTitle(const QString &text);
+    void clearReadings();
+    void setKpa1500Visible(bool visible);
+    void setKpa1500Status(const QString &text, const QString &styleSheet);
+    void setRfkitVisible(bool visible);
+    void setRfkitStatus(const QString &text, const QString &styleSheet);
+    // HaliKey CW paddle interface: green when the port is open, gray otherwise. The tooltip carries
+    // the port name so the one-word indicator stays narrow.
+    void setHalikeyStatus(bool connected, const QString &portName);
+
+    // Connection-state indicator transitions. Each sets the K4 status label
+    // text and style appropriate for that state. Disconnected also resets
+    // the title to its default. Used by MainWindow::updateConnectionState.
+    void showDisconnected();
+    void showConnecting();                       // amber bold — same style for Connecting + Authenticating
+    void showConnected();                        // green bold
+    void showError(const QString &errorMessage); // red bold — survives the disconnect that follows // red bold —
+                                                 // "Error: <message>"
+
+signals:
+    // The HaliKey indicator was clicked. MainWindow owns the device and decides what that means,
+    // keeping port/settings knowledge out of the status bar.
+    void halikeyToggleRequested();
+
+private:
+    void onPowerButtonClicked();
+    // Flip the status-bar temperature unit and persist the choice.
+    void toggleTemperatureUnit();
+    // Render one cached Celsius reading into its field in the selected unit. The warn/critical
+    // colours are decided in Celsius, so a given heatsink temperature looks the same in both.
+    void applyTemperature(IconTextLabel *field, int celsius);
+    // Re-render both fields from their cached readings, so a unit change is immediate rather
+    // than waiting for the next SIRF update.
+    void refreshTemperatureFields();
+
+    RadioState *m_radioState;                     // injected, not owned
+    ConnectionController *m_connectionController; // injected, not owned
+    QWidget *m_container;                         // owned via Qt parent (parentWidget)
+    QLabel *m_titleLabel;
+    QLabel *m_dateTimeLabel;
+    IconTextLabel *m_lpaTempField;
+    IconTextLabel *m_paTempField;
+    IconTextLabel *m_voltageField;
+    QLabel *m_connectionStatusLabel;
+    QPushButton *m_halikeyButton;
+    QLabel *m_kpa1500StatusLabel;
+    QLabel *m_rfkitStatusLabel;
+    NetHealthWidget *m_netHealthWidget;
+    PowerStatusButton *m_powerButton;
+    QTimer *m_clockTimer;
+    ConfirmPopup *m_confirmPopup = nullptr; // lazily constructed on first click
+
+    // A connection error is on the label and must outlive the Disconnected update that follows it.
+    // Cleared when the next attempt starts. See showDisconnected() for why this is needed.
+    bool m_errorShown = false;
+
+    // Last Celsius readings, cached so the unit toggle has something to re-render. The sentinel
+    // means "nothing received yet" and must survive a disconnect, or toggling the unit while
+    // disconnected would resurrect the last numbers behind the "--" placeholder.
+    static constexpr int kNoTempReading = -999;
+    int m_paTempC = kNoTempReading;
+    int m_lpaTempC = kNoTempReading;
+    bool m_tempInFahrenheit = false;
+
+    void updateDateTime();
+};
+
+#endif // STATUSBARCONTROLLER_H

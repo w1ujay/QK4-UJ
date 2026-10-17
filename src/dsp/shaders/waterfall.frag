@@ -6,25 +6,46 @@ layout(location = 0) out vec4 outColor;
 layout(binding = 1) uniform sampler2D waterfallTex;
 layout(binding = 2) uniform sampler2D colorLutTex;
 
+// Must stay byte-identical to the block in waterfall.vert — they share one std140 binding.
 layout(std140, binding = 0) uniform buf {
-    float scrollOffset;   // Row scroll offset (used by vertex shader)
-    float binCount;       // Actual spectrum bin count (e.g., 213 at 5kHz span)
-    float textureWidth;   // Texture width for bin centering (1024)
+    float scrollOffset;     // Oldest visible row, as a fraction of stored rows (vertex stage)
+    float binCount;         // Full tier bin count (e.g., 1024)
+    float textureWidth;     // Texture width for bin centering (e.g., 4096)
+    float tierSpanHz;       // Full tier bandwidth in Hz
+    float spanHz;           // Display span in Hz
+    float visibleFraction;  // Rows drawn / rows stored (vertex stage)
+    float storedRows;       // Rows in the texture; 0.0 disables the V snap
     float padding;
 };
 
 void main() {
-    // Map display X [0,1] to bin index, then to texture coordinate
-    // This gives crisp, non-interpolated waterfall showing actual bin data
-    float binIndex = fragTexCoord.x * binCount;
-    float texelSize = 1.0 / textureWidth;
+    // Map display X [0,1] to the visible portion of the full tier data.
+    // The tier data covers tierSpanHz bandwidth; we only display spanHz centered within it.
+    //
+    // WHY one tier for every row is safe: the waterfall is cleared whenever the radio changes
+    // tier, so no row on screen was ever captured at a different bandwidth than this uniform
+    // describes. Without that clear, this would silently rescale all history on a tier change.
+    float spanRatio = clamp(spanHz / tierSpanHz, 0.0, 1.0);
+    float tierStart = (1.0 - spanRatio) / 2.0;       // center the visible window
+    float tierU = tierStart + fragTexCoord.x * spanRatio;
 
-    // Bins are centered in texture - use floor() to match C++ integer division
+    // Map to texture coordinate (bins centered in texture)
+    float binIndex = tierU * binCount;
     float binOffset = floor((textureWidth - binCount) / 2.0);
 
     // Nearest-neighbor: truncate to get bin, add 0.5 to sample center of texel
-    float texU = (binOffset + floor(binIndex) + 0.5) * texelSize;
+    float texU = (binOffset + floor(binIndex) + 0.5) / textureWidth;
 
-    float dbValue = texture(waterfallTex, vec2(texU, fragTexCoord.y)).r;
+    // Snap V to a texel centre, the vertical twin of the texU floor() above. A V landing between
+    // two rows makes Linear filtering return a blend of two different moments in time, which is
+    // the vertical smear. Snapping also makes any rows-per-pixel ratio unblended, not just 1:1.
+    // Composes with the ring wrap: Repeat addressing handles a snapped coordinate past 1.0 the
+    // same as an unsnapped one. storedRows 0.0 opts out — the mini-pan shares these shaders but
+    // may be downsampling its 100-row buffer, where the blend is a box filter worth keeping.
+    float texV = fragTexCoord.y;
+    if (storedRows > 0.0)
+        texV = (floor(texV * storedRows) + 0.5) / storedRows;
+
+    float dbValue = texture(waterfallTex, vec2(texU, texV)).r;
     outColor = texture(colorLutTex, vec2(dbValue, 0.5));
 }

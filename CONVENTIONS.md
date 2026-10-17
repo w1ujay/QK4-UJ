@@ -22,7 +22,7 @@ Code style, naming conventions, and development rules for QK4.
    - Protocol for CAT parsing, emitting typed signals
    - Widgets self-contained with clear public interfaces
 
-4. **Write descriptive commits** - `CHANGELOG.md` is auto-generated from conventional commits at release time. Use commit body text for details that should appear in the changelog (see Commit Messages below).
+4. **Write descriptive commits** - GitHub Release notes are auto-generated from conventional commits by `git-cliff` at tag time (see `.github/workflows/release.yml`). Use commit body text for details that should appear in the release notes (see Commit Messages below).
 
 5. **Parse order matters** - Check specific patterns FIRST (e.g., `RG$` before `RG`)
 
@@ -39,8 +39,14 @@ Code style, naming conventions, and development rules for QK4.
 | Member Variables | m_camelCase | `m_frequencyALabel`, `m_tcpClient` |
 | Signals | camelCase | `frequencyChanged`, `clicked` |
 | Slots | on + Source + Event | `onFrequencyChanged`, `onConnectClicked` |
-| Constants | SCREAMING_SNAKE | `WATERFALL_HISTORY`, `TOTAL_BANDWIDTH_HZ` |
+| Constants (header / class) | SCREAMING_SNAKE | `WATERFALL_HISTORY`, `BASE_TEXTURE_WIDTH` |
+| Constants (file-local in `.cpp`) | `kCamelCase` | `kArpMaxRetries`, `kOverlayMaxSegments` |
 | Namespaces | PascalCase | `K4Styles`, `K4Styles::Colors` |
+
+The two constant styles are split by **location**, not by taste: a constant visible through a header
+is SCREAMING_SNAKE, one confined to a single `.cpp` is `kCamelCase`. The codebase follows this about
+95% of the time; it was documented in 2026-08 after an audit found the rule in the code but not in
+this file.
 
 ## Member Variable Prefixes
 
@@ -57,16 +63,6 @@ m_sMeterA, m_sMeterB
 m_panadapterA, m_panadapterB
 ```
 
-## Qt Patterns
-
-- **Signal/Slot**: Use `connect()` with lambda or member function pointers
-- **Binary Data**: Use `QByteArray` for protocol data
-- **Layouts**: Prefer `QVBoxLayout`/`QHBoxLayout`, use `QStackedWidget` for page switching
-- **Styling**: Use `setStyleSheet()` with CSS-like syntax
-- **Custom Painting**: Override `paintEvent()`, use `QPainter` with `QPainterPath`
-
----
-
 ## Code Formatting (clang-format)
 
 | Aspect | Style |
@@ -78,11 +74,28 @@ m_panadapterA, m_panadapterB
 | Includes | Preserve order (no auto-sort) |
 
 ```bash
-# Check formatting
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+# Check formatting - src AND tests, the same file set CI walks
+scripts/check-format.sh
 
 # Auto-format
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+scripts/check-format.sh --fix
+```
+
+The script finds clang-format wherever it is installed and **refuses to run on the wrong version**
+rather than reporting a misleading pass. It reads the pinned version out of `ci-checks.yml`, so there is no
+second copy of the number to keep in sync. If you have no matching version, `--bootstrap` installs
+one into `.format-venv/`.
+
+The version matters more than it looks: clang-format changes its line-breaking heuristics between
+**patch** releases, so a nearby 18.x can accept wrapping CI rejects. `ci-checks.yml` pins an exact version
+for this reason.
+
+Running clang-format by hand works too, but the path below is correct only on an Apple Silicon Mac
+with Homebrew — it does not exist on Linux, on Windows, or on an Intel Mac:
+
+```bash
+CF=/opt/homebrew/opt/llvm@18/bin/clang-format
+find src tests -name '*.cpp' -o -name '*.h' | xargs $CF --dry-run --Werror
 ```
 
 ### Example
@@ -113,13 +126,25 @@ MainWindow::MainWindow(QWidget *parent)
 
 ```bash
 # 1. Run lint check (MUST pass before commit)
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror
+scripts/check-format.sh
 
 # 2. Auto-fix if lint fails
-find src -name '*.cpp' -o -name '*.h' | xargs clang-format -i
+scripts/check-format.sh --fix
 ```
 
 If lint fails in CI, it means this step was skipped locally.
+
+**Or stop skipping it.** Install it as a pre-commit hook, which checks only the staged content of
+staged files and so costs a fraction of a second:
+
+```bash
+printf '#!/bin/sh\nexec "$(git rev-parse --show-toplevel)/scripts/check-format.sh" --staged\n' \
+    > .git/hooks/pre-commit
+chmod +x .git/hooks/pre-commit
+```
+
+Do not symlink the script into `.git/hooks/` instead — a symlink cannot pass `--staged`, so every
+commit pays for a whole-tree check.
 
 ## Code Review Checklist
 
@@ -132,16 +157,16 @@ Before considering a feature complete:
 
 ## Commit Messages
 
-Commits drive the auto-generated changelog. Use [conventional commit](https://www.conventionalcommits.org/) format:
+Commits drive the auto-generated GitHub Release notes (via `git-cliff --latest` in the release workflow). Use [conventional commit](https://www.conventionalcommits.org/) format:
 
 ```
 type(scope): short summary
 
-Optional body with detail — each line becomes a sub-bullet in the changelog.
+Optional body with detail — each line becomes a sub-bullet in the release notes.
 ```
 
-| Type | Changelog Section | Example |
-|------|-------------------|---------|
+| Type | Release Notes Section | Example |
+|------|-----------------------|---------|
 | `feat` | Added | `feat(audio): add jitter buffer for RX playback` |
 | `fix` | Fixed | `fix(panadapter): correct CW pitch offset in passband` |
 | `refactor` | Changed | `refactor(state): replace if-else chain with handler registry` |
@@ -151,167 +176,149 @@ Optional body with detail — each line becomes a sub-bullet in the changelog.
 | `ci` | *(skipped)* | `ci: add Raspberry Pi build job` |
 
 **Tips:**
-- The `(scope)` is optional but makes changelog entries scannable (e.g., `audio`, `panadapter`, `state`, `ui`)
-- Put detail in the commit body — it flows into the changelog as sub-bullets
+- The `(scope)` is optional but makes entries scannable (e.g., `audio`, `panadapter`, `state`, `ui`)
+- Put detail in the commit body — it flows into the release notes as sub-bullets
 - Keep the summary line under 72 characters
 
 ---
 
-## Color Palette (K4Styles::Colors)
+## Styling
 
-**Source of truth:** `src/ui/k4styles.h` - All colors are `constexpr const char*` in `K4Styles::Colors::*`
+**Source of truth:** `src/ui/k4styles.h`. Every color, font, dimension, and stylesheet helper is declared there.
 
-For the complete reference of all color and dimension constants, see `docs/K4STYLES_REFERENCE.md`.
+Reference tables (colors, fonts, dimensions, helpers, `Dialog::` namespace): `docs/K4STYLES_REFERENCE.md`.
 
-```cpp
-// App Accent Color
-K4Styles::Colors::AccentAmber    // "#FFB000" - TX indicators, labels, highlights
+Rules for new widget code:
+- Use `setPixelSize()` with `K4Styles::Dimensions::FontSize*` constants — never `setPointSize()` (macOS 72 PPI vs Windows 96 PPI divergence).
+- Use `K4Styles::Colors::*` constants — never hardcoded hex strings.
+- For custom-painted widgets, use `K4Styles::Fonts::paintFont()` / `dataFont()` instead of constructing `QFont` directly.
+- For inline stylesheet construction, prefer `K4Styles::Dialog::labelText(color, size)` over `QString("color: %1; font-size: %2px;").arg(...)`.
+- **Never leave a form control to the operating system's theme.** `main()` installs `K4Styles::applicationStyleSheet()` app-wide, so a checkbox, combo box, line edit or spin box with no stylesheet of its own still gets the K4 look. Give each control its `Dialog::` helper anyway — the fallback is the safety net, not the design. A **new** form-control type (a `QRadioButton`, a `QDoubleSpinBox`) needs a rule in `applicationStyleSheet()` first; `test_formcontroltheme` fails until it has one. Why: Windows 11 in dark mode draws unstyled controls dark-on-dark, and no other platform does, so it cannot be caught by eye on a Mac.
 
-// VFO Theme Colors (square, passband, markers, overlays)
-K4Styles::Colors::VfoACyan       // "#00BFFF" - VFO A: cyan theme
-K4Styles::Colors::VfoBGreen      // "#00FF00" - VFO B: green theme
+**Adding a popup menu** follows a fixed recipe — see `PATTERNS.md` → "Adding a Popup Menu".
 
-// Backgrounds
-K4Styles::Colors::Background        // "#1a1a1a"
-K4Styles::Colors::DarkBackground    // "#0d0d0d"
-K4Styles::Colors::PopupBackground   // "#1e1e1e"
+---
 
-// Text
-K4Styles::Colors::TextWhite      // "#FFFFFF"
-K4Styles::Colors::TextDark       // "#333333"
-K4Styles::Colors::TextGray       // "#999999"
-K4Styles::Colors::TextFaded      // "#808080"
-K4Styles::Colors::InactiveGray   // "#666666"
+## Architecture Rules
 
-// Status
-K4Styles::Colors::TxRed          // "#FF0000"
-K4Styles::Colors::StatusGreen       // "#00FF00"
+These rules prevent the architectural issues identified in the 2026-03-30 audit. They are non-negotiable for all new code and refactoring work.
+
+**How rules are enforced:** not all twelve rules have the same bite. The tag at the front of each rule tells a new contributor what happens when they're broken:
+
+- **[CI]** — a test or lint check in `.github/workflows/ci-checks.yml` fails. The rule *breaks the build*.
+- **[sanitizer]** — ASAN or UBSAN in the sanitizer CI job catches the violation when the offending code path runs.
+- **[review]** — no automation. Enforced by reviewer discipline. Violations ship if reviewers miss them.
+- **[aspirational]** — target not fully met today; documented exemptions exist. Binds new code only.
+
+The CI-enforced rules (4, 6, 10) are the load-bearing ones. Sanitizer rules (11) catch the nastiest violations at runtime. Review-only rules (2, 3, 5, 8, 9, 12) depend on human attention. Aspirational rules (1, 7) mark architectural intent without strict enforcement.
+
+### 1. [aspirational] No Duplicated Static Functions
+
+If a function is needed in more than one translation unit, it goes in `src/utils/` with a namespace (e.g., `RadioUtils::`). Copy-pasting a static function into another `.cpp` file is a defect. Fix it immediately.
+
+No lint check enforces this; honored today by convention.
+
+### 2. [review] Controllers Do Not Expose Owned Objects
+
+Controllers expose **task-level APIs**, not internal workers. No `audioEngine()`, `kpodDevice()`, or `tcpClient()` accessors in the public interface. If external code needs to configure a device, add a method to the controller (e.g., `audioController->setInputDevice(...)` instead of `audioController->audioEngine()->setInputDevice(...)`).
+
+**Exception:** `tcpClient()` is exposed for AudioController's performance-sensitive audio data path and CatServer's direct TCP forwarding. These are documented exceptions, not precedent.
+
+### 3. [review] No Non-Const References to Shared State
+
+Never return `Type&` from a getter when multiple callers may read or write. Use `const Type&` for read access and typed setters for mutations. This prevents data races and makes state changes auditable.
+
+### 4. [CI] RadioState is Main-Thread Only
+
+`parseCATCommand()` is enforced by `Q_ASSERT(QThread::currentThread() == thread())`. All callers must be on the main (GUI) thread. If cross-thread parsing is ever needed, use `QMetaObject::invokeMethod` with `Qt::QueuedConnection`.
+
+Debug builds assert on violation; sanitizer CI catches any cross-thread access that slips past the assert.
+
+### 5. [review] Network Buffers Have Explicit Size Limits
+
+Any buffer that accumulates data from an external source must check against a maximum size and handle overflow (disconnect, discard, or reset). Use `K4Protocol::MAX_BUFFER_SIZE` (1MB) as the default limit.
+
+### 6. [CI + review] Parser Changes Require Test Cases
+
+Any modification to `RadioState::parseCATCommand()` or its handlers must include a corresponding test case in `tests/test_radiostate.cpp`. No merge without test coverage for the changed behavior.
+
+Three CI-enforced invariants catch structural breaks:
+- `test_radiostate_registry` — every registered prefix resolves; longest-first ordering preserved.
+- `test_radiostate_golden` — byte-for-byte replay of captured K4 CAT session.
+- `test_catserver` — `RadioState` public API pinned to `docs/radiostate-catserver-api-contract.md`.
+
+Behavioral coverage of the specific change is still author discipline.
+
+### 7. [aspirational] No File Over 800 Lines
+
+If a `.cpp` or `.h` file grows past 800 lines, split it by responsibility before merging. Check with `wc -l` before committing.
+
+**Status: aspirational with documented exemptions.** Binding for *new* code: PRs that introduce new files over 800 LOC or push a borderline file past the limit are blocked. PRs that leave an existing violator untouched are fine.
+
+Current exempt files (do not green-light new additions that bloat these further):
+
+| File | LOC | Notes |
+|------|----:|-------|
+| `src/dsp/panadapter_rhi.cpp` | 1884 | Naturally large — RHI pipeline + buffer management. Low priority. |
+| `src/mainwindow.cpp` | 1364 | Down from 4967 pre-refactor. Remaining scope is genuine coordination (setupUi, event-filter dispatch, lifecycle). Further decomposition is judgment territory. |
+| `src/models/radiostate.cpp` | 1152 | Down from 2893 pre-refactor. Handler registry + façade delegation. |
+| `src/dsp/minipan_rhi.cpp` | 1090 | Mirrors panadapter structure. |
+| `src/controllers/popupmanager.cpp` | 1063 | Coherent registry of 14 popup objects — size is justified, not a split candidate. |
+| `src/controllers/spectrumcontroller.cpp` | 966 | Past 800-LOC threshold — split candidate (DX cluster spot overlay wiring is the natural extraction target). |
+| `src/models/radiostate.h` | 896 | Down from 1156 pre-refactor; 11 subsystem struct references + public API. |
+| `src/ui/popups/displaypopupwidget.cpp` | 865 | Close to threshold — hold the line. |
+
+### 8. [review] Every Extraction is Traced First
+
+Before moving code between classes: read every member variable, method, signal, and `connect()` call involved. Document what moves, what stays, and what the cross-domain dependencies are. Missing a dependency means a broken extraction.
+
+### 9. [review] One Commit Per Logical Change
+
+Never combine structural moves with logic changes in the same commit. If a refactor introduces a new class AND fixes a bug, those are two commits. This enables `git bisect` and clean `git revert`.
+
+### 10. [CI] Build + Format + Tests Before Every Commit
+
+```bash
+scripts/check-format.sh --fix   # or scripts/check-format.sh to check without rewriting
+cmake --build build
+ctest --test-dir build --output-on-failure
 ```
 
-### Spectrum Colors
+All three must pass. No exceptions. `.github/workflows/ci-checks.yml` mirrors the format gate and runs the test suites — skipping locally means the CI run will fail.
 
-- **Main Panadapter**: QRhi gradient (green fill with lime line)
-- **Mini-Pan Line**: VfoACyan `#00BFFF` for A, VfoBGreen `#00FF00` for B
-- **Waterfall**: 8-stage LUT (Black → Blue → Cyan → Green → Yellow → Red)
+### 11. [sanitizer + review] Controlled Shutdown Order
 
-## Fonts
+Every controller and MainWindow calls `disconnect(this)` as the first statement in its destructor. This prevents queued signals from arriving during partial destruction. Thread shutdown follows the dependency chain: producers stop before consumers.
 
-Embedded HD fonts for crisp rendering on Retina/4K displays.
+ASAN in the sanitizer CI job catches use-after-free on violation if the destruction path runs under test. Review catches the rest.
 
-| Font | Type | Usage |
-|------|------|-------|
-| **Inter** | Sans-serif | All UI text, labels, and data displays |
+### 12. [review] New UI Concerns Belong in Controllers, Not MainWindow
 
-Inter is used everywhere with tabular figures (`font-feature-settings: 'tnum'`) for numeric displays to ensure consistent digit widths.
+After the 2026-04 MainWindow decomposition, `src/mainwindow.cpp`'s scope is **window chrome, top-level layout, and controller coordination — nothing else**. New features that need a widget, a signal wiring, a CAT dispatch helper, or mode-dependent UI behavior go in a controller under `src/controllers/` (see `PATTERNS.md` → Controller Pattern). If the widget only consumes a single RadioState property, use Direct Observation instead of adding a controller.
 
-### Font Constants (K4Styles::Fonts)
+Regressing to "throw it on MainWindow" is the single biggest risk for re-drifting into a god object. The banned anti-patterns in `PATTERNS.md` are non-negotiable:
 
-| Constant | Value | Usage |
-|----------|-------|-------|
-| `Fonts::Primary` | "Inter" | UI text, labels, buttons |
-| `Fonts::Data` | "Inter" | Frequencies, numeric data (with tabular figures) |
+- No new widget member pointers on `MainWindow`.
+- No slots on MainWindow that just forward a RadioState signal to a widget setter.
+- No inline lambdas over ~5 lines or ~5 connect() calls clustered at one site — extract to a helper, or if it grows past ~30 lines, promote to a controller.
+- No cross-controller reach-in (`controllerA->someGetter()->doThing()`) — communicate via signals.
 
-### Font Size Constants (K4Styles::Dimensions)
+No automated check; relies on PR review.
 
-| Constant | Size | Usage |
-|----------|------|-------|
-| `FontSizeFrequency` | 32px | VFO frequency display |
-| `FontSizeTitle` | 16px | Large control buttons (+/-) |
-| `FontSizePopup` | 14px | Notifications, popup titles |
-| `FontSizeButton` | 12px | Button text, value displays |
-| `FontSizeLarge` | 11px | Feature labels, primary labels |
-| `FontSizeMedium` | 10px | Labels, descriptions |
-| `FontSizeNormal` | 9px | Alt/secondary button text |
-| `FontSizeSmall` | 8px | Scale fonts, secondary text |
-| `FontSizeTiny` | 7px | Sub-labels (BANK, AF REC) |
+---
 
-### Font Usage
+## Comment Conventions
 
-All font sizes are in **pixels** — use `setPixelSize()` (not `setPointSize()`) for cross-platform consistency.
+Default: **write no comments.** Well-named identifiers already describe *what* the code does. Only add a comment when the *why* is non-obvious: a hidden constraint, a subtle invariant, a K4 protocol quirk, a threading/ordering requirement, a workaround for a specific transient. If removing the comment would not confuse a future reader, do not write it.
 
-```cpp
-// Custom-painted widgets: use paintFont() helper
-QFont labelFont = K4Styles::Fonts::paintFont(K4Styles::Dimensions::FontSizeLarge);
+Two prefixes are reserved so grep-based surveys can find them:
 
-// Or set pixel size directly on an existing font
-QFont font = font();
-font.setPixelSize(K4Styles::Dimensions::FontSizeButton);
+- **`// WHY: <rationale>`** — design rationale for a non-obvious choice. Use this for protocol quirks (`RO`/`RO$` routing, SL no-echo), threading decisions (`BlockingQueuedConnection` avoidance, deferred-setup to dodge deadlocks), constants whose value is load-bearing (3-byte parse-tail, `PREBUFFER_PACKETS = 1`), and any workaround whose removal would silently break behavior. Prefer this over a bare paragraph so future audits can grep `rg "// WHY:"` to survey every non-obvious decision in the codebase.
 
-// Frequency/data display (use dataFont helper for tabular figures)
-QFont dataFont = K4Styles::Fonts::dataFont(K4Styles::Dimensions::FontSizeFrequency);
+- **`// TODO(gh#NNN): <summary>`** — tracked technical debt. The `gh#NNN` points at a GitHub issue. **A `// TODO` without an issue number is not allowed** — file the issue first, then reference it. This prevents TODOs from turning into ambient guilt. Bare `// FIXME`, `// HACK`, `// XXX` are not used; use `// TODO(gh#NNN)` with an issue that states the concern, or delete the comment.
 
-// UI text via stylesheet (already uses px)
-label->setStyleSheet("font-size: 12px; font-weight: bold;");
-
-// In stylesheets, use font constants with tnum for numeric displays
-QString style = QString("font-family: '%1'; font-feature-settings: 'tnum';")
-    .arg(K4Styles::Fonts::Data);
-```
-
-## Popup & Button Styling (K4Styles)
-
-**Source of truth:** `src/ui/k4styles.h` - Use K4Styles functions instead of inline CSS.
-
-### Stylesheet Functions (for QPushButton)
-
-| Function | Usage |
-|----------|-------|
-| `K4Styles::popupButtonNormal()` | Standard dark gradient popup buttons |
-| `K4Styles::popupButtonSelected()` | Light/white selected state |
-| `K4Styles::menuBarButton()` | Bottom menu bar buttons (with padding) |
-| `K4Styles::menuBarButtonActive()` | Active/inverted menu button state |
-| `K4Styles::menuBarButtonSmall()` | Compact +/- buttons |
-
-### QPainter Helpers (for custom-painted widgets)
-
-```cpp
-// Fonts (pixel-based for cross-platform consistency)
-QFont K4Styles::Fonts::paintFont(pixelSize, weight)  // General-purpose paint font
-QFont K4Styles::Fonts::dataFont(pixelSize, weight)    // Tabular-figure font for numbers
-
-// Gradients
-QLinearGradient K4Styles::buttonGradient(top, bottom, hovered)
-QLinearGradient K4Styles::selectedGradient(top, bottom)
-
-// Colors
-QColor K4Styles::borderColor()         // Normal border
-QColor K4Styles::borderColorSelected() // Selected border
-
-// Shadow
-K4Styles::drawDropShadow(painter, contentRect, cornerRadius)
-```
-
-### Dimension Constants (K4Styles::Dimensions::*)
-
-| Constant | Value | Purpose |
-|----------|-------|---------|
-| `ShadowMargin` | 20 | Space around popup for shadow |
-| `PopupContentMargin` | 12 | Padding inside popup |
-| `PopupButtonWidth` | 70 | Standard popup button |
-| `PopupButtonHeight` | 44 | Standard popup button |
-| `BorderWidth` | 2 | Button border width |
-| `BorderRadius` | 6 | Standard corner radius |
-
-### Side Panel & Memory Button Styles
-
-**Side Panel Function Buttons** (PRE/ATTN, TUNE/XMIT, etc.):
-- Height: `ButtonHeightSmall` (28px)
-- Width: Fills container (in 2-column grid)
-- Dark style: `sidePanelButton()` - standard dark gradient
-- Light style: `sidePanelButtonLight()` - lighter gradient for PF/TX buttons
-- Sub-label: `FontSizeSmall` (8px), `AccentAmber` color
-
-**Memory Buttons** (M1-M4, REC, STORE, RCL):
-- Width: `MemoryButtonWidth` (42px)
-- Height: `ButtonHeightSmall` (28px)
-- M1-M4, REC: `sidePanelButton()` (dark)
-- STORE, RCL: `sidePanelButtonLight()` (light)
-- Sub-labels (BANK, AF REC, AF PLAY, MESSAGE): `FontSizeSmall` (8px)
-- Sub-label colors: `AccentAmber` (BANK, AF REC, AF PLAY), `BorderSelected` (MESSAGE)
-
-**Compact Buttons** (MON, NORM, BAL):
-- Height: `ButtonHeightMini` (24px)
-- Style: `compactButton()`
-- Used for small toggle buttons in horizontal rows
-
-**Creating popups:** See `PATTERNS.md` → "Adding a Popup Menu" for current patterns.
+Do NOT write comments that:
+- Restate the function/type name in prose.
+- Reference the current task, PR, or fix (that belongs in the commit message).
+- Describe code that was deleted (git has it).
+- Explain a field whose purpose is obvious from a read-through (e.g., `// the name`).

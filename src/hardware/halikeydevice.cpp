@@ -1,81 +1,43 @@
 #include "halikeydevice.h"
+#include "halikey_edge.h"
 #include "halikeymidiworker.h"
 #include "halikeyv14worker.h"
 #include "halikeyworkerbase.h"
-#include "../settings/radiosettings.h"
 #include <QDebug>
 #include <RtMidi.h>
 
-HalikeyDevice::HalikeyDevice(QObject *parent) : QObject(parent) {
-    // Debounce timers — single-shot, fire once after DEBOUNCE_MS of stable state
-    m_ditDebounceTimer = new QTimer(this);
-    m_ditDebounceTimer->setSingleShot(true);
-    m_ditDebounceTimer->setInterval(DEBOUNCE_MS);
-    connect(m_ditDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (m_rawDitState != m_confirmedDitState) {
-            m_confirmedDitState = m_rawDitState;
-            emit ditStateChanged(m_confirmedDitState);
-        }
-    });
+Q_LOGGING_CATEGORY(hwHalikey, "hw.halikey")
 
-    m_dahDebounceTimer = new QTimer(this);
-    m_dahDebounceTimer->setSingleShot(true);
-    m_dahDebounceTimer->setInterval(DEBOUNCE_MS);
-    connect(m_dahDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (m_rawDahState != m_confirmedDahState) {
-            m_confirmedDahState = m_rawDahState;
-            emit dahStateChanged(m_confirmedDahState);
-        }
-    });
+// WHY: HalikeyDevice no longer runs a time-window debounce. Each worker is authoritative for
+// clean edges — the V1.4 serial worker confirms across ≥2 reads (≥500 µs apart on Linux/macOS,
+// ~1 ms apart on Windows, where the poll cadence sets the spacing) before emitting; the MIDI
+// worker delivers already-debounced firmware events. The previous 3 ms
+// processing-time gate silently dropped real MIDI releases on Windows when WinMM delivered
+// press+release in a single burst (see docs/halikey-midi-windows-debounce-bug.md), and also
+// harbored a latent bug where a rejected edge left `confirmed` stale. acceptEdge() (extracted
+// into halikey_edge.h for isolated testing) now does just same-direction dedupe.
+using HalikeyEdge::acceptEdge;
 
-    m_pttDebounceTimer = new QTimer(this);
-    m_pttDebounceTimer->setSingleShot(true);
-    m_pttDebounceTimer->setInterval(DEBOUNCE_MS);
-    connect(m_pttDebounceTimer, &QTimer::timeout, this, [this]() {
-        if (m_rawPttState != m_confirmedPttState) {
-            m_confirmedPttState = m_rawPttState;
-            emit pttStateChanged(m_confirmedPttState);
-        }
-    });
-}
+HalikeyDevice::HalikeyDevice(int deviceType, QObject *parent) : QObject(parent), m_deviceType(deviceType) {}
 
 HalikeyDevice::~HalikeyDevice() {
     closePort();
 }
 
-void HalikeyDevice::onRawDit(bool pressed) {
-    m_rawDitState = pressed;
-    if (pressed && !m_confirmedDitState) {
-        // Key down — emit immediately for zero latency
-        m_confirmedDitState = true;
-        m_ditDebounceTimer->stop();
-        emit ditStateChanged(true);
-    } else {
-        // Key up or redundant key down — debounce
-        m_ditDebounceTimer->start();
-    }
-}
+void HalikeyDevice::onRawLines(bool dit, bool dah, bool ptt) {
+    // Per-line same-direction dedupe is kept exactly as it was — it is the regression gate for the
+    // Windows MIDI stuck-paddle bug (see docs/halikey-midi-windows-debounce-bug.md). What changed
+    // is only that the confirmed lines leave here as ONE sample: a dedupe that drops a redundant
+    // edge on one line must not also drop the other lines' fresh values.
+    const bool ditNew = acceptEdge(dit, m_confirmedDitState);
+    const bool dahNew = acceptEdge(dah, m_confirmedDahState);
+    const bool pttNew = acceptEdge(ptt, m_confirmedPttState);
+    if (!ditNew && !dahNew && !pttNew)
+        return;
 
-void HalikeyDevice::onRawDah(bool pressed) {
-    m_rawDahState = pressed;
-    if (pressed && !m_confirmedDahState) {
-        m_confirmedDahState = true;
-        m_dahDebounceTimer->stop();
-        emit dahStateChanged(true);
-    } else {
-        m_dahDebounceTimer->start();
-    }
-}
-
-void HalikeyDevice::onRawPtt(bool pressed) {
-    m_rawPttState = pressed;
-    if (pressed && !m_confirmedPttState) {
-        m_confirmedPttState = true;
-        m_pttDebounceTimer->stop();
-        emit pttStateChanged(true);
-    } else {
-        m_pttDebounceTimer->start();
-    }
+    emit lineStateChanged(m_confirmedDitState.load(std::memory_order_acquire),
+                          m_confirmedDahState.load(std::memory_order_acquire),
+                          m_confirmedPttState.load(std::memory_order_acquire));
 }
 
 bool HalikeyDevice::openPort(const QString &portName) {
@@ -84,16 +46,12 @@ bool HalikeyDevice::openPort(const QString &portName) {
     }
 
     m_portName = portName;
-    m_rawDitState = false;
-    m_rawDahState = false;
-    m_rawPttState = false;
-    m_confirmedDitState = false;
-    m_confirmedDahState = false;
-    m_confirmedPttState = false;
+    m_confirmedDitState.store(false, std::memory_order_relaxed);
+    m_confirmedDahState.store(false, std::memory_order_relaxed);
+    m_confirmedPttState.store(false, std::memory_order_relaxed);
 
-    // Create worker based on configured device type
-    int deviceType = RadioSettings::instance()->halikeyDeviceType();
-    if (deviceType == 1) {
+    // Create worker based on injected device type (0 = V1.4, 1 = MIDI)
+    if (m_deviceType == 1) {
         m_worker = new HaliKeyMidiWorker(portName);
     } else {
         m_worker = new HaliKeyV14Worker(portName);
@@ -102,16 +60,17 @@ bool HalikeyDevice::openPort(const QString &portName) {
     m_workerThread = new QThread(this);
     m_worker->moveToThread(m_workerThread);
 
-    // Wire worker signals through debounce handlers
-    connect(m_worker, &HaliKeyWorkerBase::ditStateChanged, this, &HalikeyDevice::onRawDit);
-    connect(m_worker, &HaliKeyWorkerBase::dahStateChanged, this, &HalikeyDevice::onRawDah);
-    connect(m_worker, &HaliKeyWorkerBase::pttStateChanged, this, &HalikeyDevice::onRawPtt);
+    // DirectConnection: onRawLines runs on whatever worker thread delivered the event (RtMidi
+    // callback for MIDI, monitor thread for V1.4). It updates the confirmed atomics and re-emits
+    // from that thread. Downstream connections are independently safe (CwController's handler only
+    // touches atomics and queues to the keyer thread).
+    connect(m_worker, &HaliKeyWorkerBase::lineStateChanged, this, &HalikeyDevice::onRawLines, Qt::DirectConnection);
     connect(m_worker, &HaliKeyWorkerBase::portOpened, this, [this]() {
         m_connected = true;
         emit connected();
     });
     connect(m_worker, &HaliKeyWorkerBase::errorOccurred, this, [this](const QString &error) {
-        qWarning() << "HalikeyDevice: Worker error -" << error;
+        qCWarning(hwHalikey) << "HalikeyDevice: Worker error -" << error;
         closePort();
         emit connectionError(error);
     });
@@ -127,7 +86,10 @@ bool HalikeyDevice::openPort(const QString &portName) {
 }
 
 void HalikeyDevice::closePort() {
+    // Disconnect worker signals FIRST — prevent stale queued events
+    // from reaching slots after state reset
     if (m_worker) {
+        disconnect(m_worker, nullptr, this, nullptr);
         m_worker->stop();
         m_worker->prepareShutdown();
     }
@@ -141,19 +103,11 @@ void HalikeyDevice::closePort() {
 
     m_worker = nullptr; // Deleted by QThread::finished -> deleteLater
 
-    // Stop any pending debounce timers
-    m_ditDebounceTimer->stop();
-    m_dahDebounceTimer->stop();
-    m_pttDebounceTimer->stop();
-
     bool wasConnected = m_connected;
     m_connected = false;
-    m_rawDitState = false;
-    m_rawDahState = false;
-    m_rawPttState = false;
-    m_confirmedDitState = false;
-    m_confirmedDahState = false;
-    m_confirmedPttState = false;
+    m_confirmedDitState.store(false, std::memory_order_relaxed);
+    m_confirmedDahState.store(false, std::memory_order_relaxed);
+    m_confirmedPttState.store(false, std::memory_order_relaxed);
 
     if (wasConnected) {
         emit disconnected();
@@ -210,15 +164,7 @@ QStringList HalikeyDevice::availableMidiDevices() {
             }
         }
     } catch (RtMidiError &error) {
-        qWarning() << "HalikeyDevice: MIDI enumeration failed:" << QString::fromStdString(error.getMessage());
+        qCWarning(hwHalikey) << "HalikeyDevice: MIDI enumeration failed:" << QString::fromStdString(error.getMessage());
     }
     return devices;
-}
-
-bool HalikeyDevice::ditPressed() const {
-    return m_confirmedDitState;
-}
-
-bool HalikeyDevice::dahPressed() const {
-    return m_confirmedDahState;
 }

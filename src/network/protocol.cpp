@@ -1,7 +1,9 @@
 #include "protocol.h"
 #include <QCryptographicHash>
 #include <QtEndian>
-#include <QDebug>
+#include <QLoggingCategory>
+
+Q_LOGGING_CATEGORY(catRx, "CAT.RX")
 
 Protocol::Protocol(QObject *parent) : QObject(parent) {}
 
@@ -10,7 +12,7 @@ void Protocol::parse(const QByteArray &data) {
 
     // Prevent unbounded buffer growth from malformed data
     if (m_buffer.size() > K4Protocol::MAX_BUFFER_SIZE) {
-        qWarning() << "Protocol buffer overflow (" << m_buffer.size() << "bytes), clearing";
+        qCWarning(catRx) << "Protocol buffer overflow (" << m_buffer.size() << "bytes), clearing";
         m_buffer.clear();
         return;
     }
@@ -21,8 +23,10 @@ void Protocol::parse(const QByteArray &data) {
         // Look for start marker
         int startPos = m_buffer.indexOf(K4Protocol::START_MARKER);
         if (startPos == -1) {
-            // No start marker found, clear buffer up to last 3 bytes
-            // (in case partial marker is at the end)
+            // WHY keep the last 3 bytes: START_MARKER is 4 bytes (FE FD FC FB). A TCP read can
+            // split the marker across two reads (1–3 bytes now, final byte(s) in the next read).
+            // Dropping those trailing bytes would lose sync; retaining 3 guarantees we still find
+            // the marker when the remainder arrives.
             if (m_buffer.size() > 3) {
                 m_buffer = m_buffer.right(3);
             }
@@ -54,7 +58,7 @@ void Protocol::parse(const QByteArray &data) {
         QByteArray endMarker = m_buffer.mid(totalPacketSize - 4, 4);
         if (endMarker != K4Protocol::END_MARKER) {
             // Invalid packet, skip past the start marker and try again
-            qWarning() << "Invalid K4 packet: bad end marker";
+            qCWarning(catRx) << "Invalid K4 packet: bad end marker";
             m_buffer = m_buffer.mid(4);
             continue;
         }
@@ -83,6 +87,7 @@ void Protocol::processPacket(const QByteArray &payload) {
         // CAT response: [0x00][0x00][0x00][ASCII data]
         if (payload.size() > 3) {
             QString response = QString::fromLatin1(payload.mid(3));
+            qCDebug(catRx) << response;
             emit catResponseReceived(response);
         }
         break;
@@ -91,6 +96,8 @@ void Protocol::processPacket(const QByteArray &payload) {
         // Audio packet structure - see K4Protocol::AudioPacket namespace for offset definitions
         if (payload.size() > K4Protocol::AudioPacket::HEADER_SIZE) {
             emit audioDataReady(payload);
+            quint8 audioSeq = static_cast<quint8>(payload[K4Protocol::AudioPacket::SEQUENCE_OFFSET]);
+            emit audioSequenceReceived(audioSeq);
         }
         break;
     }
@@ -107,8 +114,8 @@ void Protocol::processPacket(const QByteArray &payload) {
                 qFromLittleEndian<qint32>(reinterpret_cast<const uchar *>(payload.constData() + NOISE_FLOOR_OFFSET));
             float noiseFloor = noiseFloorRaw / 10.0f;
 
-            QByteArray bins = payload.mid(BINS_OFFSET);
-            emit spectrumDataReady(receiver, bins, centerFreq, sampleRate, noiseFloor);
+            int binCount = payload.size() - BINS_OFFSET;
+            emit spectrumDataReady(receiver, payload, BINS_OFFSET, binCount, centerFreq, sampleRate, noiseFloor);
         }
         break;
     }
@@ -117,13 +124,13 @@ void Protocol::processPacket(const QByteArray &payload) {
         using namespace K4Protocol::MiniPanPacket;
         if (payload.size() > HEADER_SIZE) {
             int receiver = static_cast<quint8>(payload[RECEIVER_OFFSET]);
-            QByteArray bins = payload.mid(BINS_OFFSET);
-            emit miniSpectrumDataReady(receiver, bins);
+            int binCount = payload.size() - BINS_OFFSET;
+            emit miniSpectrumDataReady(receiver, payload, BINS_OFFSET, binCount);
         }
         break;
     }
     default:
-        qDebug() << "Unknown K4 packet type:" << type;
+        qCDebug(catRx) << "Unknown K4 packet type:" << type;
         break;
     }
 }
@@ -171,13 +178,14 @@ QByteArray Protocol::buildAuthData(const QString &password) {
     return hexString;
 }
 
-QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequence, quint8 encodeMode) {
+QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequence, quint8 encodeMode,
+                                      quint16 frameSamples) {
     // K4 TX Audio Packet Structure:
     // Byte 0:    TYPE = 0x01 (Audio)
     // Byte 1:    VER = 0x01 (Version)
     // Byte 2:    SEQ = sequence number (0-255, wrapping)
-    // Byte 3:    MODE = encode mode (0=RAW32, 1=RAW16, 2=Opus Int, 3=Opus Float)
-    // Bytes 4-5: Frame size (little-endian UInt16) = 240 samples
+    // Byte 3:    MODE = encode mode (0=RAW S32LE (24-bit), 1=RAW S16LE, 2/3=Opus (same bitstream, int vs float decode))
+    // Bytes 4-5: Frame size (little-endian UInt16) — samples per channel, matches SL tier
     // Byte 6:    Sample rate code = 0x00 (12000 Hz)
     // Byte 7+:   Audio data (format depends on encode mode)
 
@@ -189,10 +197,9 @@ QByteArray Protocol::buildAudioPacket(const QByteArray &audioData, quint8 sequen
     payload.append(static_cast<char>(sequence));          // Sequence
     payload.append(static_cast<char>(encodeMode));        // Encode mode
 
-    // Frame size: 240 samples (little-endian)
-    quint16 frameSize = 240;
-    payload.append(static_cast<char>(frameSize & 0xFF));
-    payload.append(static_cast<char>((frameSize >> 8) & 0xFF));
+    // Frame size (little-endian) — matches SL tier
+    payload.append(static_cast<char>(frameSamples & 0xFF));
+    payload.append(static_cast<char>((frameSamples >> 8) & 0xFF));
 
     payload.append(static_cast<char>(0x00)); // Sample rate code (0 = 12kHz)
 
