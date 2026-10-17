@@ -59,6 +59,8 @@ jobs:
     uses: ./.github/workflows/_build-macos.yml
     with:
       version: ${{ needs.version.outputs.version }}
+      # Fork: the Apple Developer ID secrets live only on upstream, so ad-hoc sign elsewhere.
+      sign: ${{ github.repository == 'mikeg-dal/QK4' }}
     secrets: inherit
 
   windows:
