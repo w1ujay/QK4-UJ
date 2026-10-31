@@ -401,14 +401,26 @@ int reportStartFailed(const std::wstring &version) {
 
 int normalLaunch(const std::wstring &root, const std::vector<std::wstring> &args) {
     UpdateLock lock(root); // proceeds without it: an update lock problem must never stop a launch
-    const auto version = selectVersion(readCurrentTxt(root), listVersions(root));
-    if (!version) {
-        lock.release();
-        return reportNoVersion();
+    const std::wstring currentTxt = readCurrentTxt(root);
+    std::vector<VersionFolder> folders = listVersions(root);
+    // WHY the loop: an exe that exists but cannot start (say, quarantined by antivirus) should fall back like a missing
+    // one, to a healthy folder beside it. Only here: finish-update's rollback keeps its own rules.
+    std::optional<std::wstring> lastTried;
+    for (;;) {
+        const auto version = selectVersion(currentTxt, folders);
+        if (!version) {
+            lock.release();
+            return lastTried ? reportStartFailed(*lastTried) : reportNoVersion();
+        }
+        if (startVersion(root, *version, args)) {
+            lock.release();
+            return EXIT_OK;
+        }
+        lastTried = lastTried ? *lastTried : *version; // report the version the person expected to run
+        folders.erase(
+            std::remove_if(folders.begin(), folders.end(), [&](const VersionFolder &f) { return f.name == *version; }),
+            folders.end());
     }
-    const bool started = startVersion(root, *version, args);
-    lock.release();
-    return started ? EXIT_OK : reportStartFailed(*version);
 }
 
 // --- finish update ----------------------------------------------------------------------------------------------

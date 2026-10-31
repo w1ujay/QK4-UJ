@@ -580,6 +580,24 @@ Add-Case 'cleanupHonoursExeProbe' {
     Assert-True (-not (Test-Path -LiteralPath $trash)) 'removed once released'
 }
 
+# The first folderInUse check on a versions\<name> folder, not the recheck on a .trash-* one: holding the exe open
+# read-only blocks writers the way a running image does, so cleanup must skip the folder and everything in it.
+Add-Case 'cleanupSkipsVersionFolderWithExeHeld' {
+    $root = New-Root
+    foreach ($v in $V11, $V13, $V14) { Add-Version $root $v | Out-Null }
+    $old = Join-Path $root "versions\$V11"
+    New-Item -ItemType File -Path (Join-Path $old 'plugin.dll') | Out-Null
+    Set-Current $root $V14
+    $held = [IO.File]::Open((Join-Path $old 'QK4.exe'), 'Open', 'Read', 'Read')
+    try {
+        Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root @('--qk4-cleanup', $V14, '')) 40000) 'cleanup exit code'
+        Assert-True (Test-Path -LiteralPath (Join-Path $old 'plugin.dll')) 'folder with the held exe skipped'
+        Assert-True (Test-Path -LiteralPath (Join-Path $old 'QK4.exe')) 'held exe kept'
+    } finally { $held.Dispose() }
+    Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root @('--qk4-cleanup', $V14, '')) 40000) 'later cleanup exit code'
+    Assert-True (-not (Test-Path -LiteralPath $old)) 'removed once released'
+}
+
 function Start-PausedCleanup([string]$Root, [string]$Own) {
     Copy-Item $PauseLauncher (Join-Path $Root 'QK4-testpause.exe')
     $signal = Join-Path $Root 'pause'
@@ -668,6 +686,20 @@ Add-Case 'missingCurrentTxt' {
     Assert-True (-not $launch.WaitForExit(500)) 'waits for the person'
     $launch.CloseMainWindow() | Out-Null
     Assert-Eq $EXIT_NO_VERSION (Wait-Exit $launch 5000) 'exit code when nothing qualifies'
+}
+
+# An exe that exists but cannot start, such as one an antivirus emptied or replaced: a normal launch falls back to the
+# next healthy folder rather than reporting an error.
+Add-Case 'unstartableExeFallsBack' {
+    $root = New-Root
+    Add-Version $root $V13 -Healthy | Out-Null
+    $broken = Add-Version $root $V14 -NoExe
+    [IO.File]::WriteAllText((Join-Path $broken 'QK4.exe'), 'this is not an executable')
+    Set-Current $root $V14
+    Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root) 10000) 'launch exit code'
+    Wait-Until { @(Get-Starts $root).Count -eq 1 } 5000 'fallback started'
+    Assert-Eq 1 @(Get-Starts $root $V13).Count 'the healthy folder ran'
+    Assert-Eq 0 @(Get-Starts $root $V14).Count 'the broken folder did not'
 }
 
 Add-Case 'currentTxtEditedInNotepad' {
