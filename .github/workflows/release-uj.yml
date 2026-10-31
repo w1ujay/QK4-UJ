@@ -54,7 +54,7 @@ jobs:
           fi
 
           # uj 0 marks a rehearsal: update.json needs a number there, and no real release uses 0.
-          if [[ "$GITHUB_REF_NAME" =~ ^uj\.([0-9]+)$ ]]; then
+          if [[ "$GITHUB_REF_NAME" =~ ^uj\.([1-9][0-9]*)$ ]]; then
             UJ="${BASH_REMATCH[1]}"
             VERSION="$BASE-uj.$UJ"
           elif [[ "$GITHUB_REF_NAME" =~ ^uj\.test-([0-9A-Za-z]+)$ ]]; then
@@ -348,8 +348,8 @@ jobs:
           name: ${{ github.ref_name }} — Windows, Raspberry Pi, Linux
           body_path: release_notes.md
           draft: true
-          prerelease: false
-          make_latest: true
+          prerelease: ${{ needs.version.outputs.uj == '0' }}
+          make_latest: ${{ needs.version.outputs.uj != '0' }}
           fail_on_unmatched_files: true
           files: |
             assets/QK4-${{ needs.version.outputs.version }}-windows-x64.zip
