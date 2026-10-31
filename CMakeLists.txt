@@ -101,6 +101,7 @@ set(SOURCES
     src/utils/bandplan.cpp
     src/update/updateversion.cpp
     src/update/updatemanifest.cpp
+    src/update/updatepolicy.cpp
     src/controllers/connectioncontroller.cpp
     src/controllers/hardwarecontroller.cpp
     src/controllers/audiocontroller.cpp
@@ -268,6 +269,7 @@ set(HEADERS
     src/utils/bandplan.h
     src/update/updateversion.h
     src/update/updatemanifest.h
+    src/update/updatepolicy.h
     src/controllers/connectioncontroller.h
     src/controllers/hardwarecontroller.h
     src/controllers/audiocontroller.h
