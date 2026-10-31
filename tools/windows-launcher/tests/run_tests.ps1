@@ -537,6 +537,49 @@ Add-Case 'cleanupOnlyFromCurrentVersion' {
     Assert-True (Test-Path -LiteralPath (Join-Path $root "versions\$V11\QK4.exe")) 'nothing cleaned'
 }
 
+# A copy stranded in a .trash-* folder: a launcher killed between rename and put-back, or a put-back that never worked.
+# It starts from its real folder and the folder moves under it, because a copy started from the .trash-* path would
+# report that path and so says nothing about which name Windows gives a moved image.
+Add-Case 'cleanupSparesRunningTrashFolder' {
+    $root = New-Root
+    foreach ($v in $V11, $V13, $V14) { Add-Version $root $v | Out-Null }
+    $versions = Join-Path $root 'versions'
+    New-Item -ItemType File -Path (Join-Path $versions "$V11\plugin.dll") | Out-Null
+    Set-Current $root $V11
+    Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root) 10000) 'launch of the copy'
+    Wait-Starts $root $V11
+    $running = (Get-Starts $root $V11)[0]
+    Set-Current $root $V14
+    Rename-Item -LiteralPath (Join-Path $versions $V11) -NewName '.trash-stranded'
+    $trash = Join-Path $versions '.trash-stranded'
+
+    Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root @('--qk4-cleanup', $V14, '')) 40000) 'cleanup exit code'
+    Assert-True (Test-Alive $running.Pid) 'running copy unharmed'
+    Assert-True (Test-Path -LiteralPath (Join-Path $trash 'plugin.dll')) 'its other files kept'
+
+    Stop-Process -Id $running.Pid -Force
+    Wait-Until { -not (Test-Alive $running.Pid) } 5000 'copy stopped'
+    Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root @('--qk4-cleanup', $V14, '')) 40000) 'later cleanup exit code'
+    Assert-True (-not (Test-Path -LiteralPath $trash)) 'removed once nothing runs from it'
+}
+
+# Stands for a copy the launcher cannot query, such as an elevated one: no visible process, but the exe cannot be opened
+# for writing. Holding the exe open read-only blocks writers the same way a mapped image does.
+Add-Case 'cleanupHonoursExeProbe' {
+    $root = New-Root
+    foreach ($v in $V13, $V14) { Add-Version $root $v | Out-Null }
+    $trash = Add-Version $root '.trash-held'
+    New-Item -ItemType File -Path (Join-Path $trash 'plugin.dll') | Out-Null
+    Set-Current $root $V14
+    $held = [IO.File]::Open((Join-Path $trash 'QK4.exe'), 'Open', 'Read', 'Read')
+    try {
+        Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root @('--qk4-cleanup', $V14, '')) 40000) 'cleanup exit code'
+        Assert-True (Test-Path -LiteralPath (Join-Path $trash 'plugin.dll')) 'nothing deleted around the exe'
+    } finally { $held.Dispose() }
+    Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root @('--qk4-cleanup', $V14, '')) 40000) 'later cleanup exit code'
+    Assert-True (-not (Test-Path -LiteralPath $trash)) 'removed once released'
+}
+
 function Start-PausedCleanup([string]$Root, [string]$Own) {
     Copy-Item $PauseLauncher (Join-Path $Root 'QK4-testpause.exe')
     $signal = Join-Path $Root 'pause'
