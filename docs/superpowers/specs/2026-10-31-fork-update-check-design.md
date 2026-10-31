@@ -158,7 +158,7 @@ mapping (`feat`, `fix`, `refactor`/`perf`), and other types are left out.
 The generator handles commits merged from upstream as described in "Upstream commits in the changelog" below.
 `cliff.toml` is not edited. A fork-only config or a script under `scripts/` holds this logic.
 
-`uj.13` has no `uj.N` predecessor with an `update.json`, so its history starts at `uj.13`.
+`uj.14`, the first updater build, has no `uj.N` predecessor with an `update.json`, so its history starts at `uj.14`.
 
 ## App behaviour
 
@@ -401,7 +401,8 @@ To keep upstream merges cheap:
 - Local build and tests run with `ctest`. clang-format passes.
 - `release-uj.yml` is rehearsed with a `uj.test-*` tag first.
 - The owner tests on native Windows, not WSLg.
-- End-to-end needs two real releases: install `uj.13` by hand, publish `uj.14`, then update through the popup.
+- End-to-end needs two real releases: install `uj.14` by hand, publish `uj.15`, then update through the popup. The owner already released `uj.13` by hand,
+  so `uj.14` is the first updater build.
   Also covered: a second copy of QK4 open, a read-only install folder, GitHub unreachable, and a saved radio with
   auto-connect on.
 - Windows update cases, each run for real:
@@ -436,7 +437,8 @@ To keep upstream merges cheap:
 ## Rollout
 
 - The first updater build must be installed by hand into a fresh folder, because it introduces the version folder
-  layout. Existing `uj.12` users cannot be prompted, and their shortcuts need pointing at the new folder.
+  layout. The owner already released `uj.13` by hand, so this is `uj.14`. Existing `uj.13` and older users cannot be
+  prompted, and their shortcuts need pointing at the new folder.
 - Work happens on a feature branch from the current branch tip, pushed to `ujay` only. No PR, fork included, until
   the owner has tested and reviewed it.
 - Upstream's `development` is merged after this feature is built, and real testing happens on the merged result.

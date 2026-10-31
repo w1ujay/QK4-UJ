@@ -621,4 +621,4 @@ git commit -m "docs(update): add the acceptance checklist and merge follow-up"
 
 - [ ] **Step 4: Push.** `git push ujay feat/update-check`. Expected: branch updated on the fork. No PR. Stop here for the owner.
 
-The upstream merge, `uj.13`, `uj.14` and the checklist run happen after this, under the owner's direction.
+The upstream merge, `uj.14`, `uj.15` and the checklist run happen after this, under the owner's direction.
