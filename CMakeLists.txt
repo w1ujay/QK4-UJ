@@ -187,6 +187,7 @@ set(SOURCES
     src/models/radiostate/xvtrbandstate.cpp
     src/models/menumodel.cpp
     src/ui/dialogs/radiomanagerdialog.cpp
+    src/ui/dialogs/updatedialog.cpp
     src/ui/widgets/dualcontrolbutton.cpp
     src/ui/widgets/sidecontrolpanel.cpp
     src/ui/widgets/bottommenubar.cpp
@@ -341,6 +342,7 @@ set(HEADERS
     src/models/menumodel.h
     src/utils/macroids.h
     src/ui/dialogs/radiomanagerdialog.h
+    src/ui/dialogs/updatedialog.h
     src/ui/widgets/dualcontrolbutton.h
     src/ui/widgets/sidecontrolpanel.h
     src/ui/widgets/bottommenubar.h

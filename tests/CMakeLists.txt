@@ -659,6 +659,16 @@ if(WIN32)
 endif()
 add_test(NAME ManagedInstallTests COMMAND test_managedinstall)
 
+# Fork update check: the update popup, offscreen.
+add_executable(test_updatedialog test_updatedialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/dialogs/updatedialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+)
+target_include_directories(test_updatedialog PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatedialog Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME UpdateDialogTests COMMAND test_updatedialog)
+set_tests_properties(UpdateDialogTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
