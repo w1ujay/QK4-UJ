@@ -99,6 +99,8 @@ set(SOURCES
     src/mainwindow.cpp
     src/utils/radioutils.cpp
     src/utils/bandplan.cpp
+    src/update/updateversion.cpp
+    src/update/updatemanifest.cpp
     src/controllers/connectioncontroller.cpp
     src/controllers/hardwarecontroller.cpp
     src/controllers/audiocontroller.cpp
@@ -264,6 +266,8 @@ set(HEADERS
     src/mainwindow.h
     src/utils/radioutils.h
     src/utils/bandplan.h
+    src/update/updateversion.h
+    src/update/updatemanifest.h
     src/controllers/connectioncontroller.h
     src/controllers/hardwarecontroller.h
     src/controllers/audiocontroller.h

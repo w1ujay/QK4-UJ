@@ -605,6 +605,15 @@ target_include_directories(test_micrate PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_micrate Qt6::Core Qt6::Test)
 add_test(NAME MicRateTests COMMAND test_micrate)
 
+# Fork update check: version strings and update.json parsing — pure functions.
+add_executable(test_updatemanifest test_updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+)
+target_include_directories(test_updatemanifest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatemanifest Qt6::Core Qt6::Test)
+add_test(NAME UpdateManifestTests COMMAND test_updatemanifest)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
