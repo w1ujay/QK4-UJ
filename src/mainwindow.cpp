@@ -1446,7 +1446,8 @@ void MainWindow::showRadioManager() {
 
 void MainWindow::connectToRadio(const RadioEntry &radio) {
     // WHY: synchronous. The state signal comes from the I/O thread, too late to stop A replacing B.
-    m_updateFlow->noteManualConnection();
+    if (m_updateFlow)
+        m_updateFlow->noteManualConnection();
     m_statusBarController->setTitle("Elecraft K4 - " + radio.name);
     m_connectionController->connectToRadio(radio);
 }
