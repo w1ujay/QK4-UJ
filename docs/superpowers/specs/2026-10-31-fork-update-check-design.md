@@ -313,8 +313,8 @@ nothing. `.healthy` only records that a version once passed, and only the launch
   kept for this reason.
 
 **Auto-scale restart.** `src/main.cpp` can close a process before showing the window and start a replacement from the
-same path, with the same arguments. The replacement inherits the job, unless Qt breaks away from it, which the builder must
-confirm, and it inherits `QK4_UPDATE_ATTEMPT` through the environment `InterfaceScale::relaunch()` passes on. So it writes the
+same path, with the same arguments. The replacement inherits the job (`QProcess::startDetached` does not break away,
+confirmed on real Windows by the launcher's `restartThenFailStops` test), and it inherits `QK4_UPDATE_ATTEMPT` through the environment `InterfaceScale::relaunch()` passes on. So it writes the
 readiness file, and terminating the job stops it too. The launcher treats the attempt as failed early only if the job has
 had no running process for 5 seconds.
 
@@ -332,7 +332,9 @@ other's processes. Each copy relaunches itself.
 **Cleanup.** At startup, a managed build runs cleanup only if its own version matches `current.txt`, so a new version
 under test never cleans anything. It keeps the current version and the next lower `N`, and never touches a higher `N`
 unless that `N` is recorded as failed. For each other folder, under the update lock, it checks that no process is running
-from it and renames it to `.trash-<random>`. It deletes the renamed folder after releasing the lock. It also removes `.trash-*`
+from it and renames it to `.trash-<random>`. NTFS allows the folder of a running exe to be renamed, so it checks again after
+the rename and puts the folder back if anything is running from it; rollback's rename does the same. It deletes the renamed
+folder after releasing the lock, and never deletes a folder with a process running from it. It also removes `.trash-*`
 folders, and `.incoming-*` folders more than a day old. A folder in use stays until a later launch.
 
 Normal launches only select the current version, and they hold the same lock while creating the process. Running an old
@@ -448,8 +450,8 @@ To keep upstream merges cheap:
   disruptive.
 - A crash more than 10 seconds after the window appears, such as one that only happens once a radio connects, is not rolled
   back. Recovery means editing `current.txt` by hand, so the release notes must explain it.
-- Windows job objects depend on child processes not breaking away. `QProcess::startDetached` must be confirmed not to, or the
-  launcher falls back to tracking processes by path for this attempt.
+- Windows job objects depend on child processes not breaking away. `QProcess::startDetached` was confirmed not to, on Qt 6.10.
+  The launcher's `restartThenFailStops` test keeps checking it, using the same calls as `InterfaceScale::relaunch()`.
 - Upstream code merged later must not assume files sit beside the launcher at the install root.
 
 ## Left to the builder
