@@ -53,6 +53,7 @@ class CatServer;
 class TciController;
 class OptionsDialog;
 class NotificationWidget;
+class UpdateFlow;
 class VfoRowWidget;
 class RadioManagerDialog;
 class MainWindow : public QMainWindow {
@@ -96,6 +97,7 @@ private slots:
 
 private:
     QString m_startupRadioOverride;
+    UpdateFlow *m_updateFlow = nullptr;
 
     // WHY: the width the window has always opened at. Height is whatever the layout needs.
     static constexpr int kPreferredWidth = 1340;

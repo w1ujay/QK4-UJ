@@ -669,6 +669,39 @@ target_link_libraries(test_updatedialog Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Tes
 add_test(NAME UpdateDialogTests COMMAND test_updatedialog)
 set_tests_properties(UpdateDialogTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
 
+# Fork update check: when the startup radio may connect. Pure state machine.
+add_executable(test_updategate test_updategate.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updategate.cpp
+)
+target_include_directories(test_updategate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updategate Qt6::Core Qt6::Test)
+add_test(NAME UpdateGateTests COMMAND test_updategate)
+
+# Fork update check: the startup flow against a local server, offscreen.
+add_executable(test_updateflow test_updateflow.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateflow.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updategate.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/windowsappid.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatechecker.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatedownloader.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/managedinstall.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/windowsinstaller.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatepolicy.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/interfacescale.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/dialogs/updatedialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+)
+target_include_directories(test_updateflow PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updateflow Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+if(WIN32)
+    target_link_libraries(test_updateflow version ole32 shell32)
+endif()
+add_test(NAME UpdateFlowTests COMMAND test_updateflow)
+set_tests_properties(UpdateFlowTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

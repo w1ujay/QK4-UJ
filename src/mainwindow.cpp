@@ -47,6 +47,7 @@
 #include "network/catserver.h"
 #include "controllers/statusbarcontroller.h"
 #include "settings/radiosettings.h"
+#include "update/updateflow.h"
 #include <QVBoxLayout>
 #include <QInputDialog>
 #include <QHBoxLayout>
@@ -641,7 +642,9 @@ void MainWindow::setupCatServer() {
     // the first connection-state change against a UI that cannot display it yet, and a failure
     // would surface before there is a status bar to report it in. A zero-timer defers this to the
     // first pass of the event loop, by which point the window is up.
-    QTimer::singleShot(0, this, &MainWindow::connectToStartupRadio);
+    m_updateFlow = new UpdateFlow(QStringLiteral(QK4_VERSION), UpdateFlow::defaultManifestUrl(), this, this);
+    connect(m_updateFlow, &UpdateFlow::startupRadioAllowed, this, &MainWindow::connectToStartupRadio);
+    QTimer::singleShot(0, m_updateFlow, &UpdateFlow::start);
 }
 
 void MainWindow::connectToStartupRadio() {
@@ -1442,6 +1445,8 @@ void MainWindow::showRadioManager() {
 }
 
 void MainWindow::connectToRadio(const RadioEntry &radio) {
+    // WHY: synchronous. The state signal comes from the I/O thread, too late to stop A replacing B.
+    m_updateFlow->noteManualConnection();
     m_statusBarController->setTitle("Elecraft K4 - " + radio.name);
     m_connectionController->connectToRadio(radio);
 }
