@@ -11,6 +11,7 @@ SCRIPTS="$SCRIPT_DIR/../../scripts"
 CHANGELOG="$SCRIPTS/uj-changelog.sh"
 UPDATE_JSON="$SCRIPTS/uj-update-json.sh"
 ASSEMBLE="$SCRIPTS/uj-assemble-windows.sh"
+FETCH_HISTORY="$SCRIPTS/uj-fetch-history.sh"
 
 VERSION="0.8.0-uj.14"
 BASE_URL="https://github.com/w1ujay/QK4-UJ/releases/download/uj.14"
@@ -313,6 +314,104 @@ corruptHistoryFails() {
     fi
 }
 
+# --- previous update.json ---------------------------------------------------------------------------------------------
+
+# A stand-in for gh, first on PATH. FAKE_VIEW_STATUS and FAKE_DOWNLOAD_STATUS set its exit codes, and FAKE_ASSETS is what
+# `release view` prints. Every call is logged, and `release download` writes the file it was asked for.
+make_fake_gh() { # <dir>
+    mkdir -p "$1"
+    cat >"$1/gh" <<'FAKE'
+#!/usr/bin/env bash
+echo "$*" >>"$FAKE_GH_LOG"
+case "$1 $2" in
+"release view")
+    printf '%b' "${FAKE_ASSETS:-}"
+    exit "${FAKE_VIEW_STATUS:-0}"
+    ;;
+"release download")
+    [ "${FAKE_DOWNLOAD_STATUS:-0}" -eq 0 ] || exit "$FAKE_DOWNLOAD_STATUS"
+    while [ "$#" -gt 0 ]; do
+        if [ "$1" = "--dir" ]; then
+            echo '{"history":[]}' >"$2/update.json"
+        fi
+        shift
+    done
+    ;;
+*)
+    exit 64
+    ;;
+esac
+FAKE
+    chmod +x "$1/gh"
+}
+
+fetch_history() { # <prev tag> <history dir>, with the FAKE_* settings in the environment
+    make_fake_gh "$WORK/$CURRENT-bin"
+    mkdir -p "$2"
+    FAKE_GH_LOG="$WORK/$CURRENT-gh.log" PATH="$WORK/$CURRENT-bin:$PATH" bash "$FETCH_HISTORY" "$1" "$2" \
+        >"$WORK/$CURRENT.out" 2>&1
+}
+
+historyFetchedWhenPresent() {
+    local history="$WORK/$CURRENT-history"
+    FAKE_ASSETS='SHA256SUMS.txt\nupdate.json\nQK4.zip\n' fetch_history uj.14 "$history" ||
+        fail "should succeed: $(cat "$WORK/$CURRENT.out")"
+    [ -f "$history/update.json" ] || fail "update.json was not fetched"
+    grep -q 'release download uj.14 --pattern update.json' "$WORK/$CURRENT-gh.log" || fail "wrong download call"
+}
+
+historyFetchedFromALongListing() {
+    # grep -q stops reading at its match. Under pipefail that used to read as "not found" for a gh still writing.
+    local history="$WORK/$CURRENT-history" assets
+    assets="$(printf 'update.json\\n'; printf 'padding-file-name.zip\\n%.0s' $(seq 1 20000))"
+    FAKE_ASSETS="$assets" fetch_history uj.14 "$history" || fail "should succeed: $(cat "$WORK/$CURRENT.out")"
+    [ -f "$history/update.json" ] || fail "update.json was not fetched"
+}
+
+historyStartsFreshWithoutTheFile() {
+    local history="$WORK/$CURRENT-history"
+    FAKE_ASSETS='SHA256SUMS.txt\nnot-update.json\nupdate.json.bak\n' fetch_history uj.13 "$history" ||
+        fail "a release without the file is not an error: $(cat "$WORK/$CURRENT.out")"
+    [ ! -e "$history/update.json" ] || fail "nothing should be fetched"
+    if grep -q 'release download' "$WORK/$CURRENT-gh.log"; then
+        fail "no download should be attempted"
+    fi
+    grep -q 'uj.13 has no update.json' "$WORK/$CURRENT.out" || fail "the fresh start must be stated"
+}
+
+historyStartsFreshWithNoPreviousRelease() {
+    local history="$WORK/$CURRENT-history"
+    fetch_history "" "$history" || fail "the first release is not an error: $(cat "$WORK/$CURRENT.out")"
+    [ ! -e "$WORK/$CURRENT-gh.log" ] || fail "gh has nothing to look up"
+}
+
+ghViewFailureStops() {
+    local history="$WORK/$CURRENT-history"
+    if FAKE_VIEW_STATUS=1 fetch_history uj.14 "$history"; then
+        fail "a failed lookup must stop the run, not start history again"
+    fi
+    if grep -q 'has no update.json' "$WORK/$CURRENT.out"; then
+        fail "a failed lookup must not be reported as a fresh start"
+    fi
+}
+
+ghViewFailureAfterPartialOutputStops() {
+    local history="$WORK/$CURRENT-history"
+    if FAKE_ASSETS='update.json\n' FAKE_VIEW_STATUS=1 fetch_history uj.14 "$history"; then
+        fail "a failed lookup must stop the run whatever it printed first"
+    fi
+    if grep -q 'release download' "$WORK/$CURRENT-gh.log"; then
+        fail "nothing should be downloaded after a failed lookup"
+    fi
+}
+
+ghDownloadFailureStops() {
+    local history="$WORK/$CURRENT-history"
+    if FAKE_ASSETS='update.json\n' FAKE_DOWNLOAD_STATUS=1 fetch_history uj.14 "$history"; then
+        fail "a failed download must stop the run"
+    fi
+}
+
 # --- Windows package --------------------------------------------------------------------------------------------------
 
 make_artifact() { # <dir>
@@ -434,6 +533,13 @@ run_test historyCappedAt20
 run_test retaggedNumberIsNotListedTwice
 run_test missingAssetFails
 run_test corruptHistoryFails
+run_test historyFetchedWhenPresent
+run_test historyFetchedFromALongListing
+run_test historyStartsFreshWithoutTheFile
+run_test historyStartsFreshWithNoPreviousRelease
+run_test ghViewFailureStops
+run_test ghViewFailureAfterPartialOutputStops
+run_test ghDownloadFailureStops
 run_test zipLayout
 run_test zipReplacesAnOldFile
 run_test assembleRefusesAnIncompleteArtifact
