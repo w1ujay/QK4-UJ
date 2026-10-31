@@ -155,12 +155,13 @@ function Show-Root([string]$Root) {
 }
 
 # Asserts everything a successful update promises.
-function Assert-Committed([string]$Root, [string]$Version, $Process) {
+function Assert-Committed([string]$Root, [string]$Version, $Process, [string]$LeftoverAttempt = '') {
     Assert-Eq $EXIT_OK (Wait-Exit $Process) 'finisher exit code'
     Assert-Eq $Version (Get-Current $Root) 'current.txt'
     $folder = Join-Path $Root "versions\$Version"
     Assert-True (Test-Path -LiteralPath (Join-Path $folder '.healthy')) '.healthy written'
-    Assert-Eq 0 @(Get-ChildItem -LiteralPath $folder -Force -Filter '.ready-*').Count 'readiness file removed'
+    $ready = @(Get-ChildItem -LiteralPath $folder -Force -Filter '.ready-*' | Where-Object Name -ne ".ready-$LeftoverAttempt")
+    Assert-Eq 0 $ready.Count 'readiness file removed'
 }
 
 # Asserts everything a rollback promises when the attempt's folder had nothing else running from it.
@@ -380,7 +381,8 @@ Add-Case 'launcherKilled' {
     Assert-True ($clock.ElapsedMilliseconds -lt 3000) 'lock is free'
     Wait-Starts $root $V13
     Assert-Eq 1 @(Get-Starts $root $V13).Count 'old version until proven'
-    Assert-Committed $root $V14 (Start-Finish $root $V14 'ready')
+    # The killed attempt's own readiness file stays. It names that attempt's ID, so it proves nothing about this one.
+    Assert-Committed $root $V14 (Start-Finish $root $V14 'ready') $orphan.Attempt
 }
 
 Add-Case 'closingCopyHangs' {
