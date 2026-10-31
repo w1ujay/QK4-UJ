@@ -1,6 +1,6 @@
 # Update check: owner acceptance checklist
 
-Run this on native Windows (not WSLg) and on Linux. CI already covers the launcher's 37 cases, the Qt unit tests and the
+Run this on native Windows (not WSLg) and on Linux. CI already covers the launcher's 39 cases, the Qt unit tests and the
 release-script tests, so none of that is repeated here. Each line is one action and what you should see.
 
 The first updater build is `uj.14` (you already released `uj.13` by hand). The end-to-end pair is `uj.14`, then `uj.15`.
