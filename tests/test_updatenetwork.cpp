@@ -67,6 +67,7 @@ private slots:
     void downloaderRejectsWrongSize();
     void downloaderCancelDeletesFile();
     void downloaderReportsDiskError();
+    void downloaderFailsWhenLastBytesDoNotReachDisk();
 
 private:
     static QByteArray manifestJson() {
@@ -233,6 +234,31 @@ void TestUpdateNetwork::downloaderReportsDiskError() {
     d.start();
     QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
     QCOMPARE(bad.count(), 1);
+}
+
+// A small body stays in QFile's write buffer until flush, so only a flush check sees a full disk. /dev/full fails
+// every flush with ENOSPC; the .part path is a symlink to it. Linux only.
+void TestUpdateNetwork::downloaderFailsWhenLastBytesDoNotReachDisk() {
+#ifndef Q_OS_LINUX
+    QSKIP("needs /dev/full");
+#else
+    if (!QFileInfo::exists("/dev/full"))
+        QSKIP("needs /dev/full");
+    FakeServer srv;
+    srv.m_type = "application/zip";
+    srv.m_body = QByteArray(100, 'q'); // under the 16 KB write buffer
+    QTemporaryDir dir;
+    const QString dest = dir.filePath("QK4.zip");
+    QVERIFY(QFile::link("/dev/full", dest + ".part"));
+    UpdateDownloader d(assetFor(srv, srv.m_body), dest, nullptr);
+    QSignalSpy ok(&d, &UpdateDownloader::succeeded);
+    QSignalSpy bad(&d, &UpdateDownloader::failed);
+    d.start();
+    QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
+    QCOMPARE(ok.count(), 0);
+    QCOMPARE(bad.count(), 1);
+    QVERIFY(!QFile::exists(dest));
+#endif
 }
 
 QTEST_MAIN(TestUpdateNetwork)

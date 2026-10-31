@@ -71,6 +71,11 @@ void UpdateDownloader::onFinished() {
         fail(tr("Download failed: %1").arg(m_reply->errorString()));
         return;
     }
+    // WHY: QFile buffers small writes, so the last bytes may still be in memory. Compare only what reached the disk.
+    if (!m_file.flush()) {
+        fail(tr("Cannot write %1: %2").arg(m_file.fileName(), m_file.errorString()));
+        return;
+    }
     if (m_received != m_asset.size) {
         fail(tr("Download size mismatch (got %1 bytes, expected %2)").arg(m_received).arg(m_asset.size));
         return;
@@ -80,6 +85,10 @@ void UpdateDownloader::onFinished() {
         return;
     }
     m_file.close();
+    if (m_file.error() != QFileDevice::NoError) { // close() keeps a flush error
+        fail(tr("Cannot write %1: %2").arg(m_file.fileName(), m_file.errorString()));
+        return;
+    }
     QFile::remove(m_destination); // QFile::rename will not overwrite
     if (!m_file.rename(m_destination)) {
         fail(tr("Cannot save %1: %2").arg(m_destination, m_file.errorString()));
