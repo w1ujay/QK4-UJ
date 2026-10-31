@@ -624,6 +624,13 @@ target_include_directories(test_updatepolicy PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_updatepolicy Qt6::Core Qt6::Test)
 add_test(NAME UpdatePolicyTests COMMAND test_updatepolicy)
 
+# Fork update check: Windows launcher decision logic (plain C++17, no Qt in the production files).
+add_executable(test_updatelayout test_updatelayout.cpp
+    ${CMAKE_SOURCE_DIR}/tools/windows-launcher/updatelayout.cpp
+)
+target_link_libraries(test_updatelayout Qt6::Core Qt6::Test)
+add_test(NAME UpdateLayoutTests COMMAND test_updatelayout)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

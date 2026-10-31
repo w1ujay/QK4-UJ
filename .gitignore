@@ -6,7 +6,8 @@ CLAUDE.md
 # AI tools / MCP / Claude Code
 .claude/
 .mcp.json
-tools/
+tools/*
+!tools/windows-launcher/
 *AUDIT*.md
 HaliKey_QK4_Integration_Notes.md
 docs/generated/
