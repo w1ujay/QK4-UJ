@@ -120,6 +120,11 @@ function Get-Starts([string]$Root, [string]$Version = '') {
     return @($records | Where-Object { $Version -eq '' -or $_.Exe -like "*\versions\$Version\QK4.exe" } | Sort-Object Started)
 }
 
+# The launcher exits as soon as it has created a process, so that process's record can follow a moment later.
+function Wait-Starts([string]$Root, [string]$Version, [int]$Count = 1) {
+    Wait-Until { @(Get-Starts $Root $Version).Count -ge $Count } 5000 "$Version started $Count time(s)"
+}
+
 function Assert-Args([string[]]$Expected, $Start, [string]$Message) {
     Assert-Eq $Expected.Count $Start.Args.Count "$Message argument count"
     for ($i = 0; $i -lt $Expected.Count; ++$i) { Assert-Eq $Expected[$i] $Start.Args[$i] "$Message argument $i" }
@@ -168,6 +173,7 @@ function Assert-RolledBack([string]$Root, [string]$Version, [string]$Previous, [
     $attempts = @(Get-Starts $Root $Version)
     Assert-True ($attempts.Count -ge 1) 'attempt really ran'
     foreach ($a in $attempts) { Assert-True (-not (Test-Alive $a.Pid)) "attempt process $($a.Pid) stopped" }
+    Wait-Starts $Root $Previous
     $back = @(Get-Starts $Root $Previous)
     Assert-Eq 1 $back.Count 'previous version started once'
     Assert-Eq '' $back[0].Attempt 'previous version gets no attempt ID'
@@ -242,6 +248,7 @@ Add-Case 'missingFolderRollsBack' {
     $finisher = Start-Finish $root $V14 'ready' 0 @('--connect', 'Radio A')
     Assert-Eq $EXIT_ROLLED_BACK (Wait-Exit $finisher 20000) 'finisher exit code'
     Assert-True ((Get-FailureNote $root) -contains $V14) 'failure note names the version'
+    Wait-Starts $root $V13
     Assert-Eq 1 @(Get-Starts $root $V13).Count 'previous version started'
 }
 
@@ -319,6 +326,7 @@ Add-Case 'oneFailsOneWorks' {
     Assert-True (Test-Alive $firstStart.Pid) 'first attempt untouched'
     Assert-True (Test-Path -LiteralPath (Join-Path $root "versions\$V14\QK4.exe")) 'folder kept'
     Assert-True ((Get-FailureNote $root) -contains $V14) 'failure note written'
+    Wait-Starts $root $V13
     Assert-Eq 1 @(Get-Starts $root $V13).Count 'previous version started'
     Assert-Eq $EXIT_OK (Wait-Exit $first) 'first finisher'
     Assert-Eq $V14 (Get-Current $root) 'first attempt committed'
@@ -332,6 +340,7 @@ Add-Case 'failureAfterOtherSucceeded' {
     Assert-Eq $EXIT_ROLLED_BACK (Wait-Exit $finisher) 'finisher exit code'
     Assert-Eq 0 (Get-FailureNote $root).Count 'no failure note'
     Assert-True (Test-Path -LiteralPath (Join-Path $root "versions\$V14\QK4.exe")) 'folder kept'
+    Wait-Starts $root $V14 2
     $current = @(Get-Starts $root $V14 | Where-Object Attempt -eq '')
     Assert-Eq 1 $current.Count 'current version started'
     Assert-Args @('--connect', 'Radio A') $current[0] 'current version'
@@ -369,6 +378,7 @@ Add-Case 'launcherKilled' {
     $launch = Start-Launcher $root
     Assert-Eq $EXIT_OK (Wait-Exit $launch 5000) 'launch after kill'
     Assert-True ($clock.ElapsedMilliseconds -lt 3000) 'lock is free'
+    Wait-Starts $root $V13
     Assert-Eq 1 @(Get-Starts $root $V13).Count 'old version until proven'
     Assert-Committed $root $V14 (Start-Finish $root $V14 'ready')
 }
@@ -418,6 +428,7 @@ Add-Case 'badFinishArgumentsStillLaunch' {
     $root = Get-PlainRoot
     $launch = Start-Launcher $root @('--qk4-finish-update', '..\..\evil-uj.99', '0', '--', '--connect', 'Radio A')
     Wait-Exit $launch 20000 | Out-Null
+    Wait-Starts $root $V13
     $starts = @(Get-Starts $root $V13)
     Assert-Eq 1 $starts.Count 'current version started'
     Assert-Args @('--connect', 'Radio A') $starts[0] 'current version'
@@ -470,6 +481,7 @@ Add-Case 'lockHeldLaunchesAnyway' {
         Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root) 20000) 'launch exit code'
         Assert-True ($clock.ElapsedMilliseconds -ge 9500) 'waited 10 s for the lock'
         Assert-True ($clock.ElapsedMilliseconds -lt 14000) 'gave up at 10 s'
+        Wait-Starts $root $V13
         Assert-Eq 1 @(Get-Starts $root $V13).Count 'launched anyway'
     } finally { $lock.Dispose() }
 }
@@ -481,6 +493,7 @@ Add-Case 'unusableLockIsNotWaitedFor' {
     $clock = [Diagnostics.Stopwatch]::StartNew()
     Assert-Eq $EXIT_OK (Wait-Exit (Start-Launcher $root) 20000) 'launch exit code'
     Assert-True ($clock.ElapsedMilliseconds -lt 3000) 'no 10 s wait'
+    Wait-Starts $root $V13
     Assert-Eq 1 @(Get-Starts $root $V13).Count 'launched'
 }
 
@@ -535,6 +548,10 @@ function Start-PausedCleanup([string]$Root, [string]$Own) {
 Add-Case 'cleanupPausedRace' {
     $root = New-Root
     foreach ($v in $V11, $V12, $V13, $V14) { Add-Version $root $v | Out-Null }
+    # NTFS lets the folder of a running exe be renamed, and only the exe itself refuses deletion. This file stands for
+    # the DLLs and plugins a running copy would lose.
+    $plugin = Join-Path $root "versions\$V11\plugin.dll"
+    New-Item -ItemType File -Path $plugin | Out-Null
     Set-Current $root $V14
     $paused = Start-PausedCleanup $root $V14
     Set-Current $root $V11
@@ -545,6 +562,8 @@ Add-Case 'cleanupPausedRace' {
     Assert-Eq $EXIT_OK (Wait-Exit $paused.Process 60000) 'cleanup exit code'
     Assert-True (Test-Alive $running.Pid) 'running copy unharmed'
     Assert-True (Test-Path -LiteralPath (Join-Path $root "versions\$V11\QK4.exe")) 'its folder kept'
+    Assert-True (Test-Path -LiteralPath $plugin) 'its other files kept'
+    Assert-Eq 0 @(Get-ChildItem -LiteralPath (Join-Path $root 'versions') -Force -Filter '.trash-*').Count 'no trash left'
 }
 
 # The launch is waiting on the lock when cleanup resumes, so it selects after the rename and cannot pick a folder that
@@ -560,6 +579,7 @@ Add-Case 'cleanupPausedRaceWithinLockWait' {
     New-Item -ItemType File -Path "$($paused.Signal).resume" | Out-Null
     Assert-Eq $EXIT_OK (Wait-Exit $paused.Process 60000) 'cleanup exit code'
     Assert-Eq $EXIT_OK (Wait-Exit $launch 15000) 'launch exit code'
+    Wait-Starts $root $V14
     Assert-Eq 0 @(Get-Starts $root $V11).Count 'renamed folder not started'
     Assert-Eq 1 @(Get-Starts $root $V14).Count 'fallback started instead'
 }
@@ -572,7 +592,7 @@ Add-Case 'argsRoundTrip' {
     Wait-Until { @(Get-Starts $root $V13).Count -eq 1 } 5000 'normal launch started'
     Assert-Args $HardArgs (Get-Starts $root $V13)[0] 'normal launch'
     Stop-RootProcesses $root
-    Remove-Item -LiteralPath (Join-Path $root 'fake-logs\*')
+    Remove-Item -Path (Join-Path $root 'fake-logs\*')
 
     Assert-RolledBack $root $V14 $V13 $HardArgs (Start-Finish $root $V14 'crash-after-ready' 0 $HardArgs)
 
@@ -596,7 +616,7 @@ Add-Case 'missingCurrentTxt' {
     Assert-Eq 2 @(Get-Starts $root $V13).Count 'damaged pointer falls back'
 
     Stop-RootProcesses $root
-    Remove-Item -LiteralPath (Join-Path $root 'versions\*') -Recurse -Force
+    Remove-Item -Path (Join-Path $root 'versions\*') -Recurse -Force
     $launch = Start-Launcher $root
     Wait-Until { $launch.Refresh(); $launch.MainWindowHandle -ne [IntPtr]::Zero } 10000 'visible error shown'
     Assert-Eq 'QK4' $launch.MainWindowTitle 'error dialog title'

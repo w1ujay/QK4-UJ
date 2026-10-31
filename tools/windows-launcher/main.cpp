@@ -234,10 +234,6 @@ std::wstring versionExe(const std::wstring &root, const std::wstring &version) {
     return versionFolder(root, version) + L"\\QK4.exe";
 }
 
-std::wstring newTrashPath(const std::wstring &root) {
-    return root + L"\\versions\\.trash-" + randomHex();
-}
-
 // Names in versions\, leaving out the .incoming-* and .trash-* working folders.
 std::vector<VersionFolder> listVersions(const std::wstring &root) {
     std::vector<VersionFolder> folders;
@@ -295,9 +291,10 @@ bool startsWithNoCase(const std::wstring &text, const std::wstring &prefix) {
     return CompareStringOrdinal(text.data(), length, prefix.data(), length, TRUE) == CSTR_EQUAL;
 }
 
-// Errs towards true, because true only leaves a folder in place until a later launch.
-bool processRunningFrom(const std::wstring &folder) {
-    const std::wstring prefix = finalPath(folder) + L"\\";
+// Is a process running from versions\<name>? The folder need not exist. Errs towards true, because true only leaves a
+// folder in place until a later launch.
+bool processRunningFrom(const std::wstring &root, const std::wstring &name) {
+    const std::wstring prefix = finalPath(root + L"\\versions") + L"\\" + name + L"\\";
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
     if (snapshot == INVALID_HANDLE_VALUE)
         return true;
@@ -305,14 +302,46 @@ bool processRunningFrom(const std::wstring &folder) {
     PROCESSENTRY32W entry = {};
     entry.dwSize = sizeof(entry);
     for (BOOL more = Process32FirstW(snapshot, &entry); more && !running; more = Process32NextW(snapshot, &entry)) {
-        HANDLE process = OpenProcess(PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
+        HANDLE process = OpenProcess(SYNCHRONIZE | PROCESS_QUERY_LIMITED_INFORMATION, FALSE, entry.th32ProcessID);
         if (!process)
             continue;
-        running = startsWithNoCase(processImage(process), prefix);
+        // The wait skips a process that has exited but is kept listed by an open handle, such as the attempt's own.
+        running = WaitForSingleObject(process, 0) == WAIT_TIMEOUT && startsWithNoCase(processImage(process), prefix);
         CloseHandle(process);
     }
     CloseHandle(snapshot);
     return running;
+}
+
+enum class TrashResult { Trashed, InUse, Failed };
+
+// Renames versions\<name> to a .trash-* folder, setting trashName. Call under the update lock.
+//
+// WHY the check after the rename: NTFS allows a folder to be renamed while an exe inside it is running, so a failed
+// rename can't be relied on to protect a running copy. A launch that slipped in after the caller's own check is visible
+// here. A launch after the rename cannot find the folder at all. So the folder goes back, untouched, if anything runs
+// from it. Both names are checked because which one Windows reports for a moved image is not documented.
+TrashResult trashFolder(const std::wstring &root, const std::wstring &name, std::wstring &trashName) {
+    const std::wstring folder = versionFolder(root, name);
+    const std::wstring candidate = L".trash-" + randomHex();
+    const std::wstring moved = versionFolder(root, candidate);
+    if (!MoveFileW(folder.c_str(), moved.c_str()))
+        return TrashResult::Failed;
+    if (!processRunningFrom(root, candidate) && !processRunningFrom(root, name)) {
+        trashName = candidate;
+        return TrashResult::Trashed;
+    }
+    Backoff retry(NOTE_RETRY_WINDOW_MS);
+    while (!MoveFileW(moved.c_str(), folder.c_str()) && !retry.expired())
+        retry.wait();
+    return TrashResult::InUse;
+}
+
+// Outside the lock. Never touches a folder something runs from: deleting around a running exe would remove the DLLs and
+// plugins that copy has yet to load.
+void deleteTrash(const std::wstring &root, const std::wstring &trashName) {
+    if (!processRunningFrom(root, trashName))
+        deleteWithRetry(versionFolder(root, trashName));
 }
 
 std::wstring commandLineFor(const std::wstring &exe, const std::vector<std::wstring> &args) {
@@ -454,12 +483,10 @@ int rollBack(const std::wstring &root, const std::wstring &version, int uj, cons
         UpdateLock lock(root);
         const std::wstring current = readCurrentTxt(root);
         // Without the lock nothing may be renamed, so it is treated like a folder still in use.
-        const FailureAction action = decideFailure(uj, currentUj(current), !lock.held() || processRunningFrom(folder));
+        const FailureAction action =
+            decideFailure(uj, currentUj(current), !lock.held() || processRunningFrom(root, version));
         if (action == FailureAction::TrashFolderWriteNote && exists(folder)) {
-            const std::wstring target = newTrashPath(root);
-            if (MoveFileW(folder.c_str(), target.c_str())) {
-                trash = target;
-            } else if (!retry.expired()) {
+            if (trashFolder(root, version, trash) == TrashResult::Failed && !retry.expired()) {
                 lock.release();
                 retry.wait();
                 continue;
@@ -478,7 +505,7 @@ int rollBack(const std::wstring &root, const std::wstring &version, int uj, cons
         break;
     }
     if (!trash.empty())
-        deleteWithRetry(trash);
+        deleteTrash(root, trash);
     else
         deleteWithRetry(readyFile);
     if (!selected)
@@ -561,16 +588,21 @@ void trashOldVersions(const std::wstring &root, const std::wstring &ownVersion, 
         }
         if (target.empty())
             return;
-        const std::wstring folder = versionFolder(root, target);
-        if (processRunningFrom(folder)) {
+        if (processRunningFrom(root, target)) {
             skipped.insert(target); // a folder in use stays until a later launch
             continue;
         }
 #ifdef QK4_LAUNCHER_TEST_PAUSE
         testPause();
 #endif
-        if (MoveFileW(folder.c_str(), newTrashPath(root).c_str()))
+        std::wstring trash;
+        const TrashResult result = trashFolder(root, target, trash);
+        if (result == TrashResult::Trashed)
             continue;
+        if (result == TrashResult::InUse) {
+            skipped.insert(target);
+            continue;
+        }
         lock.release();
         if (target != retrying) {
             retrying = target;
@@ -600,11 +632,11 @@ void removeWorkingFolders(const std::wstring &root) {
             (static_cast<ULONGLONG>(entry.ftLastWriteTime.dwHighDateTime) << 32) | entry.ftLastWriteTime.dwLowDateTime;
         if (name.rfind(L".trash-", 0) == 0 ||
             (name.rfind(L".incoming-", 0) == 0 && now > written && now - written > INCOMING_MAX_AGE_100NS))
-            remove.push_back(root + L"\\versions\\" + name);
+            remove.push_back(name);
     } while (FindNextFileW(find, &entry));
     FindClose(find);
-    for (const std::wstring &path : remove)
-        deleteWithRetry(path);
+    for (const std::wstring &name : remove)
+        deleteTrash(root, name);
 }
 
 int cleanup(const std::wstring &root, const std::wstring &ownVersion, const std::wstring &failedCsv) {
