@@ -104,9 +104,9 @@ void UpdateFlow::start() {
         m_install =
             detectManagedInstall(exePath(), m_hooks.launcherIdentity ? m_hooks.launcherIdentity : launcherHasIdentity);
     }
+    m_runningUj = UpdateVersion::parseUjNumber(m_runningVersion);
     consumeFailureNotes();
 
-    m_runningUj = UpdateVersion::parseUjNumber(m_runningVersion);
     if (!m_runningUj || m_platform == UpdatePlatform::Unsupported) {
         apply(m_gate.onCheckDone(false));
         return;
@@ -160,14 +160,15 @@ void UpdateFlow::consumeFailureNotes() {
     if (!QFile::remove(path))
         qWarning() << "Update: could not delete" << path;
 
-    // WHY compared with current.txt: the launcher can leave a note for a version that another attempt then committed.
+    // WHY compared with current.txt and the running version: the launcher can leave a note for a version that another
+    // attempt then committed, or that is running now while current.txt still names the one before it.
     const std::optional<int> current = readCurrentTxtUj(m_install->root);
     QSet<int> failed = failedVersions();
     QStringList names;
     for (const QString &line : text.split(QLatin1Char('\n'), Qt::SkipEmptyParts)) {
         const QString version = line.trimmed();
         const std::optional<int> uj = UpdateVersion::parseUjNumber(version);
-        if (!uj || (current && *uj <= *current))
+        if (!uj || (current && *uj <= *current) || (m_runningUj && *uj == *m_runningUj))
             continue;
         failed.insert(*uj);
         names << version;

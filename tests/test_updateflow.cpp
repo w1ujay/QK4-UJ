@@ -219,6 +219,7 @@ private slots:
     void noAttemptWritesNothing();
     void failureNoteRecordedShownOnceAndDeleted();
     void failureNoteAtOrBelowCurrentIsIgnored();
+    void failureNoteNamingTheRunningVersionIsIgnored();
     void failureNoteAddsToEarlierFailures();
     void failureNoteDoesNotDelayTheRadio();
     void cleanupRunsWhenOwnVersionIsCurrent();
@@ -643,6 +644,23 @@ void UpdateFlowTests::failureNoteAtOrBelowCurrentIsIgnored() {
     QVERIFY(!QFileInfo::exists(layout.root() + "/update-failed.txt"));
     QVERIFY(!window.findChild<QMessageBox *>());
     QCOMPARE(QSettings().value("update/failedUj").toStringList(), QStringList{"15"});
+}
+
+// Two copies install 15 together: one rolls back and leaves a note, the other starts 15 while current.txt is still 14.
+void UpdateFlowTests::failureNoteNamingTheRunningVersionIsIgnored() {
+    ManagedLayout layout("0.8.0-uj.15", "0.8.0-uj.14\n");
+    writeFile(layout.root() + "/update-failed.txt", "0.8.0-uj.15\n");
+    FakeServer server;
+    Window window;
+    UpdateFlow flow("0.8.0-uj.15", server.url("/update.json"), &window, nullptr);
+    UpdateFlow::Hooks hooks = managedHooks(layout);
+    flow.setHooks(hooks);
+    flow.noteManualConnection();
+    flow.start();
+
+    QVERIFY(!QFileInfo::exists(layout.root() + "/update-failed.txt"));
+    QVERIFY(QSettings().value("update/failedUj").toStringList().isEmpty());
+    QVERIFY(!window.findChild<QMessageBox *>());
 }
 
 void UpdateFlowTests::failureNoteAddsToEarlierFailures() {
