@@ -631,6 +631,16 @@ add_executable(test_updatelayout test_updatelayout.cpp
 target_link_libraries(test_updatelayout Qt6::Core Qt6::Test)
 add_test(NAME UpdateLayoutTests COMMAND test_updatelayout)
 
+# Fork update check: update.json check and verified download against a local QTcpServer.
+add_executable(test_updatenetwork test_updatenetwork.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatechecker.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatedownloader.cpp
+)
+target_include_directories(test_updatenetwork PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatenetwork Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME UpdateNetworkTests COMMAND test_updatenetwork)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

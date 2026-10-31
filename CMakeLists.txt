@@ -102,6 +102,8 @@ set(SOURCES
     src/update/updateversion.cpp
     src/update/updatemanifest.cpp
     src/update/updatepolicy.cpp
+    src/update/updatechecker.cpp
+    src/update/updatedownloader.cpp
     src/controllers/connectioncontroller.cpp
     src/controllers/hardwarecontroller.cpp
     src/controllers/audiocontroller.cpp
@@ -270,6 +272,8 @@ set(HEADERS
     src/update/updateversion.h
     src/update/updatemanifest.h
     src/update/updatepolicy.h
+    src/update/updatechecker.h
+    src/update/updatedownloader.h
     src/controllers/connectioncontroller.h
     src/controllers/hardwarecontroller.h
     src/controllers/audiocontroller.h
