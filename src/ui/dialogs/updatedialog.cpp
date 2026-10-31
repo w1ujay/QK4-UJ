@@ -45,7 +45,7 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
     : QDialog(parent) {
     setWindowTitle("QK4 update available");
     setModal(true);
-    setMinimumSize(480, 380);
+    setMinimumSize(K4Styles::Dimensions::UpdateDialogMinWidth, K4Styles::Dimensions::UpdateDialogMinHeight);
     setStyleSheet(QString("QDialog { background-color: %1; }").arg(K4Styles::Colors::Background));
 
     auto *layout = new QVBoxLayout(this);
@@ -68,11 +68,13 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
     changelog->setReadOnly(true);
     changelog->setPlainText(changelogText(releases, olderChangesMissing));
     changelog->setStyleSheet(
-        QString("QPlainTextEdit { background-color: %1; color: %2; border: 1px solid %3; "
-                "border-radius: 4px; padding: %4px; font-size: %5px; }")
+        QString("QPlainTextEdit { background-color: %1; color: %2; border: %6px solid %3; "
+                "border-radius: %7px; padding: %4px; font-size: %5px; }")
             .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)
-            .arg(K4Styles::Dimensions::FontSizeLarge));
+            .arg(K4Styles::Dimensions::FontSizeLarge)
+            .arg(K4Styles::Dimensions::HairlineWidth)
+            .arg(K4Styles::Dimensions::BorderRadius));
     layout->addWidget(changelog, 1);
 
     m_status = new QLabel(this);
@@ -86,9 +88,12 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
     m_progress->setTextVisible(false);
     m_progress->setFixedHeight(K4Styles::Dimensions::PaddingLarge);
     m_progress->setStyleSheet(
-        QString("QProgressBar { background-color: %1; border: 1px solid %2; border-radius: 4px; } "
-                "QProgressBar::chunk { background-color: %3; border-radius: 3px; }")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber));
+        QString("QProgressBar { background-color: %1; border: %4px solid %2; border-radius: %5px; } "
+                "QProgressBar::chunk { background-color: %3; border-radius: %6px; }")
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::DialogBorder, K4Styles::Colors::AccentAmber)
+            .arg(K4Styles::Dimensions::HairlineWidth)
+            .arg(K4Styles::Dimensions::BorderRadius)
+            .arg(K4Styles::Dimensions::BorderRadius - K4Styles::Dimensions::HairlineWidth));
     m_progress->hide();
     layout->addWidget(m_progress);
 
@@ -105,10 +110,11 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
         b->setAutoDefault(false);
         b->setCursor(Qt::PointingHandCursor);
     }
-    // The emphasised button: the selected popup look.
+    // The emphasised button: the selected popup look. Later is the default, so Enter never installs: the popup opens
+    // by itself shortly after launch and Install now closes the app.
     m_install->setStyleSheet(K4Styles::popupButtonSelected());
-    m_install->setAutoDefault(true);
-    m_install->setDefault(true);
+    m_later->setAutoDefault(true);
+    m_later->setDefault(true);
 
     auto *row = new QHBoxLayout();
     row->setSpacing(K4Styles::Dimensions::PaddingMedium);
@@ -135,6 +141,8 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
 }
 
 void UpdateDialog::reject() {
+    if (m_state == State::Installing)
+        return; // the install cannot be stopped, so Esc and the close button do nothing
     if (m_state == State::Busy) {
         emit cancelRequested();
         return;
@@ -148,12 +156,13 @@ void UpdateDialog::setState(State state) {
     const bool idle = state == State::Idle;
     m_skip->setVisible(idle);
     m_install->setVisible(idle);
-    m_later->setVisible(state != State::Busy);
+    const bool working = state == State::Busy || state == State::Installing;
+    m_later->setVisible(!working);
     m_cancel->setVisible(state == State::Busy);
     m_retry->setVisible(state == State::Error);
     m_copy->setVisible(state == State::Manual && !m_copyText.isEmpty());
-    m_progress->setVisible(state == State::Busy);
-    m_status->setVisible(state == State::Error || state == State::Manual);
+    m_progress->setVisible(working);
+    m_status->setVisible(state == State::Error || state == State::Manual || state == State::Installing);
 }
 
 void UpdateDialog::showProgress(qint64 done, qint64 total) {
@@ -166,6 +175,14 @@ void UpdateDialog::showProgress(qint64 done, qint64 total) {
         m_progress->setValue(int(qBound<qint64>(0, done, total) / scale));
     }
     setState(State::Busy);
+}
+
+void UpdateDialog::showInstalling() {
+    m_progress->setRange(0, 0); // busy bar
+    m_status->setStyleSheet(
+        K4Styles::Dialog::labelText(K4Styles::Colors::TextWhite, K4Styles::Dimensions::FontSizeLarge));
+    m_status->setText("Installing...");
+    setState(State::Installing);
 }
 
 void UpdateDialog::showError(const QString &message) {

@@ -180,6 +180,38 @@ private slots:
         QCOMPARE(skip.count(), 1);
     }
 
+    void installingHasNoCancelAndEscDoesNothing() {
+        UpdateDialog d("1.0", "1.1", {release(2, "1.1")}, false, true, nullptr);
+        d.show();
+        QSignalSpy later(&d, &UpdateDialog::laterRequested);
+        QSignalSpy cancel(&d, &UpdateDialog::cancelRequested);
+        d.showInstalling();
+        QVERIFY(!shown(&d, "Cancel"));
+        QVERIFY(!shown(&d, "Later"));
+        QVERIFY(!shown(&d, "Install now"));
+        QVERIFY(!shown(&d, "Skip this version"));
+        QVERIFY(allLabelText(&d).contains("Installing"));
+        auto *bar = d.findChild<QProgressBar *>();
+        QVERIFY(bar && bar->isVisible());
+        QCOMPARE(bar->maximum(), 0);
+        QTest::keyClick(&d, Qt::Key_Escape);
+        QCOMPARE(later.count(), 0);
+        QCOMPARE(cancel.count(), 0);
+        QVERIFY(d.isVisible());
+    }
+
+    void enterChoosesLaterNotInstall() {
+        UpdateDialog d("1.0", "1.1", {release(2, "1.1")}, false, true, nullptr);
+        d.show();
+        QVERIFY(button(&d, "Later")->isDefault());
+        QVERIFY(!button(&d, "Install now")->isDefault());
+        QSignalSpy install(&d, &UpdateDialog::installRequested);
+        QSignalSpy later(&d, &UpdateDialog::laterRequested);
+        QTest::keyClick(&d, Qt::Key_Return);
+        QCOMPARE(install.count(), 0);
+        QCOMPARE(later.count(), 1);
+    }
+
     void escapeMeansLater() {
         UpdateDialog d("1.0", "1.1", {release(2, "1.1")}, false, true, nullptr);
         d.show();

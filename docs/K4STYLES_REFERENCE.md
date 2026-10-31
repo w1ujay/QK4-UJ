@@ -177,6 +177,7 @@ rg 'constexpr const char \*' src/ui/styling/k4styles.h      # font-family consta
 | `BorderWidth` | `2` | Standard button border width (px) |
 | `BorderRadius` | `6` | Standard button corner radius (px) |
 | `BorderRadiusLarge` | `8` | Large button/popup corner radius (px) |
+| `HairlineWidth` | `1` | Thin frame around read-only panels and bars, such as the update popup's changelog (px) |
 
 ### Shadow (Popup Widgets)
 
@@ -312,6 +313,8 @@ Series colors are aliases, not new values: `ChartSeriesRtt` = `VfoACyan`,
 | `PaddingSmall` | `6` | Small padding (inputs) (px) |
 | `PaddingMedium` | `10` | Medium padding (buttons) (px) |
 | `PaddingLarge` | `15` | Large padding (list items) (px) |
+| `UpdateDialogMinWidth` | `480` | Update popup minimum width (px) |
+| `UpdateDialogMinHeight` | `380` | Update popup minimum height (px) |
 
 ---
 

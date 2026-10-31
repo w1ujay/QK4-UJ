@@ -377,7 +377,7 @@ void UpdateFlow::onDownloadFailed(const QString &message) {
 
 void UpdateFlow::startInstaller(const QString &zipPath) {
     m_stage = Stage::Installing;
-    m_dialog->showProgress(0, 0);
+    m_dialog->showInstalling();
     m_installer = new WindowsInstaller(*m_install, zipPath, m_offer->version, this);
     m_installer->setHooks(m_hooks.installer);
     connect(m_installer, &WindowsInstaller::readyToQuit, this, &UpdateFlow::onReadyToQuit);

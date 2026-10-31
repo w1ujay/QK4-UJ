@@ -942,8 +942,9 @@ void UpdateFlowTests::cancelIsIgnoredWhileInstalling() {
     QVERIFY(bar->isVisible());
     QCOMPARE(bar->maximum(), 0); // busy bar
 
+    QVERIFY(!shown(dialog, "Cancel")); // nothing to cancel: Esc does nothing either
+    QVERIFY(!shown(dialog, "Later"));
     QTest::keyClick(dialog, Qt::Key_Escape);
-    QTest::mouseClick(button(dialog, "Cancel"), Qt::LeftButton);
     QCoreApplication::processEvents();
     QVERIFY(dialog->isVisible());
     QVERIFY(bar->isVisible());

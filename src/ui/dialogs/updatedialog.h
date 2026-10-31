@@ -34,17 +34,19 @@ signals:
 public slots:
     // total <= 0 shows a busy bar (work of unknown length).
     void showProgress(qint64 done, qint64 total);
+    // Work that cannot be stopped: busy bar and status line, no Cancel, and Esc does nothing.
+    void showInstalling();
     void showError(const QString &message);
     // copyText empty: no Copy button.
     void showManualSteps(const QString &text, const QString &copyText);
     void showIdleButtons();
 
 protected:
-    // Esc and the window close button mean Later, or Cancel while a download is running.
+    // Esc and the window close button mean Later, Cancel while a download is running, and nothing while installing.
     void reject() override;
 
 private:
-    enum class State { Idle, Busy, Error, Manual };
+    enum class State { Idle, Busy, Installing, Error, Manual };
     void setState(State state);
 
     State m_state = State::Idle;
