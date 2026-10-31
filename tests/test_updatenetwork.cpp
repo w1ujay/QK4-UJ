@@ -1,6 +1,7 @@
 #include <QtTest>
 
 #include <QCryptographicHash>
+#include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QHostAddress>
@@ -8,7 +9,13 @@
 #include <QSignalSpy>
 #include <QTcpServer>
 #include <QTcpSocket>
+#include <QScopeGuard>
 #include <QTemporaryDir>
+
+#ifdef Q_OS_LINUX
+#include <csignal>
+#include <sys/resource.h>
+#endif
 
 #include "update/updatechecker.h"
 #include "update/updatedownloader.h"
@@ -68,6 +75,10 @@ private slots:
     void downloaderCancelDeletesFile();
     void downloaderReportsDiskError();
     void downloaderFailsWhenLastBytesDoNotReachDisk();
+    void cancelledDownloadLeavesAnotherCopysDownloadAlone();
+    void concurrentDownloadsEachKeepTheirOwnFile();
+    void keepNeverTouchesAnExistingFile();
+    void replaceOverwritesAnExistingFile();
 
 private:
     static QByteArray manifestJson() {
@@ -86,6 +97,13 @@ private:
         return a;
     }
     static QByteArray payload() { return QByteArray(300000, 'q') + "tail"; }
+    static QStringList partFiles(const QTemporaryDir &dir) {
+        return QDir(dir.path()).entryList({"*.part"}, QDir::Files | QDir::Hidden);
+    }
+    static QByteArray contentsOf(const QString &path) {
+        QFile f(path);
+        return f.open(QIODevice::ReadOnly) ? f.readAll() : QByteArray();
+    }
 };
 
 void TestUpdateNetwork::checkerReturnsManifest() {
@@ -154,7 +172,7 @@ void TestUpdateNetwork::downloaderVerifiesHash() {
     srv.m_body = payload();
     QTemporaryDir dir;
     const QString dest = dir.filePath("QK4.zip");
-    UpdateDownloader d(assetFor(srv, srv.m_body), dest, nullptr);
+    UpdateDownloader d(assetFor(srv, srv.m_body), dest, UpdateDownloader::ExistingFile::Replace, nullptr);
     QSignalSpy ok(&d, &UpdateDownloader::succeeded);
     QSignalSpy bad(&d, &UpdateDownloader::failed);
     QSignalSpy prog(&d, &UpdateDownloader::progress);
@@ -162,7 +180,7 @@ void TestUpdateNetwork::downloaderVerifiesHash() {
     QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
     QCOMPARE(bad.count(), 0);
     QCOMPARE(ok.at(0).at(0).toString(), dest);
-    QVERIFY(!QFile::exists(dest + ".part"));
+    QVERIFY(partFiles(dir).isEmpty());
     QFile f(dest);
     QVERIFY(f.open(QIODevice::ReadOnly));
     QCOMPARE(f.readAll(), srv.m_body);
@@ -177,14 +195,14 @@ void TestUpdateNetwork::downloaderRejectsWrongHash() {
     const QString dest = dir.filePath("QK4.zip");
     UpdateAsset a = assetFor(srv, srv.m_body);
     a.sha256Hex = QByteArray(64, '0');
-    UpdateDownloader d(a, dest, nullptr);
+    UpdateDownloader d(a, dest, UpdateDownloader::ExistingFile::Replace, nullptr);
     QSignalSpy ok(&d, &UpdateDownloader::succeeded);
     QSignalSpy bad(&d, &UpdateDownloader::failed);
     d.start();
     QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
     QCOMPARE(bad.count(), 1);
     QVERIFY(!QFile::exists(dest));
-    QVERIFY(!QFile::exists(dest + ".part"));
+    QVERIFY(partFiles(dir).isEmpty());
 }
 
 void TestUpdateNetwork::downloaderRejectsWrongSize() {
@@ -195,7 +213,7 @@ void TestUpdateNetwork::downloaderRejectsWrongSize() {
     const QString dest = dir.filePath("QK4.zip");
     UpdateAsset a = assetFor(srv, srv.m_body);
     a.size += 5; // manifest claims more than the server sends; hash would also differ
-    UpdateDownloader d(a, dest, nullptr);
+    UpdateDownloader d(a, dest, UpdateDownloader::ExistingFile::Replace, nullptr);
     QSignalSpy ok(&d, &UpdateDownloader::succeeded);
     QSignalSpy bad(&d, &UpdateDownloader::failed);
     d.start();
@@ -203,7 +221,7 @@ void TestUpdateNetwork::downloaderRejectsWrongSize() {
     QCOMPARE(bad.count(), 1);
     QVERIFY(bad.at(0).at(0).toString().contains("size", Qt::CaseInsensitive));
     QVERIFY(!QFile::exists(dest));
-    QVERIFY(!QFile::exists(dest + ".part"));
+    QVERIFY(partFiles(dir).isEmpty());
 }
 
 void TestUpdateNetwork::downloaderCancelDeletesFile() {
@@ -212,7 +230,7 @@ void TestUpdateNetwork::downloaderCancelDeletesFile() {
     srv.m_body = payload();
     QTemporaryDir dir;
     const QString dest = dir.filePath("QK4.zip");
-    UpdateDownloader d(assetFor(srv, srv.m_body), dest, nullptr);
+    UpdateDownloader d(assetFor(srv, srv.m_body), dest, UpdateDownloader::ExistingFile::Replace, nullptr);
     QSignalSpy ok(&d, &UpdateDownloader::succeeded);
     QSignalSpy bad(&d, &UpdateDownloader::failed);
     d.start();
@@ -221,14 +239,15 @@ void TestUpdateNetwork::downloaderCancelDeletesFile() {
     QCOMPARE(ok.count(), 0);
     QCOMPARE(bad.count(), 0);
     QVERIFY(!QFile::exists(dest));
-    QVERIFY(!QFile::exists(dest + ".part"));
+    QVERIFY(partFiles(dir).isEmpty());
 }
 
 void TestUpdateNetwork::downloaderReportsDiskError() {
     FakeServer srv;
     srv.m_type = "application/zip";
     srv.m_body = payload();
-    UpdateDownloader d(assetFor(srv, srv.m_body), "/nonexistent-dir-qk4/sub/QK4.zip", nullptr);
+    UpdateDownloader d(assetFor(srv, srv.m_body), "/nonexistent-dir-qk4/sub/QK4.zip",
+                       UpdateDownloader::ExistingFile::Replace, nullptr);
     QSignalSpy ok(&d, &UpdateDownloader::succeeded);
     QSignalSpy bad(&d, &UpdateDownloader::failed);
     d.start();
@@ -236,29 +255,128 @@ void TestUpdateNetwork::downloaderReportsDiskError() {
     QCOMPARE(bad.count(), 1);
 }
 
-// A small body stays in QFile's write buffer until flush, so only a flush check sees a full disk. /dev/full fails
-// every flush with ENOSPC; the .part path is a symlink to it. Linux only.
+// A small body stays in QFile's write buffer until flush, so only a flush check sees a full disk. A file size limit of
+// zero fails every flush with EFBIG, as a full disk does with ENOSPC. Linux only.
 void TestUpdateNetwork::downloaderFailsWhenLastBytesDoNotReachDisk() {
 #ifndef Q_OS_LINUX
-    QSKIP("needs /dev/full");
+    QSKIP("needs a file size limit");
 #else
-    if (!QFileInfo::exists("/dev/full"))
-        QSKIP("needs /dev/full");
     FakeServer srv;
     srv.m_type = "application/zip";
     srv.m_body = QByteArray(100, 'q'); // under the 16 KB write buffer
     QTemporaryDir dir;
     const QString dest = dir.filePath("QK4.zip");
-    QVERIFY(QFile::link("/dev/full", dest + ".part"));
-    UpdateDownloader d(assetFor(srv, srv.m_body), dest, nullptr);
+    UpdateDownloader d(assetFor(srv, srv.m_body), dest, UpdateDownloader::ExistingFile::Replace, nullptr);
+    QSignalSpy ok(&d, &UpdateDownloader::succeeded);
+    QSignalSpy bad(&d, &UpdateDownloader::failed);
+
+    rlimit normal{};
+    QCOMPARE(getrlimit(RLIMIT_FSIZE, &normal), 0);
+    auto oldHandler = std::signal(SIGXFSZ, SIG_IGN);
+    rlimit none = normal;
+    none.rlim_cur = 0;
+    QCOMPARE(setrlimit(RLIMIT_FSIZE, &none), 0);
+    {
+        // WHY a guard: a failing macro below must not leave the limit on for the rest of the run.
+        const auto restore = qScopeGuard([&] {
+            setrlimit(RLIMIT_FSIZE, &normal);
+            std::signal(SIGXFSZ, oldHandler);
+        });
+        d.start();
+        QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
+    }
+    QCOMPARE(ok.count(), 0);
+    QCOMPARE(bad.count(), 1);
+    QVERIFY(!QFile::exists(dest));
+    QVERIFY(partFiles(dir).isEmpty());
+#endif
+}
+
+void TestUpdateNetwork::cancelledDownloadLeavesAnotherCopysDownloadAlone() {
+    FakeServer srv;
+    srv.m_type = "application/zip";
+    srv.m_body = payload();
+    QTemporaryDir dir;
+    const QString dest = dir.filePath("QK4.zip");
+    const UpdateAsset asset = assetFor(srv, srv.m_body);
+    UpdateDownloader first(asset, dest, UpdateDownloader::ExistingFile::Keep, nullptr);
+    UpdateDownloader second(asset, dest, UpdateDownloader::ExistingFile::Keep, nullptr);
+    QSignalSpy ok(&first, &UpdateDownloader::succeeded);
+    QSignalSpy bad(&first, &UpdateDownloader::failed);
+    first.start();
+    second.start();
+    second.cancel();
+    QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
+    QCOMPARE(bad.count(), 0);
+    QCOMPARE(ok.at(0).at(0).toString(), dest);
+    QCOMPARE(contentsOf(dest), srv.m_body);
+    QVERIFY(partFiles(dir).isEmpty());
+}
+
+void TestUpdateNetwork::concurrentDownloadsEachKeepTheirOwnFile() {
+    FakeServer srv;
+    srv.m_type = "application/zip";
+    srv.m_body = payload();
+    QTemporaryDir dir;
+    const QString dest = dir.filePath("QK4.zip");
+    const UpdateAsset asset = assetFor(srv, srv.m_body);
+    UpdateDownloader first(asset, dest, UpdateDownloader::ExistingFile::Keep, nullptr);
+    UpdateDownloader second(asset, dest, UpdateDownloader::ExistingFile::Keep, nullptr);
+    QSignalSpy ok1(&first, &UpdateDownloader::succeeded);
+    QSignalSpy ok2(&second, &UpdateDownloader::succeeded);
+    QSignalSpy bad1(&first, &UpdateDownloader::failed);
+    QSignalSpy bad2(&second, &UpdateDownloader::failed);
+    first.start();
+    second.start();
+    QTRY_COMPARE_WITH_TIMEOUT(ok1.count() + bad1.count() + ok2.count() + bad2.count(), 2, 15000);
+    QCOMPARE(bad1.count() + bad2.count(), 0);
+    const QString path1 = ok1.at(0).at(0).toString();
+    const QString path2 = ok2.at(0).at(0).toString();
+    QVERIFY(path1 != path2);
+    QCOMPARE(contentsOf(path1), srv.m_body);
+    QCOMPARE(contentsOf(path2), srv.m_body);
+    QVERIFY(partFiles(dir).isEmpty());
+}
+
+void TestUpdateNetwork::keepNeverTouchesAnExistingFile() {
+    FakeServer srv;
+    srv.m_type = "application/zip";
+    srv.m_body = payload();
+    QTemporaryDir dir;
+    const QString dest = dir.filePath("QK4.zip");
+    QFile existing(dest);
+    QVERIFY(existing.open(QIODevice::WriteOnly));
+    existing.write("mine");
+    existing.close();
+    UpdateDownloader d(assetFor(srv, srv.m_body), dest, UpdateDownloader::ExistingFile::Keep, nullptr);
     QSignalSpy ok(&d, &UpdateDownloader::succeeded);
     QSignalSpy bad(&d, &UpdateDownloader::failed);
     d.start();
     QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
-    QCOMPARE(ok.count(), 0);
-    QCOMPARE(bad.count(), 1);
-    QVERIFY(!QFile::exists(dest));
-#endif
+    QCOMPARE(bad.count(), 0);
+    QCOMPARE(ok.at(0).at(0).toString(), dir.filePath("2-QK4.zip"));
+    QCOMPARE(contentsOf(dest), QByteArray("mine"));
+    QCOMPARE(contentsOf(dir.filePath("2-QK4.zip")), srv.m_body);
+}
+
+void TestUpdateNetwork::replaceOverwritesAnExistingFile() {
+    FakeServer srv;
+    srv.m_type = "application/zip";
+    srv.m_body = payload();
+    QTemporaryDir dir;
+    const QString dest = dir.filePath("QK4.zip");
+    QFile existing(dest);
+    QVERIFY(existing.open(QIODevice::WriteOnly));
+    existing.write("old");
+    existing.close();
+    UpdateDownloader d(assetFor(srv, srv.m_body), dest, UpdateDownloader::ExistingFile::Replace, nullptr);
+    QSignalSpy ok(&d, &UpdateDownloader::succeeded);
+    QSignalSpy bad(&d, &UpdateDownloader::failed);
+    d.start();
+    QTRY_COMPARE_WITH_TIMEOUT(ok.count() + bad.count(), 1, 15000);
+    QCOMPARE(bad.count(), 0);
+    QCOMPARE(ok.at(0).at(0).toString(), dest);
+    QCOMPARE(contentsOf(dest), srv.m_body);
 }
 
 QTEST_MAIN(TestUpdateNetwork)

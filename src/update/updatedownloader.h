@@ -10,13 +10,19 @@
 #include <QPointer>
 #include <QString>
 
-// Downloads one asset to "<destination>.part", hashing while writing, and renames to the destination only
-// after the size and SHA-256 match the manifest. Exactly one of succeeded()/failed() is emitted per run,
-// except after cancel(), which emits neither and removes the partial file.
+// Downloads one asset to a partial file unique to this run, beside the destination, hashing while writing. It moves
+// to the destination only after the size and SHA-256 match the manifest. Exactly one of succeeded()/failed() is emitted
+// per run, except after cancel(), which emits neither and removes the partial file. succeeded() carries the path used,
+// which differs from the destination if ExistingFile::Keep had to pick a numbered name.
 class UpdateDownloader : public QObject {
     Q_OBJECT
 public:
-    UpdateDownloader(UpdateAsset asset, QString destinationPath, QObject *parent = nullptr);
+    enum class ExistingFile {
+        Replace, // the person agreed to it, or the name is already unique
+        Keep     // never touch it: save as "2-<name>", "3-<name>" and so on
+    };
+
+    UpdateDownloader(UpdateAsset asset, QString destinationPath, ExistingFile existing, QObject *parent = nullptr);
     ~UpdateDownloader() override;
 
     void start();
@@ -32,9 +38,12 @@ private:
     void onFinished();
     void fail(const QString &message);
     void discard();
+    QString reserveFinalPath(QString *error) const;
 
     UpdateAsset m_asset;
     QString m_destination;
+    ExistingFile m_existing;
+    QString m_partPath;
     QNetworkAccessManager m_nam;
     QPointer<QNetworkReply> m_reply;
     QFile m_file;

@@ -63,15 +63,6 @@ QString shellQuoted(const QString &text) {
     return QLatin1Char('\'') + quoted + QLatin1Char('\'');
 }
 
-// Never a file the person already has. The numbered form keeps the extension.
-QString unusedPathIn(const QString &folder, const QString &name) {
-    const QDir dir(folder);
-    QString path = dir.filePath(name);
-    for (int i = 2; QFileInfo::exists(path); ++i)
-        path = dir.filePath(QStringLiteral("%1-%2").arg(i).arg(name));
-    return path;
-}
-
 QString standardFolderOr(const QString &override, QStandardPaths::StandardLocation location) {
     return override.isEmpty() ? QStandardPaths::writableLocation(location) : override;
 }
@@ -311,7 +302,7 @@ void UpdateFlow::onInstallRequested() {
                                    ? m_hooks.chooseSavePath(suggested)
                                    : QFileDialog::getSaveFileName(m_dialog, tr("Save the QK4 update"), suggested);
         if (!chosen.isEmpty())
-            startDownload(chosen);
+            startDownload(chosen, UpdateDownloader::ExistingFile::Replace); // the save dialog already asked
         return;
     }
     default:
@@ -321,7 +312,7 @@ void UpdateFlow::onInstallRequested() {
     if (!m_install) {
         const QString folder = standardFolderOr(m_hooks.downloadsFolder, QStandardPaths::DownloadLocation);
         QDir().mkpath(folder);
-        startDownload(unusedPathIn(folder, m_asset.name));
+        startDownload(QDir(folder).filePath(m_asset.name), UpdateDownloader::ExistingFile::Keep);
         return;
     }
 
@@ -334,7 +325,8 @@ void UpdateFlow::onInstallRequested() {
     const QString folder =
         QDir(standardFolderOr(m_hooks.localDataFolder, QStandardPaths::AppLocalDataLocation)).filePath("update");
     QDir().mkpath(folder);
-    startDownload(QDir(folder).filePath(QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".zip")));
+    startDownload(QDir(folder).filePath(QUuid::createUuid().toString(QUuid::WithoutBraces) + QStringLiteral(".zip")),
+                  UpdateDownloader::ExistingFile::Replace);
 }
 
 void UpdateFlow::onCancelRequested() {
@@ -346,9 +338,9 @@ void UpdateFlow::onCancelRequested() {
     m_dialog->showIdleButtons();
 }
 
-void UpdateFlow::startDownload(const QString &destination) {
+void UpdateFlow::startDownload(const QString &destination, UpdateDownloader::ExistingFile existing) {
     m_stage = Stage::Downloading;
-    m_downloader = new UpdateDownloader(m_asset, destination, this);
+    m_downloader = new UpdateDownloader(m_asset, destination, existing, this);
     connect(m_downloader, &UpdateDownloader::progress, m_dialog, &UpdateDialog::showProgress);
     connect(m_downloader, &UpdateDownloader::succeeded, this, &UpdateFlow::onDownloadSucceeded);
     connect(m_downloader, &UpdateDownloader::failed, this, &UpdateFlow::onDownloadFailed);

@@ -2,6 +2,7 @@
 #define UPDATEFLOW_H
 
 #include "update/managedinstall.h"
+#include "update/updatedownloader.h"
 #include "update/updategate.h"
 #include "update/updatemanifest.h"
 #include "update/updatepolicy.h"
@@ -18,7 +19,6 @@
 
 class UpdateChecker;
 class UpdateDialog;
-class UpdateDownloader;
 
 // The startup side of the fork update check. It runs once per process: readiness file, failure notes, cleanup, then
 // the check, the popup and the download. The startup radio connection waits on startupRadioAllowed().
@@ -71,7 +71,7 @@ private:
     void onSkipRequested();
     void onInstallRequested();
     void onCancelRequested();
-    void startDownload(const QString &destination);
+    void startDownload(const QString &destination, UpdateDownloader::ExistingFile existing);
     void onDownloadSucceeded(const QString &path);
     void onDownloadFailed(const QString &message);
     void startInstaller(const QString &zipPath);

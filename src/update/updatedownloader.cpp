@@ -1,11 +1,32 @@
 #include "updatedownloader.h"
 
+#include <QDir>
+#include <QFileInfo>
 #include <QNetworkReply>
 #include <QNetworkRequest>
 #include <QTimer>
+#include <QUuid>
 
-UpdateDownloader::UpdateDownloader(UpdateAsset asset, QString destinationPath, QObject *parent)
-    : QObject(parent), m_asset(std::move(asset)), m_destination(std::move(destinationPath)), m_nam(this) {
+#include <filesystem>
+#include <system_error>
+
+namespace {
+
+// WHY not QFile::rename: it refuses to replace a file, and if a rename fails it falls back to copying over the target.
+bool moveOver(const QString &from, const QString &to, QString *error) {
+    std::error_code ec;
+    std::filesystem::rename(std::filesystem::path(from.toStdU16String()), std::filesystem::path(to.toStdU16String()),
+                            ec);
+    if (ec)
+        *error = QString::fromStdString(ec.message());
+    return !ec;
+}
+
+} // namespace
+
+UpdateDownloader::UpdateDownloader(UpdateAsset asset, QString destinationPath, ExistingFile existing, QObject *parent)
+    : QObject(parent), m_asset(std::move(asset)), m_destination(std::move(destinationPath)), m_existing(existing),
+      m_nam(this) {
     m_nam.setRedirectPolicy(QNetworkRequest::NoLessSafeRedirectPolicy);
 }
 
@@ -18,8 +39,11 @@ void UpdateDownloader::start() {
     m_done = false;
     m_received = 0;
     m_hash.reset();
-    m_file.setFileName(m_destination + ".part");
-    if (!m_file.open(QIODevice::WriteOnly | QIODevice::Truncate)) {
+    // WHY unique: another copy can be downloading to the same destination, and its partial file is not ours to touch.
+    // Same folder as the destination, so the final move stays on one volume.
+    m_partPath = QStringLiteral("%1.%2.part").arg(m_destination, QUuid::createUuid().toString(QUuid::WithoutBraces));
+    m_file.setFileName(m_partPath);
+    if (!m_file.open(QIODevice::WriteOnly | QIODevice::NewOnly)) {
         const QString msg = tr("Cannot write %1: %2").arg(m_file.fileName(), m_file.errorString());
         QTimer::singleShot(0, this, [this, msg] { fail(msg); });
         return;
@@ -89,14 +113,39 @@ void UpdateDownloader::onFinished() {
         fail(tr("Cannot write %1: %2").arg(m_file.fileName(), m_file.errorString()));
         return;
     }
-    QFile::remove(m_destination); // QFile::rename will not overwrite
-    if (!m_file.rename(m_destination)) {
-        fail(tr("Cannot save %1: %2").arg(m_destination, m_file.errorString()));
+    QString saveError;
+    const QString saved = reserveFinalPath(&saveError);
+    if (saved.isEmpty()) {
+        fail(tr("Cannot save %1: %2").arg(m_destination, saveError));
+        return;
+    }
+    if (!moveOver(m_partPath, saved, &saveError)) {
+        if (m_existing == ExistingFile::Keep)
+            QFile::remove(saved); // only the empty placeholder this run created
+        fail(tr("Cannot save %1: %2").arg(saved, saveError));
         return;
     }
     m_done = true;
     m_reply->deleteLater();
-    emit succeeded(m_destination);
+    emit succeeded(saved);
+}
+
+// For Keep, this claims the name by creating an empty file, so no other copy can take it before the move replaces it.
+QString UpdateDownloader::reserveFinalPath(QString *error) const {
+    if (m_existing == ExistingFile::Replace)
+        return m_destination;
+    const QFileInfo target(m_destination);
+    QString path = m_destination;
+    for (int i = 2;; ++i) {
+        QFile placeholder(path);
+        if (placeholder.open(QIODevice::WriteOnly | QIODevice::NewOnly))
+            return path;
+        if (!QFileInfo::exists(path)) { // refused for a reason other than the name being taken
+            *error = placeholder.errorString();
+            return {};
+        }
+        path = target.dir().filePath(QStringLiteral("%1-%2").arg(i).arg(target.fileName()));
+    }
 }
 
 void UpdateDownloader::fail(const QString &message) {
@@ -114,5 +163,6 @@ void UpdateDownloader::fail(const QString &message) {
 
 void UpdateDownloader::discard() {
     m_file.close();
-    QFile::remove(m_destination + ".part");
+    if (!m_partPath.isEmpty())
+        QFile::remove(m_partPath);
 }
