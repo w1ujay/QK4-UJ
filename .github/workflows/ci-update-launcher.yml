@@ -9,6 +9,9 @@ on:
     paths:
       - 'tools/windows-launcher/**'
       - '.github/workflows/ci-update-launcher.yml'
+      - '.github/workflows/release-uj.yml'
+      - 'scripts/uj-*.sh'
+      - 'tests/scripts/**'
   workflow_dispatch:
 
 permissions:
@@ -47,3 +50,21 @@ jobs:
       - name: Integration tests
         shell: pwsh
         run: tools/windows-launcher/tests/run_tests.ps1 -BinDir build-launcher/Release
+
+  uj-scripts:
+    name: Release scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq zip libarchive-tools
+
+      - name: Run the tests
+        env:
+          # This job is what proves the zip round trip off Windows, so it must not skip it.
+          UJ_REQUIRE_BSDTAR: '1'
+        run: bash tests/scripts/test_uj_scripts.sh
