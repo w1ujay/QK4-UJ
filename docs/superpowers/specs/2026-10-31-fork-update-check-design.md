@@ -89,7 +89,7 @@ These make the feature a failure even if it otherwise works:
 
 ## Versioning
 
-- Fork release tags stay `uj.N`, continuing from `uj.12`.
+- Fork release tags stay `uj.N`. Numbering continues from the hand-released `uj.13`.
 - The stamped version is `<base>-uj.<N>`, for example `0.8.0-uj.13`. `<base>` is the numeric part of the
   nearest `v*` tag.
 - Ordering uses `N` alone. It is a plain integer, so it is unaffected by upstream's version scheme.
