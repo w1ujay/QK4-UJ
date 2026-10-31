@@ -21,6 +21,14 @@ private slots:
         QVERIFY(!ujFromFolderName(L"0.8.0-uj.13x"));
     }
 
+    void currentPointer() {
+        QCOMPARE(currentUj(L"0.8.0-uj.13\r\n"), std::optional<int>(13));
+        QVERIFY(!currentUj(L""));
+        QVERIFY(!currentUj(L"garbage"));
+        QVERIFY(!currentUj(L"..\\..\\evil-uj.99"));
+        QVERIFY(!currentUj(L"C:evil-uj.99"));
+    }
+
     void selection() {
         auto f = folders({{L"0.8.0-uj.13", true, true}, {L"0.8.0-uj.14", true, false}, {L"0.8.0-uj.15", false, true}});
         QCOMPARE(selectVersion(L"0.8.0-uj.14\r\n", f), std::optional<std::wstring>(L"0.8.0-uj.14"));

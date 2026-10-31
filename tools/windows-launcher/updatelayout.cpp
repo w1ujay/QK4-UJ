@@ -57,6 +57,11 @@ std::optional<int> ujFromFolderName(const std::wstring &name) {
     return static_cast<int>(value);
 }
 
+std::optional<int> currentUj(const std::wstring &currentTxt) {
+    const std::wstring current = trim(currentTxt);
+    return isSafeComponent(current) ? ujFromFolderName(current) : std::nullopt;
+}
+
 std::optional<std::wstring> selectVersion(const std::wstring &currentTxt, const std::vector<VersionFolder> &folders) {
     const std::wstring current = trim(currentTxt);
     if (isSafeComponent(current)) {

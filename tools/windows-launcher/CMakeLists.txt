@@ -1,7 +1,7 @@
 # Standalone project, not part of the QK4 build. The launcher sits at the install root and is never replaced by an
 # update, so it has no Qt dependency and a statically linked C runtime.
 cmake_minimum_required(VERSION 3.21)
-project(QK4Launcher LANGUAGES CXX)
+project(QK4Launcher LANGUAGES CXX RC)
 
 option(QK4_LAUNCHER_BUILD_TESTS "Build the integration test fixtures and the test-pause launcher" OFF)
 
@@ -9,7 +9,7 @@ set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_MSVC_RUNTIME_LIBRARY "MultiThreaded$<$<CONFIG:Debug>:Debug>")
 
-set(LAUNCHER_SOURCES main.cpp updatelayout.cpp)
+set(LAUNCHER_SOURCES main.cpp updatelayout.cpp launcher.rc)
 
 function(qk4_launcher_target name)
     add_executable(${name} WIN32 ${LAUNCHER_SOURCES})

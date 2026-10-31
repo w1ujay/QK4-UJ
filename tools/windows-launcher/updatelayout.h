@@ -10,6 +10,10 @@
 // N from a folder name ending in "-uj.<N>" (digits only). Anything else, including "-uj.test-1", gives nullopt.
 std::optional<int> ujFromFolderName(const std::wstring &name);
 
+// N of the version current.txt names. currentTxt is the raw content. A damaged file, or one that is not a plain folder
+// name, gives nullopt.
+std::optional<int> currentUj(const std::wstring &currentTxt);
+
 struct VersionFolder {
     std::wstring name;
     bool hasExe;
