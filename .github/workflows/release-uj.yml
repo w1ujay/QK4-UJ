@@ -297,15 +297,7 @@ jobs:
           bash scripts/uj-changelog.sh "$PREV" "$TAG" "$UPSTREAM_REF" > history/changelog.json
           cat history/changelog.json
 
-          # A release from before this workflow has no update.json, so history starts here. Any other failure stops the
-          # run: carrying on would publish an update.json that has lost every earlier release.
-          if [ -n "$PREV" ]; then
-            if gh release view "$PREV" --json assets --jq '.assets[].name' | grep -qxF update.json; then
-              gh release download "$PREV" --pattern update.json --dir history
-            else
-              echo "$PREV has no update.json, so history starts at $TAG."
-            fi
-          fi
+          bash scripts/uj-fetch-history.sh "$PREV" history
 
       - name: Generate update.json and checksums
         run: |

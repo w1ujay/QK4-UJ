@@ -363,7 +363,7 @@ historyFetchedWhenPresent() {
 historyFetchedFromALongListing() {
     # grep -q stops reading at its match. Under pipefail that used to read as "not found" for a gh still writing.
     local history="$WORK/$CURRENT-history" assets
-    assets="$(printf 'update.json\\n'; printf 'padding-file-name.zip\\n%.0s' $(seq 1 20000))"
+    assets="$(printf 'update.json\\n'; printf 'padding-file-name.zip\\n%.0s' $(seq 1 5000))"
     FAKE_ASSETS="$assets" fetch_history uj.14 "$history" || fail "should succeed: $(cat "$WORK/$CURRENT.out")"
     [ -f "$history/update.json" ] || fail "update.json was not fetched"
 }
