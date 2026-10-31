@@ -18,6 +18,7 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | N3 | Tune up/down in Mini View | New | S | Keep — done, on-air test pending |
 | N4 | Right-click a mini-pan to tune VFO B | New | S | Keep — done, on-air test pending |
 | N5 | HaliKey connect indicator in the status bar | New | S | Keep — done, HaliKey test pending |
+| N6 | Click the VFO "NR+" label to reset the noise estimate | New | S | Keep |
 | P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | Keep — tuning done; Esc/KY0 dropped |
 | P2 | MON button double-toggle fix | Port gap | S | |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
@@ -170,6 +171,17 @@ devices or settings; MainWindow owns that wiring in `setupHardwareController()`.
 **Notes:** Done 2026-09-16. Verified building and running under WSL; the no-port path opens the CW Keyer page.
 Not yet exercised against real HaliKey hardware — check on Windows that one click connects, the indicator turns
 green, the tooltip names the port, and a second click disconnects.
+
+### N6. Click the VFO "NR+" label to reset the noise estimate
+The NR ADJUST bar has a RESET button (branch `feat/ssnr-noise-reset`, merged into the fork 2026-10-20) that
+sends `NRS~;` / `NRS$~;` to restart the K4's spectral-subtraction noise estimator. Reaching it takes two clicks
+(NR → NR+ → RESET). Make the `NR+` label in the VFO A / VFO B feature row (`VfoWidget::m_nrLabel`) clickable when
+NR+ is on: VFO A's label sends `NRS~;`, VFO B's sends `NRS$~;`, with no B SET involved. Show a pointing-hand cursor
+and a tooltip only while the label reads NR+; in LMS mode it stays inert.
+
+**Notes:** Requested 2026-10-20 after the on-air test — the reset made a weak CW signal at 14.053 copyable in
+noise. Keep it separate from the upstream PR for the RESET button. The radio gives no readback of the estimate
+(no query exists), so a brief notification-bar confirmation is the only feedback possible.
 
 ---
 
