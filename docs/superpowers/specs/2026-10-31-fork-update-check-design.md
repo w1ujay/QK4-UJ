@@ -333,8 +333,10 @@ other's processes. Each copy relaunches itself.
 under test never cleans anything. It keeps the current version and the next lower `N`, and never touches a higher `N`
 unless that `N` is recorded as failed. For each other folder, under the update lock, it checks that no process is running
 from it and renames it to `.trash-<random>`. NTFS allows the folder of a running exe to be renamed, so it checks again after
-the rename and puts the folder back if anything is running from it; rollback's rename does the same. It deletes the renamed
-folder after releasing the lock, and never deletes a folder with a process running from it. It also removes `.trash-*`
+the rename and puts the folder back if anything is running from it; rollback's rename does the same. A folder counts as in
+use if a process is seen running from it or if its `QK4.exe` cannot be opened for writing. The second test needs no access to
+the process, so it also finds an elevated copy, and a false alarm only leaves the folder for later. Cleanup deletes the renamed
+folder after releasing the lock, and leaves any `.trash-*` folder that is in use. It also removes `.trash-*`
 folders, and `.incoming-*` folders more than a day old. A folder in use stays until a later launch.
 
 Normal launches only select the current version, and they hold the same lock while creating the process. Running an old

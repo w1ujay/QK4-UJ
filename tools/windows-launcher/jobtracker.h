@@ -76,6 +76,9 @@ public:
         const ULONGLONG start = GetTickCount64();
         while (activeCount() > 0 && GetTickCount64() - start < timeoutMs)
             Sleep(25);
+        // The count can drop just before a process's image is unmapped, and the signal follows that.
+        for (const auto &entry : m_processes)
+            WaitForSingleObject(entry.second, 1000);
     }
 
     bool anyVisibleWindow() {

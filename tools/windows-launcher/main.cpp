@@ -30,6 +30,7 @@ constexpr DWORD EMPTY_JOB_GRACE_MS = 5000;
 constexpr DWORD CLOSING_COPY_LIMIT_MS = 30000;
 constexpr DWORD RETRY_WINDOW_MS = 30000;
 constexpr DWORD NOTE_RETRY_WINDOW_MS = 1000;
+constexpr DWORD PUT_BACK_RETRY_WINDOW_MS = RETRY_WINDOW_MS;
 constexpr DWORD JOB_STOP_WAIT_MS = 10000;
 constexpr DWORD TERMINATE_WAIT_MS = 5000;
 constexpr DWORD POLL_MS = 25;
@@ -253,8 +254,9 @@ std::vector<VersionFolder> listVersions(const std::wstring &root) {
 
 // --- processes --------------------------------------------------------------------------------------------------
 
-// The path Windows reports for a running image. 8.3 names, junctions and subst drives are all resolved, so compare
-// process paths with this and not with the launcher's own path.
+// The real path of something on disk: 8.3 names, junctions and subst drives resolved. It normalises our side of a
+// comparison with a process's image path, not the image path itself, so a match proves a process runs from there but
+// no match proves nothing. folderInUse() is the check to rely on.
 std::wstring finalPath(const std::wstring &path) {
     HANDLE handle =
         CreateFileW(path.c_str(), FILE_READ_ATTRIBUTES, FILE_SHARE_READ | FILE_SHARE_WRITE | FILE_SHARE_DELETE, nullptr,
@@ -291,8 +293,9 @@ bool startsWithNoCase(const std::wstring &text, const std::wstring &prefix) {
     return CompareStringOrdinal(text.data(), length, prefix.data(), length, TRUE) == CSTR_EQUAL;
 }
 
-// Is a process running from versions\<name>? The folder need not exist. Errs towards true, because true only leaves a
-// folder in place until a later launch.
+// Is a process visibly running from versions\<name>? The folder need not exist. A process that cannot be opened or
+// queried, such as an elevated copy, is not seen, because treating those as running would match system processes and no
+// folder would ever go.
 bool processRunningFrom(const std::wstring &root, const std::wstring &name) {
     const std::wstring prefix = finalPath(root + L"\\versions") + L"\\" + name + L"\\";
     HANDLE snapshot = CreateToolhelp32Snapshot(TH32CS_SNAPPROCESS, 0);
@@ -313,6 +316,24 @@ bool processRunningFrom(const std::wstring &root, const std::wstring &name) {
     return running;
 }
 
+// A running image cannot be opened for writing, whoever owns the process and whatever name Windows reports for it. This
+// needs no access to the process. Anything but a clean open or a missing exe counts as in use: a false alarm, say from
+// antivirus, only leaves the folder for a later launch.
+bool exeInUse(const std::wstring &folder) {
+    HANDLE file = CreateFileW((folder + L"\\QK4.exe").c_str(), GENERIC_WRITE, 0, nullptr, OPEN_EXISTING,
+                              FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE) {
+        CloseHandle(file);
+        return false;
+    }
+    const DWORD error = GetLastError();
+    return error != ERROR_FILE_NOT_FOUND && error != ERROR_PATH_NOT_FOUND;
+}
+
+bool folderInUse(const std::wstring &root, const std::wstring &name) {
+    return exeInUse(versionFolder(root, name)) || processRunningFrom(root, name);
+}
+
 enum class TrashResult { Trashed, InUse, Failed };
 
 // Renames versions\<name> to a .trash-* folder, setting trashName. Call under the update lock.
@@ -320,27 +341,30 @@ enum class TrashResult { Trashed, InUse, Failed };
 // WHY the check after the rename: NTFS allows a folder to be renamed while an exe inside it is running, so a failed
 // rename can't be relied on to protect a running copy. A launch that slipped in after the caller's own check is visible
 // here. A launch after the rename cannot find the folder at all. So the folder goes back, untouched, if anything runs
-// from it. Both names are checked because which one Windows reports for a moved image is not documented.
+// from it. Both names are checked because which one Windows reports for a moved image is not documented. If the folder
+// cannot be put back it stays a .trash-* folder, and deleteTrash() leaves that alone for as long as the copy runs. The
+// caller needs no different handling: the version has left versions\ either way.
 TrashResult trashFolder(const std::wstring &root, const std::wstring &name, std::wstring &trashName) {
     const std::wstring folder = versionFolder(root, name);
     const std::wstring candidate = L".trash-" + randomHex();
     const std::wstring moved = versionFolder(root, candidate);
     if (!MoveFileW(folder.c_str(), moved.c_str()))
         return TrashResult::Failed;
-    if (!processRunningFrom(root, candidate) && !processRunningFrom(root, name)) {
+    if (!folderInUse(root, candidate) && !processRunningFrom(root, name)) {
         trashName = candidate;
         return TrashResult::Trashed;
     }
-    Backoff retry(NOTE_RETRY_WINDOW_MS);
+    Backoff retry(PUT_BACK_RETRY_WINDOW_MS);
     while (!MoveFileW(moved.c_str(), folder.c_str()) && !retry.expired())
         retry.wait();
     return TrashResult::InUse;
 }
 
 // Outside the lock. Never touches a folder something runs from: deleting around a running exe would remove the DLLs and
-// plugins that copy has yet to load.
+// plugins that copy has yet to load. The exe probe matters most here, because a copy stranded in this folder may still
+// be reported under its original name, which nothing records.
 void deleteTrash(const std::wstring &root, const std::wstring &trashName) {
-    if (!processRunningFrom(root, trashName))
+    if (!folderInUse(root, trashName))
         deleteWithRetry(versionFolder(root, trashName));
 }
 
@@ -486,7 +510,9 @@ int rollBack(const std::wstring &root, const std::wstring &version, int uj, cons
         const FailureAction action =
             decideFailure(uj, currentUj(current), !lock.held() || processRunningFrom(root, version));
         if (action == FailureAction::TrashFolderWriteNote && exists(folder)) {
-            if (trashFolder(root, version, trash) == TrashResult::Failed && !retry.expired()) {
+            // InUse retries too: the attempt's own exe can stay busy for a moment, and antivirus may scan it. A real
+            // second attempt is seen by the decision above on the next pass.
+            if (trashFolder(root, version, trash) != TrashResult::Trashed && !retry.expired()) {
                 lock.release();
                 retry.wait();
                 continue;
@@ -588,7 +614,7 @@ void trashOldVersions(const std::wstring &root, const std::wstring &ownVersion, 
         }
         if (target.empty())
             return;
-        if (processRunningFrom(root, target)) {
+        if (folderInUse(root, target)) {
             skipped.insert(target); // a folder in use stays until a later launch
             continue;
         }
