@@ -701,6 +701,15 @@ Add-Case 'pathWithSpaces' {
 Add-Case 'binaryContract' {
     Assert-Eq 'QK4 Update Launcher' (Get-Item $Launcher).VersionInfo.FileDescription 'FileDescription'
     $text = [Text.Encoding]::Latin1.GetString([IO.File]::ReadAllBytes($Launcher))
+    # fakeapp has no icon resource, so Windows gives it the generic executable icon. The launcher must not look like that.
+    Add-Type -AssemblyName System.Drawing
+    function Get-IconPixels([string]$Exe) {
+        $bitmap = [Drawing.Icon]::ExtractAssociatedIcon($Exe).ToBitmap()
+        $stream = [IO.MemoryStream]::new()
+        $bitmap.Save($stream, [Drawing.Imaging.ImageFormat]::Png)
+        return [Convert]::ToBase64String($stream.ToArray())
+    }
+    Assert-True ((Get-IconPixels $Launcher) -ne (Get-IconPixels $FakeApp)) 'launcher has its own icon, not the generic one'
     Assert-True ($text.Contains('asInvoker')) 'manifest never asks for elevation'
     Assert-True ($text.IndexOf('VCRUNTIME', [StringComparison]::OrdinalIgnoreCase) -lt 0) 'static C runtime'
     Assert-True ($text.IndexOf('MSVCP', [StringComparison]::OrdinalIgnoreCase) -lt 0) 'static C++ runtime'

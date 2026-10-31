@@ -29,6 +29,7 @@ numbered release that you supersede with a higher N straight away.
 
 - [ ] Unzip `uj.14` into a fresh folder and start `<root>\QK4.exe`. Expect the app to open from the version folder.
 - [ ] Run the real `tar.exe` zip check (Task 9, verify-windows-zip) on the release zip. Expect it to pass.
+- [ ] Look at `<root>\QK4.exe`, a desktop shortcut to it and the pin. Expect the QK4 icon each time, not a blank one.
 - [ ] Pin `<root>\QK4.exe` to the taskbar and start from the pin. Expect it to group with app ID `QK4UJ.QK4`.
 - [ ] Start with a saved radio and `--connect <name>`. Expect it to connect to that radio. Nothing newer exists, so no
   popup.

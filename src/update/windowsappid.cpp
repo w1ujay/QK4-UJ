@@ -59,9 +59,12 @@ void applyWindowsRelaunchIdentity(QWidget *window, const QString &launcherPath) 
 
     // Quoted, because an install path can hold spaces.
     const std::wstring command = L"\"" + QDir::toNativeSeparators(launcherPath).toStdWString() + L"\"";
+    // Resource index 0 is the launcher's QK4 icon; without it a pin made from the running window gets a blank icon.
+    const std::wstring icon = QDir::toNativeSeparators(launcherPath).toStdWString() + L",0";
     const bool ok = setStringProperty(store, PKEY_AppUserModel_ID, APP_USER_MODEL_ID) &&
                     setStringProperty(store, PKEY_AppUserModel_RelaunchCommand, command) &&
                     setStringProperty(store, PKEY_AppUserModel_RelaunchDisplayNameResource, DISPLAY_NAME) &&
+                    setStringProperty(store, PKEY_AppUserModel_RelaunchIconResource, icon) &&
                     SUCCEEDED(store->Commit());
     store->Release();
     if (!ok)

@@ -1,6 +1,10 @@
 // QK4 confirms a managed install by reading FileDescription from <root>\QK4.exe. The string must not change.
 #include <winver.h>
 
+// First icon resource, so index 0 is the QK4 icon: shortcuts, the taskbar and the relaunch icon all read it. The launcher
+// is never replaced by an update, so a missing icon here cannot be fixed later.
+IDI_QK4 ICON "../../resources/QK4.ico"
+
 VS_VERSION_INFO VERSIONINFO
 FILEVERSION 1, 0, 0, 0
 PRODUCTVERSION 1, 0, 0, 0
