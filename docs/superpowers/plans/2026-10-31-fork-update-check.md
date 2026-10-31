@@ -22,6 +22,7 @@ behaviour. This plan fixes names, files and order.
 - Conventional commits, summary under 72 characters. **No `Co-Authored-By` or other AI trailers** (user rule).
 - clang-format must pass: `find src -name '*.cpp' -o -name '*.h' | xargs clang-format --dry-run --Werror`.
 - Configure: `cmake -B build-update -DCMAKE_PREFIX_PATH="$HOME/6.8.1/gcc_64" -DCMAKE_BUILD_TYPE=Release -DBUILD_TESTING=ON`.
+- CTest does not build. Every test run in this plan builds its target first, so it can never pass on a stale binary.
 - Naming: classes PascalCase, members `m_camelCase`, constants SCREAMING_SNAKE, slots `on<Source><Event>`.
 - All colours and dimensions from `K4Styles`. Font sizes in pixels.
 - Windows is tested on native Windows, not WSLg.
@@ -37,7 +38,12 @@ behaviour. This plan fixes names, files and order.
 - The launcher receives QK4's process ID, not a handle, and opens it at once. `startDetached` cannot pass a handle, and QK4
   is still running at that moment. An `OpenProcess` failure means already exited.
 - Windows extraction uses `%SystemRoot%\System32\tar.exe`, which is present on Windows 11. Entries are listed and validated
-  first, then extracted. This avoids Qt's private `QZipReader`.
+  first, then extracted. This avoids Qt's private `QZipReader`. The exact command, which selects the version subtree and strips
+  its three leading folders so `QK4.exe` lands directly in the temporary folder, is:
+  `tar.exe -xf <zip> -C <incoming> --strip-components=3 QK4/versions/<version>`
+- Manual connections are recorded synchronously in `MainWindow::connectToRadio`, the only route to
+  `ConnectionController::connectToRadio`. `connectionStateChanged` comes from the I/O thread and arrives too late, so `UpdateFlow`
+  does not watch it.
 - Readiness and cleanup both run from `UpdateFlow::start()`, the first event-loop pass after `window.show()`.
 
 ## Review Focus
@@ -88,7 +94,7 @@ Run: `cmake --build build-update --target test_updatemanifest -j$(nproc)`. Expec
 
 - [ ] **Step 4: Run to verify pass**
 
-Run: `ctest --test-dir build-update -R UpdateManifest --output-on-failure`. Expected: PASS.
+Run: `cmake --build build-update --target test_updatemanifest -j$(nproc) && ctest --test-dir build-update -R UpdateManifest --output-on-failure`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -126,17 +132,21 @@ void urlGuard_data();    // https .../w1ujay/QK4-UJ/releases/download/uj.13/x.zi
                          // other repo -> false; ".../QK4-UJ/releases/download/../../evil" -> false
 void historyWindow();    // running 2, history 3..22 -> 20 entries, olderChangesMissing true
 void historyComplete();  // running 12, history 13..14 -> 2 entries, olderChangesMissing false
-void zipEntries_data();  // "QK4/versions/0.8.0-uj.13/QK4.exe" -> true; "QK4/versions/0.8.0-uj.14/QK4.exe" -> false;
-                         // "QK4/versions/0.8.0-uj.13/../../x" -> false; absolute "C:/x" -> false; no QK4.exe -> false
+void zipEntries_data();  // full real listing below -> true; "QK4/versions/0.8.0-uj.14/QK4.exe" -> false;
+                         // "QK4/versions/0.8.0-uj.13/../../x" -> false; absolute "C:/x" -> false; no QK4.exe -> false;
+                         // "QK4/stray.txt" -> false
+                         // real listing: "QK4/", "QK4/QK4.exe", "QK4/current.txt", "QK4/versions/",
+                         // "QK4/versions/0.8.0-uj.13/", "QK4/versions/0.8.0-uj.13/QK4.exe"
 ```
 
 - [ ] **Step 2: Run to verify failure.** Expected: build fails.
 
-- [ ] **Step 3: Implement.** `validateZipEntries` ignores `QK4/QK4.exe` and `QK4/current.txt`, requires every other entry
-under `QK4/versions/<version>/`, and needs that folder's `QK4.exe`. The redirect host is not checked here. Only the starting URL
+- [ ] **Step 3: Implement.** `validateZipEntries` allows exactly `QK4/QK4.exe`, `QK4/current.txt` and the ancestor directory
+entries `QK4/`, `QK4/versions/` and `QK4/versions/<version>/`. It requires every other entry to be under
+`QK4/versions/<version>/`, and needs that folder's `QK4.exe`. The redirect host is not checked here. Only the starting URL
 is guarded, per the spec.
 
-- [ ] **Step 4: Run to verify pass.** `ctest --test-dir build-update -R UpdatePolicy --output-on-failure`. Expected: PASS.
+- [ ] **Step 4: Run to verify pass.** `cmake --build build-update --target test_updatepolicy -j$(nproc) && ctest --test-dir build-update -R UpdatePolicy --output-on-failure`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -183,7 +193,7 @@ void cleanup_data();    // own != current -> empty; versions 10..15, current 15 
 
 - [ ] **Step 3: Implement** the pure functions. `quoteArgument` follows the documented `CommandLineToArgvW` backslash rules.
 
-- [ ] **Step 4: Run to verify pass.** `ctest --test-dir build-update -R UpdateLayout --output-on-failure`. Expected: PASS.
+- [ ] **Step 4: Run to verify pass.** `cmake --build build-update --target test_updatelayout -j$(nproc) && ctest --test-dir build-update -R UpdateLayout --output-on-failure`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -236,9 +246,17 @@ pathWithSpaces             whole root under "C:\tmp\QK4 Süd long folder name"
 ```
 
 - [ ] **Step 2: Add `ci-update-launcher.yml`** on `windows-latest`, triggered on pushes touching `tools/windows-launcher/**`,
-running the script. Push and confirm the cases fail.
+running the script. Commit it with the failing cases, push, and confirm the run for that exact commit fails.
 
-Run: `git push ujay feat/update-check && gh run watch -R w1ujay/QK4-UJ`. Expected: failed run, launcher missing.
+```bash
+git add tools/windows-launcher/tests .github/workflows/ci-update-launcher.yml
+git commit -m "test(update): add failing launcher integration cases"
+git push ujay feat/update-check
+gh run list -R w1ujay/QK4-UJ -w ci-update-launcher.yml --commit "$(git rev-parse HEAD)" --json databaseId,headSha
+gh run watch -R w1ujay/QK4-UJ <that run id> --exit-status
+```
+
+Expected: `headSha` equals `git rev-parse HEAD`, and the run fails because the launcher is missing.
 
 - [ ] **Step 3: Implement `updatelock.h`.** `class UpdateLock`: `CreateFileW` on `.update.lock` with share mode 0 and
 `OPEN_ALWAYS`, retried for up to 10 s. Held only for the operations the spec lists.
@@ -255,14 +273,16 @@ Interruptions. Link statically with `/MT`. `launcher.rc` sets `FileDescription`.
 Qt fixture if `CreateProcess` in `fakeapp` does not prove it. If Qt breaks away, track by process path for this attempt and record
 that in the spec.
 
-- [ ] **Step 7: Run to verify pass.** Push, then `gh run watch -R w1ujay/QK4-UJ`. Expected: all cases PASS on `windows-latest`.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 7: Commit and push**
 
 ```bash
-git add tools/windows-launcher .github/workflows/ci-update-launcher.yml
+git add tools/windows-launcher
 git commit -m "feat(update): add Windows launcher with health-checked commit"
+git push ujay feat/update-check
 ```
+
+- [ ] **Step 8: Run to verify pass.** Use the `gh run list --commit` and `gh run watch` commands from Step 2.
+Expected: `headSha` matches, and all cases PASS on `windows-latest`. A fix means a new commit and a new run for that commit.
 
 ### Task 5: Update check and download
 
@@ -301,7 +321,7 @@ timeout through `QNetworkRequest::setTransferTimeout(5000)` plus a guarding `QTi
 hashes while writing and renames only after verification. `isAllowedDownloadUrl` is enforced in production by `UpdateFlow`
 (Task 8), so the local test server is not blocked here.
 
-- [ ] **Step 4: Run to verify pass.** `ctest --test-dir build-update -R UpdateNetwork --output-on-failure`. Expected: PASS.
+- [ ] **Step 4: Run to verify pass.** `cmake --build build-update --target test_updatenetwork -j$(nproc) && ctest --test-dir build-update -R UpdateNetwork --output-on-failure`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -350,10 +370,10 @@ folders. `launcherHasIdentity` uses `GetFileVersionInfoW` on Windows and returns
 link libraries.
 
 - [ ] **Step 5: Implement `WindowsInstaller`** for spec Install steps 1 and 3-5. Extraction goes through a small injected function
-so tests can fake it. Production uses `tar.exe -tf` then `validateZipEntries`, then `tar.exe -xf` into
-`versions\.incoming-<QUuid>`. Start the launcher with `QProcess` using `childEnvironment()` and `startDetached`, then emit `readyToQuit`.
+so tests can fake it. Production uses `tar.exe -tf`, then `validateZipEntries`, then the exact extraction command from
+Decisions This Plan Adds into `versions\.incoming-<QUuid>`, then confirms `<incoming>\QK4.exe` exists. Start the launcher with `QProcess` using `childEnvironment()` and `startDetached`, then emit `readyToQuit`.
 
-- [ ] **Step 6: Run to verify pass.** `ctest --test-dir build-update -R ManagedInstall --output-on-failure`. Expected: PASS.
+- [ ] **Step 6: Run to verify pass.** `cmake --build build-update --target test_managedinstall -j$(nproc) && ctest --test-dir build-update -R ManagedInstall --output-on-failure`. Expected: PASS.
 
 - [ ] **Step 7: Commit**
 
@@ -397,7 +417,7 @@ void escapeMeansLater();          // Esc emits laterRequested, never skipRequest
 at the left and Later and Install now at the right. Modal, centred on the parent. Use `K4Styles::dialogButton()` and the
 existing label helpers. `showManualSteps` shows the text and a Copy button when `copyText` is not empty.
 
-- [ ] **Step 4: Run to verify pass.** `ctest --test-dir build-update -R UpdateDialog --output-on-failure`. Expected: PASS.
+- [ ] **Step 4: Run to verify pass.** `cmake --build build-update --target test_updatedialog -j$(nproc) && ctest --test-dir build-update -R UpdateDialog --output-on-failure`. Expected: PASS.
 
 - [ ] **Step 5: Commit**
 
@@ -411,14 +431,14 @@ git commit -m "feat(ui): add the update popup"
 **Files:**
 - Create: `src/update/updategate.h/.cpp` (pure state machine)
 - Create: `src/update/updateflow.h/.cpp`, `src/update/windowsappid.h/.cpp`
-- Create: `tests/test_updategate.cpp`
-- Modify: `src/mainwindow.h`, `src/mainwindow.cpp:644`, `CMakeLists.txt`, `tests/CMakeLists.txt`
+- Create: `tests/test_updategate.cpp`, `tests/test_updateflow.cpp`
+- Modify: `src/mainwindow.h`, `src/mainwindow.cpp:644`, `src/mainwindow.cpp:1444`, `CMakeLists.txt`, `tests/CMakeLists.txt`
 
 **Interfaces:**
-- Consumes: all earlier tasks; `ConnectionController::connectionStateChanged`, `connectionState()`.
+- Consumes: all earlier tasks.
 - Produces:
   - `class UpdateGate`: `enum class Action { None, AllowStartupRadio, ShowPopup, Finish };` with `Action onCheckDone(bool updateFound)`, `Action onManualConnection()`, `Action onPopupCleared()`, `bool startupRadioCancelled() const`
-  - `class UpdateFlow : QObject`: `UpdateFlow(ConnectionController *connection, QWidget *window, QObject *parent)`, `void start()`, signal `startupRadioAllowed()`
+  - `class UpdateFlow : QObject`: `UpdateFlow(QString runningVersion, QUrl manifestUrl, QWidget *window, QObject *parent)`, `void start()`, `void noteManualConnection()`, signal `startupRadioAllowed()`
   - `void applyWindowsRelaunchIdentity(QWidget *window, const QString &launcherPath);`
   - QSettings keys `update/skippedUj` (int), `update/failedUj` (QStringList)
 
@@ -434,7 +454,20 @@ void checkTimeoutActsLikeNoUpdate();
 void radioAllowedOnlyOnce();
 ```
 
-- [ ] **Step 2: Run to verify failure.** Expected: build fails.
+`tests/test_updateflow.cpp` uses a local server that answers `update.json` after a delay, and no connection signal is ever sent,
+which proves the flow does not depend on one:
+
+```cpp
+void manualConnectBeforeSlowCheckBlocksRadio();  // no update on server; noteManualConnection, then reply arrives;
+                                                 // startupRadioAllowed never emitted
+void manualConnectBeforeUpdateFoundShowsNoPopup(); // update on server; no UpdateDialog created, radio not allowed
+void noManualConnectAllowsRadioOnce();           // reply arrives; exactly one startupRadioAllowed
+void timeoutWithoutManualConnectAllowsRadio();   // server silent; allowed within 5.5 s
+void noteAfterRadioAllowedIsHarmless();          // the startup connection itself calls noteManualConnection
+void nonUjBuildAllowsRadioImmediately();         // runningVersion "main-3d4e37b"; no request made
+```
+
+- [ ] **Step 2: Run to verify failure.** `cmake --build build-update --target test_updategate test_updateflow -j$(nproc)`. Expected: build fails.
 
 - [ ] **Step 3: Implement `UpdateGate`.**
 
@@ -443,7 +476,7 @@ void radioAllowedOnlyOnce();
 2. On Windows, read `update-failed.txt`, record its versions in `update/failedUj`, show the note once and delete the file.
 3. If `parseUjNumber(QK4_VERSION)` has no value, or the platform is `Unsupported`: emit `startupRadioAllowed` and stop.
 4. If managed, set the relaunch identity. If own version matches `current.txt`, start `--qk4-cleanup` detached.
-5. Start `UpdateChecker`, watch `connectionStateChanged`, and feed `UpdateGate`.
+5. Start `UpdateChecker`, and feed its result and `noteManualConnection()` into `UpdateGate`. Do not watch connection signals.
 6. Filter the manifest through `shouldOffer` and `isAllowedDownloadUrl`.
 
 Install path: re-read `current.txt`, download, run `WindowsInstaller`, then `window->close()` on `readyToQuit`. Not managed:
@@ -453,12 +486,20 @@ save to Downloads and call `showManualSteps`. Linux: Flatpak uses `QFileDialog::
 - [ ] **Step 5: Hook `MainWindow`.** Replace the `QTimer::singleShot(0, this, &MainWindow::connectToStartupRadio)` line:
 
 ```cpp
-    m_updateFlow = new UpdateFlow(m_connectionController, this, this);
+    m_updateFlow = new UpdateFlow(QStringLiteral(QK4_VERSION), UpdateFlow::defaultManifestUrl(), this, this);
     connect(m_updateFlow, &UpdateFlow::startupRadioAllowed, this, &MainWindow::connectToStartupRadio);
     QTimer::singleShot(0, m_updateFlow, &UpdateFlow::start);
 ```
 
-Keep the existing WHY comment.
+Keep the existing WHY comment. Add `static QUrl defaultManifestUrl();` to `UpdateFlow`, built from `UPDATE_REPOSITORY`.
+
+In `MainWindow::connectToRadio`, as the first line, before anything is queued:
+
+```cpp
+    m_updateFlow->noteManualConnection(); // WHY: synchronous. The state signal comes from the I/O thread, too late to stop A replacing B.
+```
+
+The startup connection also passes through here, after the gate has finished, where the call does nothing.
 
 - [ ] **Step 6: Implement `applyWindowsRelaunchIdentity`.** Sets the window's `System.AppUserModel.ID`,
 `RelaunchCommand` and `RelaunchDisplayNameResource` through `SHGetPropertyStoreForWindow`, in a `_WIN32` block. Elsewhere it does
@@ -475,7 +516,7 @@ popup, and the Connect dialog works as before.
 - [ ] **Step 9: Commit**
 
 ```bash
-git add src/update src/mainwindow.h src/mainwindow.cpp CMakeLists.txt tests/CMakeLists.txt tests/test_updategate.cpp
+git add src/update src/mainwindow.h src/mainwindow.cpp CMakeLists.txt tests/CMakeLists.txt tests/test_updategate.cpp tests/test_updateflow.cpp
 git commit -m "feat(update): check at startup and hold auto-connect for the popup"
 ```
 
@@ -504,6 +545,8 @@ numericTagsOnly        uj.test-1 is ignored as a range boundary
 updateJsonValid        jq validates schema, sizes and sha256 match the real files
 historyCappedAt20
 zipLayout              QK4/QK4.exe, QK4/current.txt, QK4/versions/<v>/QK4.exe, nothing else at the top level
+zipRoundTrip           real zip from uj-assemble-windows.sh, extracted with the plan's exact command using bsdtar,
+                       leaves <incoming>/QK4.exe directly, with nested subfolders intact
 ```
 
 - [ ] **Step 2: Run to verify failure.** `bash tests/scripts/test_uj_scripts.sh`. Expected: FAIL, scripts missing.
@@ -523,21 +566,32 @@ by `gh release download`, with the new entry prepended, capped at 20.
 
 Release notes body: the changelog, plus the manual recovery note for `current.txt` from the spec's Known risks.
 
-- [ ] **Step 6: Rehearse**
+A `verify-windows-zip` job on `windows-latest` downloads the assembled zip and runs the plan's exact `tar.exe` command with
+real Windows `tar.exe`, failing unless `<incoming>\QK4.exe` exists. `release` needs it.
 
-Run: `git push ujay feat/update-check && git tag uj.test-1 && git push ujay uj.test-1 && gh run watch -R w1ujay/QK4-UJ`
-Expected: green run, including Flatpak, and a draft holding three packages, `SHA256SUMS.txt` and `update.json`.
-If Flatpak fails with `unable to read tree`, fix that in `release-uj.yml` before continuing.
-
-- [ ] **Step 7: Remove the rehearsal.** `gh release delete uj.test-1 -R w1ujay/QK4-UJ --yes --cleanup-tag && git tag -d uj.test-1`.
-Expected: draft and tag gone.
-
-- [ ] **Step 8: Commit**
+- [ ] **Step 6: Commit and push**
 
 ```bash
 git add .github/workflows/release-uj.yml scripts/uj-*.sh tests/scripts tests/CMakeLists.txt
 git commit -m "ci(release): add fork release workflow with update.json"
+git push ujay feat/update-check
 ```
+
+- [ ] **Step 7: Rehearse on that commit**
+
+```bash
+git tag uj.test-1 HEAD
+git push ujay uj.test-1
+gh run list -R w1ujay/QK4-UJ -w release-uj.yml --commit "$(git rev-parse HEAD)" --json databaseId,headSha
+gh run watch -R w1ujay/QK4-UJ <that run id> --exit-status
+```
+
+Expected: `headSha` equals `git rev-parse HEAD`, the run is green including Flatpak and `verify-windows-zip`, and there is a draft
+holding three packages, `SHA256SUMS.txt` and `update.json`. If Flatpak fails with `unable to read tree`, fix that in
+`release-uj.yml`. A fix means a new commit, then a new `uj.test-<n>` tag on it.
+
+- [ ] **Step 8: Remove the rehearsal.** `gh release delete uj.test-1 -R w1ujay/QK4-UJ --yes --cleanup-tag && git tag -d uj.test-1`,
+repeated for any other `uj.test-<n>`. Expected: drafts and tags gone.
 
 ### Task 10: Owner acceptance and documentation
 
@@ -546,8 +600,8 @@ git commit -m "ci(release): add fork release workflow with update.json"
 - Modify: `docs/BACKLOG.md`
 
 - [ ] **Step 1: Write `docs/update-acceptance.md`,** a checklist for native Windows and Linux, holding the spec's Testing cases
-that need a real QK4 or a person. Those are the popup on a real install, auto-connect held and released, a copy on the air during
-an update, a forced auto-scale restart with a scaled session, Firewall prompts, a pin surviving two updates, Program Files,
+that need a real QK4 or a person. Those are the popup on a real install, auto-connect held and released, connecting to radio B by
+hand on a slow network while radio A is set to auto-connect, a copy on the air during an update, a forced auto-scale restart with a scaled session, Firewall prompts, a pin surviving two updates, Program Files,
 a second drive, Controlled Folder Access, antivirus, and the Flatpak and Pi paths.
 
 - [ ] **Step 2: Add a `docs/BACKLOG.md` entry** for the upstream merge (179 commits, 22 conflicted files on 2026-10-31), to do
