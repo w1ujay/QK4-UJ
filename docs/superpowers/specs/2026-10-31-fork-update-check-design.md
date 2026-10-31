@@ -269,7 +269,10 @@ is created, so cleanup under the lock always sees a launch that went before it.
 2. It downloads the zip to a uniquely named file under local app data and verifies it.
 3. It extracts the package's version folder to a uniquely named `versions\.incoming-<random>`. Every zip entry must stay
    inside that folder, and the version folder's name must match `update.json`. Any problem deletes the temporary folder
-   and shows an error. The downloaded zip is deleted whatever the outcome.
+   and shows an error. The downloaded zip is deleted whatever the outcome. Windows `tar.exe` reads its arguments in the ANSI
+   code page, which cannot hold every profile or install path, so the zip first moves to `versions\.package-<random>.zip` and
+   tar runs inside the temporary folder with only relative paths. Any `.package-*` file more than a day old, left by a crash,
+   is removed when an install starts.
 4. It confirms the app's `QK4.exe` is present, then renames the folder to `versions\<version>`. If that name already
    exists, it discards its own folder and carries on with the existing one.
 5. It starts the launcher in finish-update mode with the new version, its own process handle and its original arguments.

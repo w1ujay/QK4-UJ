@@ -11,14 +11,17 @@
 
 class QThread;
 
-// Lists the zip with tarProgram, checks the entries with validateZipEntries, and only then unpacks the version folder
-// so its QK4.exe lands directly in incomingPath. Blocking.
-bool extractPackageWithTar(const QString &tarProgram, const QString &zipPath, const QString &incomingPath,
+// Lists the package with tarProgram, checks the entries with validateZipEntries, and only then unpacks the version
+// folder so its QK4.exe lands directly in incomingPath. Blocking. packagePath must sit beside incomingPath, and its
+// file name must be plain ASCII: tar.exe reads its arguments in the ANSI code page, which cannot hold every install or
+// profile path, so it runs inside incomingPath and is only ever given a short relative path.
+bool extractPackageWithTar(const QString &tarProgram, const QString &packagePath, const QString &incomingPath,
                            const QString &version);
 
-// QK4's side of a Windows install (design "Install" steps 1 and 3-5): rechecks current.txt, unpacks the verified zip
-// to versions\.incoming-<random>, gives it its final name and hands over to the launcher. The file work runs on its
-// own thread, because extraction and lock retries take too long for the UI. The zip is deleted on every outcome.
+// QK4's side of a Windows install (design "Install" steps 1 and 3-5): rechecks current.txt, moves the verified zip to
+// versions\.package-<random>.zip, unpacks it to versions\.incoming-<random>, gives that folder its final name and hands
+// over to the launcher. The file work runs on its own thread, because extraction and lock retries take too long for
+// the UI. The zip is deleted on every outcome.
 //
 // Exactly one of readyToQuit(), failed() or alreadyInstalled() is emitted after start(), unless the object is
 // destroyed first, which stops the work.
@@ -28,9 +31,10 @@ public:
     // Antivirus and the search indexer briefly hold newly written files.
     static constexpr int RETRY_WINDOW_MS = 30000;
 
-    // For tests. An empty function means the production behaviour. extract and renameFolder run on the worker thread.
+    // For tests. An empty function means the production behaviour. extract and renameFolder run on the worker thread,
+    // and extract is given the .package-* file.
     struct Hooks {
-        std::function<bool(const QString &zipPath, const QString &incomingPath, const QString &version)> extract;
+        std::function<bool(const QString &packagePath, const QString &incomingPath, const QString &version)> extract;
         std::function<bool(const QString &from, const QString &to)> renameFolder;
         std::function<bool(const QString &program, const QStringList &arguments,
                            const QProcessEnvironment &environment)>
@@ -60,6 +64,7 @@ private:
 
     ManagedInstall m_install;
     QString m_zipPath;
+    QString m_packagePath;
     QString m_version;
     Hooks m_hooks;
     QThread *m_thread = nullptr;

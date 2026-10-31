@@ -4,11 +4,13 @@
 #include "update/updateversion.h"
 
 #include <QCoreApplication>
+#include <QDateTime>
 #include <QDebug>
 #include <QDir>
 #include <QElapsedTimer>
 #include <QFile>
 #include <QFileInfo>
+#include <QFileInfoList>
 #include <QProcess>
 #include <QThread>
 #include <QUuid>
@@ -20,6 +22,7 @@ constexpr int TAR_EXTRACT_TIMEOUT_MS = 600000;
 constexpr int TAR_POLL_MS = 100;
 constexpr int RETRY_FIRST_DELAY_MS = 50;
 constexpr int RETRY_MAX_DELAY_MS = 2000;
+constexpr int STALE_PACKAGE_DAYS = 1;
 
 // Runs attempt until it succeeds or the window ends. Stops early when the installer is being destroyed.
 bool retryWithBackoff(int windowMs, const std::function<bool()> &attempt) {
@@ -39,10 +42,28 @@ bool removeFolder(const QString &path, int windowMs) {
     return retryWithBackoff(windowMs, [&] { return !QFileInfo::exists(path) || QDir(path).removeRecursively(); });
 }
 
-bool runTar(const QString &program, const QStringList &arguments, int timeoutMs, QByteArray *output = nullptr) {
+bool removeFile(const QString &path, int windowMs) {
+    return retryWithBackoff(windowMs, [&] { return !QFileInfo::exists(path) || QFile::remove(path); });
+}
+
+// A package outlives its install only if QK4 was killed part-way. Younger ones may be another copy's, and a locked one
+// waits for a later install.
+void removeStalePackages(const QDir &versions) {
+    const QDateTime cutoff = QDateTime::currentDateTime().addDays(-STALE_PACKAGE_DAYS);
+    const QFileInfoList packages =
+        versions.entryInfoList({QStringLiteral(".package-*")}, QDir::Files | QDir::Hidden | QDir::NoSymLinks);
+    for (const QFileInfo &package : packages) {
+        if (package.lastModified() < cutoff)
+            QFile::remove(package.absoluteFilePath());
+    }
+}
+
+bool runTar(const QString &program, const QStringList &arguments, const QString &workingFolder, int timeoutMs,
+            QByteArray *output = nullptr) {
     QProcess tar;
     tar.setProgram(program);
     tar.setArguments(arguments);
+    tar.setWorkingDirectory(workingFolder);
     tar.setStandardInputFile(QProcess::nullDevice());
     tar.start(QIODevice::ReadOnly);
 
@@ -96,20 +117,20 @@ bool startDetachedLauncher(const QString &program, const QStringList &arguments,
 
 } // namespace
 
-bool extractPackageWithTar(const QString &tarProgram, const QString &zipPath, const QString &incomingPath,
+bool extractPackageWithTar(const QString &tarProgram, const QString &packagePath, const QString &incomingPath,
                            const QString &version) {
-    const QString nativeZip = QDir::toNativeSeparators(zipPath);
+    const QString package = QDir::toNativeSeparators(QStringLiteral("../") + QFileInfo(packagePath).fileName());
     QByteArray listing;
-    if (!runTar(tarProgram, {QStringLiteral("-tf"), nativeZip}, TAR_LIST_TIMEOUT_MS, &listing))
+    if (!runTar(tarProgram, {QStringLiteral("-tf"), package}, incomingPath, TAR_LIST_TIMEOUT_MS, &listing))
         return false;
     if (!validateZipEntries(parseTarListing(listing), version)) {
         qWarning() << "Update: the package does not have the expected layout for" << version;
         return false;
     }
     return runTar(tarProgram,
-                  {QStringLiteral("-xf"), nativeZip, QStringLiteral("-C"), QDir::toNativeSeparators(incomingPath),
-                   QStringLiteral("--strip-components=3"), QStringLiteral("QK4/versions/") + version},
-                  TAR_EXTRACT_TIMEOUT_MS);
+                  {QStringLiteral("-xf"), package, QStringLiteral("--strip-components=3"),
+                   QStringLiteral("QK4/versions/") + version},
+                  incomingPath, TAR_EXTRACT_TIMEOUT_MS);
 }
 
 WindowsInstaller::WindowsInstaller(ManagedInstall install, QString zipPath, QString version, QObject *parent)
@@ -130,8 +151,8 @@ void WindowsInstaller::start() {
     if (m_thread)
         return;
     if (!m_hooks.extract)
-        m_hooks.extract = [](const QString &zipPath, const QString &incomingPath, const QString &version) {
-            return extractPackageWithTar(systemTarPath(), zipPath, incomingPath, version);
+        m_hooks.extract = [](const QString &packagePath, const QString &incomingPath, const QString &version) {
+            return extractPackageWithTar(systemTarPath(), packagePath, incomingPath, version);
         };
     if (!m_hooks.renameFolder)
         // Refuses an existing target, on Windows and Linux alike, so it can never replace a version folder.
@@ -147,10 +168,10 @@ void WindowsInstaller::start() {
 
 void WindowsInstaller::prepare() {
     m_outcome = prepareVersionFolder();
-    const bool removed = retryWithBackoff(m_hooks.retryWindowMs,
-                                          [&] { return !QFileInfo::exists(m_zipPath) || QFile::remove(m_zipPath); });
-    if (!removed)
-        qWarning() << "Update: could not delete" << m_zipPath;
+    for (const QString &path : {m_zipPath, m_packagePath}) {
+        if (!path.isEmpty() && !removeFile(path, m_hooks.retryWindowMs))
+            qWarning() << "Update: could not delete" << path;
+    }
 }
 
 WindowsInstaller::Outcome WindowsInstaller::prepareVersionFolder() {
@@ -166,8 +187,12 @@ WindowsInstaller::Outcome WindowsInstaller::prepareVersionFolder() {
         return Outcome::AlreadyInstalled;
 
     const QDir versions(m_install.root + QStringLiteral("/versions"));
-    const QString incomingName = QStringLiteral(".incoming-") + QUuid::createUuid().toString(QUuid::WithoutBraces);
+    removeStalePackages(versions);
+
+    const QString id = QUuid::createUuid().toString(QUuid::WithoutBraces);
+    const QString incomingName = QStringLiteral(".incoming-") + id;
     const QString incoming = versions.filePath(incomingName);
+    const QString package = versions.filePath(QStringLiteral(".package-") + id + QStringLiteral(".zip"));
     const QString target = versions.filePath(m_version);
     if (!versions.mkdir(incomingName)) {
         m_failure = tr("Could not create a temporary folder for the update in %1.")
@@ -175,7 +200,10 @@ WindowsInstaller::Outcome WindowsInstaller::prepareVersionFolder() {
         return Outcome::Failed;
     }
 
-    if (!m_hooks.extract(m_zipPath, incoming, m_version) ||
+    // QFile::rename falls back to copying, since local app data can be on another drive from the install.
+    m_packagePath = package;
+    const bool moved = retryWithBackoff(m_hooks.retryWindowMs, [&] { return QFile::rename(m_zipPath, package); });
+    if (!moved || !m_hooks.extract(package, incoming, m_version) ||
         !QFileInfo(QDir(incoming).filePath(QStringLiteral("QK4.exe"))).isFile()) {
         removeFolder(incoming, m_hooks.retryWindowMs);
         m_failure = tr("The update could not be unpacked. Check there is enough free disk space, then try again. "

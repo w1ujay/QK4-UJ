@@ -1,5 +1,6 @@
 #include <QtTest>
 
+#include <QDateTime>
 #include <QDir>
 #include <QFile>
 #include <QProcessEnvironment>
@@ -55,6 +56,11 @@ QString makeTree(const QString &root) {
 QStringList incomingFolders(const QString &root) {
     return QDir(root + QStringLiteral("/versions"))
         .entryList({QStringLiteral(".incoming-*")}, QDir::Dirs | QDir::Hidden | QDir::NoDotAndDotDot);
+}
+
+QStringList packageFiles(const QString &root) {
+    return QDir(root + QStringLiteral("/versions"))
+        .entryList({QStringLiteral(".package-*")}, QDir::Files | QDir::Hidden);
 }
 
 // A fake extractor that behaves like a successful extraction, one that wrote part of the app, or a slow one.
@@ -136,13 +142,14 @@ struct InstallSignals {
     }
 };
 
-// Stands in for tar.exe: `-tf` prints LISTING with Windows line endings, `-xf` records its arguments and unpacks.
+// Stands in for tar.exe: records its working folder and arguments, `-tf` prints LISTING with Windows line endings, and
+// `-xf` unpacks into the working folder.
 QString makeFakeTar(const QString &folder, const QByteArray &listing, int listExit = 0, int extractExit = 0) {
     const QString path = folder + QStringLiteral("/fake-tar.sh");
-    QByteArray script = "#!/bin/sh\n"
-                        "printf '%s\\n' \"$@\" >> \"$(dirname \"$0\")/tar-calls.txt\"\n"
-                        "echo --- >> \"$(dirname \"$0\")/tar-calls.txt\"\n"
-                        "if [ \"$1\" = -tf ]; then\n";
+    QByteArray script =
+        "#!/bin/sh\n"
+        "{ echo \"cwd=$(pwd -P)\"; printf '%s\\n' \"$@\"; echo ---; } >> \"$(dirname \"$0\")/tar-calls.txt\"\n"
+        "if [ \"$1\" = -tf ]; then\n";
     for (const QByteArray &line : listing.split('\n')) {
         if (!line.isEmpty())
             script += "  printf '" + line + "\\r\\n'\n";
@@ -150,7 +157,7 @@ QString makeFakeTar(const QString &folder, const QByteArray &listing, int listEx
     script += "  exit " + QByteArray::number(listExit) +
               "\n"
               "fi\n"
-              ": > \"$4/QK4.exe\"\n"
+              ": > QK4.exe\n"
               "exit " +
               QByteArray::number(extractExit) + "\n";
     touch(path, script);
@@ -199,6 +206,8 @@ private slots:
     void extractionFailureRemovesIncoming();
     void missingExeRemovesIncoming();
     void unsafeVersionIsRefused();
+    void missingZipFails();
+    void stalePackagesAreRemovedWhenInstallStarts();
     void transientRenameFailureIsRetried();
     void permanentRenameFailureRemovesIncoming();
     void launcherStartFailureKeepsFolder();
@@ -206,6 +215,7 @@ private slots:
     void destroyingDuringExtractionStopsWork();
 
     void tarExtractorListsThenExtracts();
+    void tarSeesOnlyRelativeAsciiPaths();
     void tarExtractorRefusesBadPackages_data();
     void tarExtractorRefusesBadPackages();
     void tarFailureIsReported_data();
@@ -396,6 +406,7 @@ void TestManagedInstall::installsAndHandsOverToLauncher() {
     QCOMPARE(outcome.ready.count(), 1);
     QVERIFY(QFile::exists(f.versionFolder() + QStringLiteral("/QK4.exe")));
     QVERIFY(incomingFolders(f.root).isEmpty());
+    QVERIFY(packageFiles(f.root).isEmpty());
     QVERIFY(!QFile::exists(f.zip));
     QCOMPARE(f.starts, 1);
     QCOMPARE(f.program, f.root + QStringLiteral("/QK4.exe"));
@@ -428,6 +439,7 @@ void TestManagedInstall::existingVersionFolderIsReused() {
     QVERIFY(QFile::exists(f.versionFolder() + QStringLiteral("/marker.txt")));
     QVERIFY(!QFile::exists(f.versionFolder() + QStringLiteral("/Qt6Core.dll")));
     QVERIFY(!QFile::exists(f.zip));
+    QVERIFY(packageFiles(f.root).isEmpty());
 }
 
 void TestManagedInstall::versionFolderAppearingDuringRenameIsReused() {
@@ -453,8 +465,12 @@ void TestManagedInstall::versionFolderAppearingDuringRenameIsReused() {
 void TestManagedInstall::extractionFailureRemovesIncoming() {
     InstallFixture f;
     QStringList incomingSeen;
+    QString packageSeen;
+    bool packageExisted = false;
     f.hooks.extract = [&](const QString &zip, const QString &incoming, const QString &version) {
         incomingSeen << incoming;
+        packageSeen = zip;
+        packageExisted = QFile::exists(zip);
         return extractDiskFull(zip, incoming, version);
     };
     WindowsInstaller installer({f.root, OLD_VERSION}, f.zip, NEW_VERSION, nullptr);
@@ -469,6 +485,11 @@ void TestManagedInstall::extractionFailureRemovesIncoming() {
     QCOMPARE(incomingSeen.size(), 1);
     QVERIFY(QFileInfo(incomingSeen.first()).fileName().startsWith(QStringLiteral(".incoming-")));
     QCOMPARE(QFileInfo(incomingSeen.first()).absolutePath(), f.root + QStringLiteral("/versions"));
+    QVERIFY(packageExisted);
+    QCOMPARE(QFileInfo(packageSeen).absolutePath(), f.root + QStringLiteral("/versions"));
+    const QString id = QFileInfo(incomingSeen.first()).fileName().mid(QStringLiteral(".incoming-").size());
+    QCOMPARE(QFileInfo(packageSeen).fileName(), QStringLiteral(".package-") + id + QStringLiteral(".zip"));
+    QVERIFY(packageFiles(f.root).isEmpty());
     QVERIFY(incomingFolders(f.root).isEmpty());
     QVERIFY(!QFileInfo::exists(f.versionFolder()));
     QVERIFY(!QFile::exists(f.zip));
@@ -504,6 +525,49 @@ void TestManagedInstall::unsafeVersionIsRefused() {
     QCOMPARE(outcome.failed.count(), 1);
     QCOMPARE(f.extractions, 0);
     QVERIFY(!QFile::exists(f.zip));
+}
+
+void TestManagedInstall::missingZipFails() {
+    InstallFixture f;
+    QVERIFY(QFile::remove(f.zip));
+    f.hooks.retryWindowMs = 100;
+    WindowsInstaller installer({f.root, OLD_VERSION}, f.zip, NEW_VERSION, nullptr);
+    installer.setHooks(f.hooks);
+    InstallSignals outcome(&installer);
+
+    installer.start();
+
+    QVERIFY(outcome.waitForOutcome());
+    QCOMPARE(outcome.failed.count(), 1);
+    QCOMPARE(f.extractions, 0);
+    QVERIFY(incomingFolders(f.root).isEmpty());
+    QVERIFY(packageFiles(f.root).isEmpty());
+}
+
+void TestManagedInstall::stalePackagesAreRemovedWhenInstallStarts() {
+    InstallFixture f;
+    const QString versions = f.root + QStringLiteral("/versions/");
+    const QString stale = versions + QStringLiteral(".package-stale.zip");
+    const QString recent = versions + QStringLiteral(".package-recent.zip");
+    const QString folder = versions + QStringLiteral(".package-folder");
+    QVERIFY(touch(stale));
+    QVERIFY(touch(recent));
+    QVERIFY(QDir().mkpath(folder));
+    QFile staleFile(stale);
+    QVERIFY(staleFile.open(QIODevice::ReadWrite));
+    QVERIFY(staleFile.setFileTime(QDateTime::currentDateTime().addDays(-2), QFileDevice::FileModificationTime));
+    staleFile.close();
+    WindowsInstaller installer({f.root, OLD_VERSION}, f.zip, NEW_VERSION, nullptr);
+    installer.setHooks(f.hooks);
+    InstallSignals outcome(&installer);
+
+    installer.start();
+
+    QVERIFY(outcome.waitForOutcome());
+    QCOMPARE(outcome.ready.count(), 1);
+    QVERIFY(!QFile::exists(stale));
+    QVERIFY(QFile::exists(recent));     // may be another copy's install in progress
+    QVERIFY(QFileInfo::exists(folder)); // only files are QK4's to remove
 }
 
 void TestManagedInstall::transientRenameFailureIsRetried() {
@@ -543,6 +607,7 @@ void TestManagedInstall::permanentRenameFailureRemovesIncoming() {
     QCOMPARE(outcome.failed.count(), 1);
     QVERIFY(attempts > 1);
     QVERIFY(incomingFolders(f.root).isEmpty());
+    QVERIFY(packageFiles(f.root).isEmpty());
     QVERIFY(!QFile::exists(f.zip));
     QCOMPARE(f.starts, 0);
 }
@@ -562,6 +627,7 @@ void TestManagedInstall::launcherStartFailureKeepsFolder() {
     QCOMPARE(outcome.ready.count(), 0);
     QVERIFY(QFile::exists(f.versionFolder() + QStringLiteral("/QK4.exe")));
     QVERIFY(!QFile::exists(f.zip));
+    QVERIFY(packageFiles(f.root).isEmpty());
 }
 
 void TestManagedInstall::realLauncherGetsArgumentsAndEnvironment() {
@@ -611,6 +677,7 @@ void TestManagedInstall::destroyingDuringExtractionStopsWork() {
     delete installer; // must stop the worker and wait for it
 
     QVERIFY(incomingFolders(f.root).isEmpty());
+    QVERIFY(packageFiles(f.root).isEmpty());
     QVERIFY(!QFile::exists(f.zip));
     QCOMPARE(f.starts, 0);
 }
@@ -620,22 +687,64 @@ void TestManagedInstall::tarExtractorListsThenExtracts() {
         QSKIP("Uses a shell script as tar.");
     QTemporaryDir dir;
     const QString tar = makeFakeTar(dir.path(), goodListing(NEW_VERSION));
-    const QString zip = dir.path() + QStringLiteral("/my update.zip");
-    const QString incoming = dir.path() + QStringLiteral("/incoming");
+    const QString package = dir.path() + QStringLiteral("/.package-id.zip");
+    const QString incoming = dir.path() + QStringLiteral("/.incoming-id");
     QVERIFY(QDir().mkpath(incoming));
 
-    QVERIFY(extractPackageWithTar(tar, zip, incoming, NEW_VERSION));
+    QVERIFY(extractPackageWithTar(tar, package, incoming, NEW_VERSION));
 
     const QStringList calls = splitTarCalls(dir.path());
     QCOMPARE(calls.size(), 2);
-    QCOMPARE(calls[0].split(QLatin1Char('\n'), Qt::SkipEmptyParts), QStringList({QStringLiteral("-tf"), zip}));
-    const QStringList extract = {QStringLiteral("-xf"),
-                                 zip,
-                                 QStringLiteral("-C"),
-                                 incoming,
-                                 QStringLiteral("--strip-components=3"),
-                                 QStringLiteral("QK4/versions/") + NEW_VERSION};
+    const QString cwd = QStringLiteral("cwd=") + QFileInfo(incoming).canonicalFilePath();
+    QCOMPARE(calls[0].split(QLatin1Char('\n'), Qt::SkipEmptyParts),
+             QStringList({cwd, QStringLiteral("-tf"), QStringLiteral("../.package-id.zip")}));
+    const QStringList extract = {cwd, QStringLiteral("-xf"), QStringLiteral("../.package-id.zip"),
+                                 QStringLiteral("--strip-components=3"), QStringLiteral("QK4/versions/") + NEW_VERSION};
     QCOMPARE(calls[1].split(QLatin1Char('\n'), Qt::SkipEmptyParts), extract);
+    QVERIFY(QFile::exists(incoming + QStringLiteral("/QK4.exe")));
+}
+
+void TestManagedInstall::tarSeesOnlyRelativeAsciiPaths() {
+    if (skipOnWindows())
+        QSKIP("Uses a shell script as tar.");
+    InstallFixture f;
+    const QString root = f.dir.path() + QStringLiteral("/Pr\u00F6file \u6570\u636E/QK4 \u00DCn\u00EF");
+    const QString zipFolder = f.dir.path() + QStringLiteral("/\u0410\u043D\u043D\u0430 Local");
+    const QString zip = zipFolder + QStringLiteral("/up date \u00E9.zip");
+    QVERIFY(QDir().mkpath(root));
+    QVERIFY(QDir().mkpath(zipFolder));
+    makeTree(root);
+    QVERIFY(touch(zip, "zip"));
+    const QString tar = makeFakeTar(f.dir.path(), goodListing(NEW_VERSION));
+    f.hooks.extract = [&tar](const QString &package, const QString &incoming, const QString &version) {
+        return extractPackageWithTar(tar, package, incoming, version);
+    };
+    WindowsInstaller installer({root, OLD_VERSION}, zip, NEW_VERSION, nullptr);
+    installer.setHooks(f.hooks);
+    InstallSignals outcome(&installer);
+
+    installer.start();
+
+    QVERIFY(outcome.waitForOutcome());
+    QCOMPARE(outcome.ready.count(), 1);
+    QVERIFY(QFile::exists(root + QStringLiteral("/versions/") + NEW_VERSION + QStringLiteral("/QK4.exe")));
+    QVERIFY(packageFiles(root).isEmpty());
+    QVERIFY(!QFile::exists(zip));
+
+    const QStringList calls = splitTarCalls(f.dir.path());
+    QCOMPARE(calls.size(), 2);
+    const QString versions = QFileInfo(root + QStringLiteral("/versions")).canonicalFilePath();
+    for (const QString &call : calls) {
+        QStringList lines = call.split(QLatin1Char('\n'), Qt::SkipEmptyParts);
+        const QString cwd = lines.takeFirst();
+        QVERIFY2(cwd.startsWith(QStringLiteral("cwd=") + versions + QStringLiteral("/.incoming-")), qPrintable(cwd));
+        for (const QString &argument : lines) {
+            QVERIFY2(!QDir::isAbsolutePath(argument), qPrintable(argument));
+            QVERIFY2(!argument.contains(QLatin1Char(' ')), qPrintable(argument));
+            for (const QChar c : argument)
+                QVERIFY2(c.unicode() < 0x80, qPrintable(argument));
+        }
+    }
 }
 
 void TestManagedInstall::tarExtractorRefusesBadPackages_data() {
@@ -653,8 +762,10 @@ void TestManagedInstall::tarExtractorRefusesBadPackages() {
     QFETCH(QByteArray, listing);
     QTemporaryDir dir;
     const QString tar = makeFakeTar(dir.path(), listing);
+    const QString incoming = dir.path() + QStringLiteral("/.incoming-id");
+    QVERIFY(QDir().mkpath(incoming));
 
-    QVERIFY(!extractPackageWithTar(tar, dir.path() + QStringLiteral("/u.zip"), dir.path(), NEW_VERSION));
+    QVERIFY(!extractPackageWithTar(tar, dir.path() + QStringLiteral("/.package-id.zip"), incoming, NEW_VERSION));
 
     QCOMPARE(splitTarCalls(dir.path()).size(), 1); // listed, never extracted
 }
@@ -673,8 +784,10 @@ void TestManagedInstall::tarFailureIsReported() {
     QFETCH(int, extractExit);
     QTemporaryDir dir;
     const QString tar = makeFakeTar(dir.path(), goodListing(NEW_VERSION), listExit, extractExit);
+    const QString incoming = dir.path() + QStringLiteral("/.incoming-id");
+    QVERIFY(QDir().mkpath(incoming));
 
-    QVERIFY(!extractPackageWithTar(tar, dir.path() + QStringLiteral("/u.zip"), dir.path(), NEW_VERSION));
+    QVERIFY(!extractPackageWithTar(tar, dir.path() + QStringLiteral("/.package-id.zip"), incoming, NEW_VERSION));
 }
 
 void TestManagedInstall::childEnvironmentStripsScale() {

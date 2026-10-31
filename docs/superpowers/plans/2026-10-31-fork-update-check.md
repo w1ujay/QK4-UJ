@@ -38,9 +38,14 @@ behaviour. This plan fixes names, files and order.
 - The launcher receives QK4's process ID, not a handle, and opens it at once. `startDetached` cannot pass a handle, and QK4
   is still running at that moment. An `OpenProcess` failure means already exited.
 - Windows extraction uses `%SystemRoot%\System32\tar.exe`, which is present on Windows 11. Entries are listed and validated
-  first, then extracted. This avoids Qt's private `QZipReader`. The exact command, which selects the version subtree and strips
-  its three leading folders so `QK4.exe` lands directly in the temporary folder, is:
-  `tar.exe -xf <zip> -C <incoming> --strip-components=3 QK4/versions/<version>`
+  first, then extracted. This avoids Qt's private `QZipReader`. tar.exe reads its arguments in the ANSI code page, so no absolute
+  path reaches it: the verified zip moves to `versions\.package-<id>.zip`, beside `versions\.incoming-<id>`, and tar runs with
+  that incoming folder as its working directory, which Qt sets through wide-character APIs. The exact commands, which select the
+  version subtree and strip its three leading folders so `QK4.exe` lands directly in the temporary folder, are:
+  `tar.exe -tf ..\.package-<id>.zip`
+  `tar.exe -xf ..\.package-<id>.zip --strip-components=3 QK4/versions/<version>`
+  QK4 deletes `.package-*` on every outcome. A leftover from a crash is removed when a later install starts, once more than a
+  day old.
 - Manual connections are recorded synchronously in `MainWindow::connectToRadio`, the only route to
   `ConnectionController::connectToRadio`. `connectionStateChanged` comes from the I/O thread and arrives too late, so `UpdateFlow`
   does not watch it.
@@ -566,8 +571,8 @@ by `gh release download`, with the new entry prepended, capped at 20.
 
 Release notes body: the changelog, plus the manual recovery note for `current.txt` from the spec's Known risks.
 
-A `verify-windows-zip` job on `windows-latest` downloads the assembled zip and runs the plan's exact `tar.exe` command with
-real Windows `tar.exe`, failing unless `<incoming>\QK4.exe` exists. `release` needs it.
+A `verify-windows-zip` job on `windows-latest` downloads the assembled zip and runs the plan's exact `tar.exe` commands with
+real Windows `tar.exe`, from inside an incoming folder with the zip beside it, failing unless `<incoming>\QK4.exe` exists. `release` needs it.
 
 - [ ] **Step 6: Commit and push**
 
