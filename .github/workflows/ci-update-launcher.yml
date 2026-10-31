@@ -1,0 +1,49 @@
+name: CI · Update launcher
+
+# The launcher is the one part of the update check that cannot be compiled or tested off Windows, and a fault in it can
+# leave someone without a working radio app. This builds it with MSVC and runs real processes against temporary install
+# roots.
+
+on:
+  push:
+    paths:
+      - 'tools/windows-launcher/**'
+      - '.github/workflows/ci-update-launcher.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher:
+    name: Build and integration test
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # Only for qtrelaunchapp, which proves QProcess::startDetached stays inside the job. The launcher links no Qt.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125
+        with:
+          version: '6.10.*'
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          cache: true
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -S tools/windows-launcher -B build-launcher -A x64 -DQK4_LAUNCHER_BUILD_TESTS=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-launcher --config Release
+          exit $LASTEXITCODE
+
+      - name: Integration tests
+        shell: pwsh
+        run: tools/windows-launcher/tests/run_tests.ps1 -BinDir build-launcher/Release
