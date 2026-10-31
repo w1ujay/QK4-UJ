@@ -702,6 +702,16 @@ endif()
 add_test(NAME UpdateFlowTests COMMAND test_updateflow)
 set_tests_properties(UpdateFlowTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
 
+# Fork release scripts. jq and zip are not on every machine, and ci-update-launcher.yml always runs this with them.
+if(UNIX)
+    find_program(QK4_BASH bash)
+    find_program(QK4_JQ jq)
+    find_program(QK4_ZIP zip)
+    if(QK4_BASH AND QK4_JQ AND QK4_ZIP)
+        add_test(NAME UjScriptTests COMMAND ${QK4_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_uj_scripts.sh)
+    endif()
+endif()
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

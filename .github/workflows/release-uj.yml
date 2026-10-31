@@ -1,0 +1,377 @@
+name: Release · QK4-UJ
+
+# The fork's own release. A uj.N tag builds Windows, Raspberry Pi and Flatpak and creates a DRAFT holding the packages,
+# SHA256SUMS.txt and update.json. Nothing reaches anyone until the owner tests the draft and publishes it by hand, which
+# is what moves releases/latest and so what QK4's update check sees. Publish it as a full release, because releases/latest
+# ignores prereleases. macOS is not built here: build-signed.yml still builds it on pushes to main.
+#
+# WHY tags and not workflow_dispatch: GitHub only dispatches workflows on the default branch, and a tag push uses the
+# workflow in the tagged commit, so uj.test-<x> on a feature branch rehearses this whole file. A rehearsal stamps a
+# version that never checks for updates and is not a changelog boundary. Delete its draft and tag afterwards.
+
+run-name: ${{ format('Release {0}', github.ref_name) }}
+
+on:
+  push:
+    tags:
+      - 'uj.*'
+
+permissions:
+  contents: read
+
+# One release at a time, and a build in progress is not thrown away by a second push.
+concurrency:
+  group: release-uj-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  version:
+    name: Derive version
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      version: ${{ steps.derive.outputs.version }}
+      uj: ${{ steps.derive.outputs.uj }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          fetch-depth: 0
+
+      # WHY: the fork carries no v* tags of its own, and <base> is the nearest one. Read-only, into this runner's clone.
+      - name: Fetch upstream's version tags
+        run: git fetch --no-tags https://github.com/mikeg-dal/QK4.git '+refs/tags/v*:refs/tags/v*'
+
+      - name: Derive version
+        id: derive
+        run: |
+          set -euo pipefail
+          NEAREST="$(git describe --tags --match 'v[0-9]*' --abbrev=0)"
+          BASE="${NEAREST#v}"
+          BASE="${BASE%%-*}"
+          if [[ ! "$BASE" =~ ^[0-9]+(\.[0-9]+)*$ ]]; then
+            echo "::error::Cannot read a version from $NEAREST"
+            exit 1
+          fi
+
+          # uj 0 marks a rehearsal: update.json needs a number there, and no real release uses 0.
+          if [[ "$GITHUB_REF_NAME" =~ ^uj\.([0-9]+)$ ]]; then
+            UJ="${BASH_REMATCH[1]}"
+            VERSION="$BASE-uj.$UJ"
+          elif [[ "$GITHUB_REF_NAME" =~ ^uj\.test-([0-9A-Za-z]+)$ ]]; then
+            UJ=0
+            VERSION="$BASE-uj.test-${BASH_REMATCH[1]}"
+          else
+            echo "::error::$GITHUB_REF_NAME is neither uj.<N> nor uj.test-<x>"
+            exit 1
+          fi
+
+          echo "version=$VERSION" >> "$GITHUB_OUTPUT"
+          echo "uj=$UJ" >> "$GITHUB_OUTPUT"
+          echo "version=$VERSION uj=$UJ (from $NEAREST)"
+
+  windows:
+    needs: version
+    uses: ./.github/workflows/_build-windows.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 7
+
+  raspberry-pi:
+    needs: version
+    uses: ./.github/workflows/_build-pi.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 7
+
+  flatpak:
+    needs: version
+    uses: ./.github/workflows/_build-flatpak.yml
+    with:
+      version: ${{ needs.version.outputs.version }}
+      retention-days: 7
+
+  launcher:
+    name: Build launcher
+    needs: version
+    runs-on: windows-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -S tools/windows-launcher -B build-launcher -A x64
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-launcher --config Release
+          exit $LASTEXITCODE
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: QK4-launcher-${{ needs.version.outputs.version }}
+          path: build-launcher/Release/QK4.exe
+          if-no-files-found: error
+          retention-days: 7
+
+  assemble-windows:
+    name: Assemble Windows package
+    needs: [version, windows, launcher]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Download Windows build
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.windows.outputs.artifact-name }}
+          path: QK4-windows
+
+      - name: Download launcher
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: QK4-launcher-${{ needs.version.outputs.version }}
+          path: launcher
+
+      - name: Assemble
+        run: bash scripts/uj-assemble-windows.sh QK4-windows launcher/QK4.exe "$VERSION" "QK4-$VERSION-windows-x64.zip"
+
+      # Both verify-windows-zip and the draft take this one file, so what was verified is what is released.
+      - name: Upload package
+        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a
+        with:
+          name: QK4-windows-package-${{ needs.version.outputs.version }}
+          path: QK4-${{ needs.version.outputs.version }}-windows-x64.zip
+          if-no-files-found: error
+          retention-days: 7
+
+  verify-windows-zip:
+    name: Verify Windows package with tar.exe
+    needs: [version, assemble-windows]
+    runs-on: windows-latest
+    timeout-minutes: 15
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - name: Download package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: QK4-windows-package-${{ needs.version.outputs.version }}
+
+      # Runs what src/update/windowsinstaller.cpp runs, the way it runs it: real tar.exe, relative paths only, the working
+      # directory set through wide-character APIs, and the zip beside the incoming folder. The Qt tests fake this listing.
+      - name: List and extract as QK4 does
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $version = $env:VERSION
+          $tar = Join-Path $env:SystemRoot 'System32\tar.exe'
+          $id = 'a1b2c3d4'
+
+          # Spaces and characters outside the ANSI code page, which tar.exe could not take in an argument. Built from code
+          # points so that nothing about how this file is read can quietly turn them into plain ASCII.
+          $folder = 'QK4 Test ' + [char]0x00E9 + [char]0x65E5 + [char]0x672C + [char]0x8A9E
+          $versions = Join-Path $env:RUNNER_TEMP "$folder\versions"
+          $incoming = Join-Path $versions ".incoming-$id"
+          New-Item -ItemType Directory -Force -Path $incoming | Out-Null
+          Copy-Item "QK4-$version-windows-x64.zip" (Join-Path $versions ".package-$id.zip")
+          Write-Host "Working directory: $incoming"
+
+          # Keeps stdout as bytes, because its exact format is what QK4's parser has to read.
+          function Invoke-Tar([string[]] $Arguments) {
+            $info = [System.Diagnostics.ProcessStartInfo]::new($tar)
+            $Arguments | ForEach-Object { $info.ArgumentList.Add($_) }
+            $info.WorkingDirectory = $incoming
+            $info.UseShellExecute = $false
+            $info.RedirectStandardOutput = $true
+            $info.RedirectStandardError = $true
+            $process = [System.Diagnostics.Process]::Start($info)
+            $errors = $process.StandardError.ReadToEndAsync()
+            $stdout = [System.IO.MemoryStream]::new()
+            $process.StandardOutput.BaseStream.CopyTo($stdout)
+            $process.WaitForExit()
+            Write-Host "tar.exe $($Arguments -join ' ') exited with $($process.ExitCode)"
+            if ($errors.Result) { Write-Host "stderr: $($errors.Result)" }
+            if ($process.ExitCode -ne 0) { throw 'tar.exe failed' }
+            return ,$stdout.ToArray()
+          }
+
+          $bytes = Invoke-Tar @('-tf', "..\.package-$id.zip")
+          $text = [System.Text.Encoding]::UTF8.GetString($bytes)
+          $entries = @(($text -split "`n") | ForEach-Object { $_.TrimEnd("`r") } | Where-Object { $_ })
+
+          Write-Host "--- real listing format ---"
+          Write-Host "bytes: $($bytes.Length), entries: $($entries.Count), CR LF line ends: $($text.Contains("`r`n"))"
+          Write-Host "first bytes: $(($bytes | Select-Object -First 48 | ForEach-Object { $_.ToString('x2') }) -join ' ')"
+          $entries | Select-Object -First 12 | ForEach-Object { Write-Host "  [$_]" }
+          Write-Host "---"
+
+          # The same rule as validateZipEntries in src/update/updatepolicy.cpp.
+          $versionDir = "QK4/versions/$version/"
+          $versionExe = $versionDir + 'QK4.exe'
+          $allowed = @('QK4/', 'QK4/QK4.exe', 'QK4/current.txt', 'QK4/versions/', $versionDir)
+          $bad = @($entries | Where-Object {
+            $inVersion = $_.StartsWith($versionDir, [StringComparison]::Ordinal) -and $_.Length -gt $versionDir.Length -and
+              -not $_.Substring($versionDir.Length).StartsWith('/')
+            $_.Contains('\') -or ($_ -split '/') -ccontains '..' -or -not (($allowed -ccontains $_) -or $inVersion)
+          })
+          if ($bad.Count -gt 0) { throw "Entries QK4 would refuse: $($bad -join ', ')" }
+          if ($entries -cnotcontains $versionExe) { throw "The listing has no $versionExe" }
+
+          Invoke-Tar @('-xf', "..\.package-$id.zip", '--strip-components=3', "QK4/versions/$version") | Out-Null
+
+          $exe = Join-Path $incoming 'QK4.exe'
+          foreach ($relative in @('QK4.exe', 'Qt6Core.dll', 'tls\qopensslbackend.dll')) {
+            if (-not (Test-Path -LiteralPath (Join-Path $incoming $relative))) { throw "$relative is not in the incoming folder" }
+          }
+          foreach ($stray in @('QK4', 'versions', 'current.txt')) {
+            if (Test-Path -LiteralPath (Join-Path $incoming $stray)) { throw "$stray must not be extracted" }
+          }
+          $description = (Get-Item -LiteralPath $exe).VersionInfo.FileDescription
+          if ($description -ceq 'QK4 Update Launcher') { throw 'The launcher is where the app should be' }
+          Write-Host "Extracted $((Get-ChildItem -LiteralPath $incoming -Recurse -File).Count) files. QK4.exe is the app."
+
+      # The launcher is what managed-install detection identifies, by this exact string.
+      - name: Check the root launcher's identity
+        shell: pwsh
+        run: |
+          $ErrorActionPreference = 'Stop'
+          New-Item -ItemType Directory -Path root-check | Out-Null
+          & (Join-Path $env:SystemRoot 'System32\tar.exe') -xf "QK4-$env:VERSION-windows-x64.zip" -C root-check QK4/QK4.exe QK4/current.txt
+          if ($LASTEXITCODE -ne 0) { throw "tar.exe exited with $LASTEXITCODE" }
+          $description = (Get-Item 'root-check\QK4\QK4.exe').VersionInfo.FileDescription
+          if ($description -cne 'QK4 Update Launcher') { throw "Root QK4.exe describes itself as [$description]" }
+          $current = (Get-Content -Raw 'root-check\QK4\current.txt').Trim()
+          if ($current -cne $env:VERSION) { throw "current.txt names [$current]" }
+
+  release:
+    name: Create draft
+    needs: [version, raspberry-pi, flatpak, assemble-windows, verify-windows-zip]
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+      UJ: ${{ needs.version.outputs.uj }}
+      TAG: ${{ github.ref_name }}
+      UPSTREAM_REF: refs/remotes/upstream/development
+      GH_TOKEN: ${{ github.token }}
+      GH_REPO: ${{ github.repository }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          # The changelog walks the range between uj tags.
+          fetch-depth: 0
+
+      - name: Fetch upstream's development branch
+        run: git fetch --no-tags https://github.com/mikeg-dal/QK4.git "+refs/heads/development:$UPSTREAM_REF"
+
+      - name: Download Windows package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: QK4-windows-package-${{ needs.version.outputs.version }}
+          path: assets
+
+      - name: Download Raspberry Pi package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.raspberry-pi.outputs.artifact-name }}
+          path: assets
+
+      - name: Download Flatpak package
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          name: ${{ needs.flatpak.outputs.artifact-name }}
+          path: assets
+
+      - name: Generate changelog
+        run: |
+          set -euo pipefail
+          mkdir history
+          PREV="$(bash scripts/uj-changelog.sh --previous-tag "$TAG")"
+          echo "Changelog range: ${PREV:-start of history}..$TAG"
+          bash scripts/uj-changelog.sh "$PREV" "$TAG" "$UPSTREAM_REF" > history/changelog.json
+          cat history/changelog.json
+
+          # A release from before this workflow has no update.json, so history starts here. Any other failure stops the
+          # run: carrying on would publish an update.json that has lost every earlier release.
+          if [ -n "$PREV" ]; then
+            if gh release view "$PREV" --json assets --jq '.assets[].name' | grep -qxF update.json; then
+              gh release download "$PREV" --pattern update.json --dir history
+            else
+              echo "$PREV has no update.json, so history starts at $TAG."
+            fi
+          fi
+
+      - name: Generate update.json and checksums
+        run: |
+          set -euo pipefail
+          BASE_URL="https://github.com/$GITHUB_REPOSITORY/releases/download/$TAG"
+          bash scripts/uj-update-json.sh "$VERSION" "$UJ" "$(date -u +%F)" assets "$BASE_URL" history > update.json
+          mv update.json assets/update.json
+          jq . assets/update.json
+
+          cd assets
+          sha256sum \
+            "QK4-$VERSION-windows-x64.zip" \
+            "QK4-$VERSION-raspberry-pi-arm64.tar.gz" \
+            "QK4-$VERSION-linux-x86_64.flatpak" \
+            > SHA256SUMS.txt
+          cat SHA256SUMS.txt
+
+      - name: Write release notes
+        run: |
+          set -euo pipefail
+          jq -r '
+            def section($title; $items):
+              if ($items | length) > 0
+              then "### \($title)\n\n" + ($items | map("- " + .) | join("\n")) + "\n\n"
+              else ""
+              end;
+            section("Added"; .added) + section("Fixed"; .fixed) + section("Changed"; .changed)
+          ' history/changelog.json > release_notes.md
+          cat >> release_notes.md <<'NOTES'
+          ### If a new version crashes on Windows
+
+          QK4 goes back to the previous version by itself when a new one fails to start. A crash more than 10 seconds after
+          the window appears, such as one that only happens once a radio connects, is not rolled back, so go back by hand:
+
+          1. Close QK4.
+          2. Open `current.txt`, in the folder that holds `QK4.exe` and `versions`, with Notepad.
+          3. Replace its one line with the name of an earlier folder under `versions`, and save.
+          4. Start QK4.
+
+          QK4 offers the bad version again until a newer one is out, so choose not to install it.
+          NOTES
+          cat release_notes.md
+
+      - name: Create draft release
+        uses: softprops/action-gh-release@efb35369e0ad2afab669f228072c1b0d510eae64
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }} — Windows, Raspberry Pi, Linux
+          body_path: release_notes.md
+          draft: true
+          prerelease: false
+          make_latest: true
+          fail_on_unmatched_files: true
+          files: |
+            assets/QK4-${{ needs.version.outputs.version }}-windows-x64.zip
+            assets/QK4-${{ needs.version.outputs.version }}-raspberry-pi-arm64.tar.gz
+            assets/QK4-${{ needs.version.outputs.version }}-linux-x86_64.flatpak
+            assets/SHA256SUMS.txt
+            assets/update.json
+
+      - name: Summary
+        run: |
+          {
+            echo "### Draft \`$TAG\` is ready to test (\`$VERSION\`)"
+            echo
+            echo '```'
+            cat assets/SHA256SUMS.txt
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

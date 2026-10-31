@@ -2,7 +2,7 @@ name: CI · Update launcher
 
 # The launcher is the one part of the update check that cannot be compiled or tested off Windows, and a fault in it can
 # leave someone without a working radio app. This builds it with MSVC and runs real processes against temporary install
-# roots.
+# roots. The uj-scripts job tests the fork release scripts, which need jq, zip and bsdtar.
 
 on:
   push:
