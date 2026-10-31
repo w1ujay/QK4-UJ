@@ -641,6 +641,24 @@ target_include_directories(test_updatenetwork PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_updatenetwork Qt6::Core Qt6::Network Qt6::Test)
 add_test(NAME UpdateNetworkTests COMMAND test_updatenetwork)
 
+# Fork update check: Windows install preparation. The Win32 identity check is reached through a seam here.
+add_executable(test_managedinstall test_managedinstall.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/managedinstall.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/windowsinstaller.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatepolicy.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/interfacescale.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+)
+target_include_directories(test_managedinstall PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(test_managedinstall PRIVATE QK4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_managedinstall Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+if(WIN32)
+    target_link_libraries(test_managedinstall version)
+endif()
+add_test(NAME ManagedInstallTests COMMAND test_managedinstall)
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit

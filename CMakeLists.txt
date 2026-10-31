@@ -104,6 +104,8 @@ set(SOURCES
     src/update/updatepolicy.cpp
     src/update/updatechecker.cpp
     src/update/updatedownloader.cpp
+    src/update/managedinstall.cpp
+    src/update/windowsinstaller.cpp
     src/controllers/connectioncontroller.cpp
     src/controllers/hardwarecontroller.cpp
     src/controllers/audiocontroller.cpp
@@ -274,6 +276,8 @@ set(HEADERS
     src/update/updatepolicy.h
     src/update/updatechecker.h
     src/update/updatedownloader.h
+    src/update/managedinstall.h
+    src/update/windowsinstaller.h
     src/controllers/connectioncontroller.h
     src/controllers/hardwarecontroller.h
     src/controllers/audiocontroller.h
@@ -505,7 +509,7 @@ if(APPLE)
     )
 elseif(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE __WINDOWS_MM__)
-    target_link_libraries(${PROJECT_NAME} PRIVATE winmm)
+    target_link_libraries(${PROJECT_NAME} PRIVATE winmm version)
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE __LINUX_ALSA__)
     target_link_libraries(${PROJECT_NAME} PRIVATE asound)
