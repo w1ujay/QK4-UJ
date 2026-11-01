@@ -131,8 +131,11 @@ function Assert-Args([string[]]$Expected, $Start, [string]$Message) {
 }
 
 function Stop-RootProcesses([string]$Root) {
-    Get-Process | Where-Object { $_.Path -and $_.Path.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase) } |
-        Stop-Process -Force -ErrorAction SilentlyContinue
+    # WHY read once: Path is looked up on each access, and any process on the machine can exit between two reads.
+    Get-Process | Where-Object {
+        $path = $_.Path
+        $path -and $path.StartsWith("$Root\", [StringComparison]::OrdinalIgnoreCase)
+    } | Stop-Process -Force -ErrorAction SilentlyContinue
 }
 
 function Remove-Root([string]$Root) {
