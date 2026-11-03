@@ -38,8 +38,9 @@ void RFKitWindow::setupUi() {
     titleLayout->setSpacing(4);
 
     auto *titleLabel = new QLabel("RFKit", titleBar);
-    titleLabel->setStyleSheet(
-        QString("QLabel { color: %1; font-size: 11px; font-weight: bold; }").arg(K4Styles::Colors::AccentAmber));
+    titleLabel->setStyleSheet(QString("QLabel { color: %1; font-size: %2px; font-weight: bold; }")
+                                  .arg(K4Styles::Colors::AccentAmber)
+                                  .arg(K4Styles::Dimensions::FontSizeBody));
 
     m_closeBtn = new QPushButton(titleBar);
     m_closeBtn->setFixedSize(CloseButtonSize, CloseButtonSize);
@@ -55,9 +56,9 @@ void RFKitWindow::setupUi() {
                                       "  background-color: %2; "
                                       "  border-radius: 3px; "
                                       "}")
-                                  .arg(K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Colors::TextSecondary)
                                   .arg(K4Styles::Colors::BorderNormal)
-                                  .arg(K4Styles::Dimensions::FontSizePopup));
+                                  .arg(K4Styles::Dimensions::FontSizeHeading));
     m_closeBtn->setText(QString::fromUtf8("\u00D7"));
 
     connect(m_closeBtn, &QPushButton::clicked, this, [this]() {

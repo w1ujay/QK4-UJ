@@ -1,4 +1,5 @@
 #include "update/windowsappid.h"
+#include "logging/logcategories.h"
 
 #ifdef Q_OS_WIN
 
@@ -53,7 +54,7 @@ void applyWindowsRelaunchIdentity(QWidget *window, const QString &launcherPath) 
     IPropertyStore *store = nullptr;
     const HRESULT result = SHGetPropertyStoreForWindow(reinterpret_cast<HWND>(window->winId()), IID_PPV_ARGS(&store));
     if (FAILED(result)) {
-        qWarning() << "Update: no window property store, error" << Qt::hex << ulong(result);
+        qCWarning(lcUpdate) << "Update: no window property store, error" << Qt::hex << ulong(result);
         return;
     }
 
@@ -68,7 +69,7 @@ void applyWindowsRelaunchIdentity(QWidget *window, const QString &launcherPath) 
                     SUCCEEDED(store->Commit());
     store->Release();
     if (!ok)
-        qWarning() << "Update: could not set the taskbar relaunch command";
+        qCWarning(lcUpdate) << "Update: could not set the taskbar relaunch command";
 }
 
 #else

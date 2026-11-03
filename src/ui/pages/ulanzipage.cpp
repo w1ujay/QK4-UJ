@@ -23,8 +23,8 @@ UlanziPage::UlanziPage(UlanziServer *server, QWidget *parent) : QWidget(parent),
                                  "button transmits while held.",
                                  this);
     descLabel->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                 .arg(K4Styles::Colors::TextGray)
-                                 .arg(K4Styles::Dimensions::FontSizeButton));
+                                 .arg(K4Styles::Colors::TextSecondary)
+                                 .arg(K4Styles::Dimensions::FontSizeReadout));
     descLabel->setWordWrap(true);
     layout->addWidget(descLabel);
 
@@ -40,6 +40,7 @@ UlanziPage::UlanziPage(UlanziServer *server, QWidget *parent) : QWidget(parent),
     statusTitleLabel->setStyleSheet(K4Styles::Dialog::formLabel());
     statusTitleLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
     m_statusLabel = new QLabel(this);
+    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
     statusLayout->addWidget(statusTitleLabel);
     statusLayout->addWidget(m_statusLabel);
     statusLayout->addStretch();
@@ -69,8 +70,8 @@ UlanziPage::UlanziPage(UlanziServer *server, QWidget *parent) : QWidget(parent),
 
     auto *portHint = new QLabel(QString("(default: %1)").arg(UlanziServer::DEFAULT_PORT), this);
     portHint->setStyleSheet(QString("color: %1; font-size: %2px;")
-                                .arg(K4Styles::Colors::TextGray)
-                                .arg(K4Styles::Dimensions::FontSizeLarge));
+                                .arg(K4Styles::Colors::TextSecondary)
+                                .arg(K4Styles::Dimensions::FontSizeBody));
 
     portLayout->addWidget(portLabel);
     portLayout->addWidget(m_portEdit);
@@ -139,20 +140,20 @@ void UlanziPage::refresh() {
 void UlanziPage::updateStatus() {
     if (!RadioSettings::instance()->ulanziEnabled()) {
         m_statusLabel->setText("Disabled");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextGray));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusIdle);
     } else if (m_server && m_server->isListening()) {
         if (m_server->hasClient()) {
             m_statusLabel->setText("Ulanzi Studio connected");
-            m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+            K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
         } else {
             m_statusLabel->setText(QString("Listening on port %1, waiting for Ulanzi Studio").arg(m_server->port()));
-            m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::TextWhite));
+            K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusIdle);
         }
     } else if (m_server && !m_server->lastError().isEmpty()) {
         m_statusLabel->setText(m_server->lastError()); // "Port N unavailable: <reason>"
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
     } else {
         m_statusLabel->setText("Not running");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
     }
 }

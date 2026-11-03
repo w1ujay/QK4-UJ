@@ -1,4 +1,5 @@
 #include "rfkituicontroller.h"
+#include "logging/logcategories.h"
 
 #include "controllers/statusbarcontroller.h"
 #include "models/radiostate.h"
@@ -10,8 +11,6 @@
 
 #include <QLoggingCategory>
 #include <QString>
-
-Q_LOGGING_CATEGORY(qk4Rfkit, "qk4.rfkit")
 
 RFKitUiController::RFKitUiController(StatusBarController *statusBar, RadioState *radioState, QObject *parent)
     : QObject(parent), m_statusBar(statusBar), m_radioState(radioState), m_window(new RFKitWindow(nullptr)),
@@ -53,7 +52,7 @@ RFKitUiController::RFKitUiController(StatusBarController *statusBar, RadioState 
     // === Panel button signals → amplifier commands ===
     connect(m_window->panel(), &RFKitPanel::modeToggled, this, [this](bool operate) {
         if (operate && drivePowerOverLimit()) {
-            qCWarning(qk4Rfkit) << "RFKit: OPERATE refused - K4 drive power over the limit";
+            qCWarning(lcRfkit) << "RFKit: OPERATE refused - K4 drive power over the limit";
             checkDrivePower();
             return;
         }
@@ -108,7 +107,7 @@ void RFKitUiController::disconnectFromHost() {
 }
 
 void RFKitUiController::onConnected() {
-    qCDebug(qk4Rfkit) << "RFKit: Connected to amplifier";
+    qCDebug(lcRfkit) << "RFKit: Connected to amplifier";
     const int pollInterval = RadioSettings::instance()->rfkitPollInterval();
     m_client->startPolling(pollInterval);
     updateStatus();
@@ -117,12 +116,12 @@ void RFKitUiController::onConnected() {
 }
 
 void RFKitUiController::onDisconnected() {
-    qCDebug(qk4Rfkit) << "RFKit: Disconnected from amplifier";
+    qCDebug(lcRfkit) << "RFKit: Disconnected from amplifier";
     updateStatus();
 }
 
 void RFKitUiController::onError(const QString &error) {
-    qWarning() << "RFKit: Error -" << error;
+    qCWarning(lcRfkit) << "RFKit: Error -" << error;
     updateStatus();
 }
 
@@ -161,8 +160,8 @@ void RFKitUiController::checkDrivePower() {
     m_window->panel()->setOperateLocked(overLimit);
 
     if (overLimit && m_client->isConnected() && m_client->operatingState() == RFKitClient::StateOperate) {
-        qCWarning(qk4Rfkit) << "RFKit: K4 drive power" << m_radioState->rfPower() << "W exceeds limit"
-                            << RadioSettings::instance()->rfkitMaxDrivePower() << "W - forcing standby";
+        qCWarning(lcRfkit) << "RFKit: K4 drive power" << m_radioState->rfPower() << "W exceeds limit"
+                           << RadioSettings::instance()->rfkitMaxDrivePower() << "W - forcing standby";
         m_client->setOperateMode(false);
     }
 }
@@ -180,11 +179,11 @@ void RFKitUiController::updateStatus() {
             m_statusBar->setRfkitStatus(name.isEmpty() ? QStringLiteral("RFKit") : name,
                                         QString("color: %1; font-size: %2px; font-weight: bold;")
                                             .arg(K4Styles::Colors::StatusGreen)
-                                            .arg(K4Styles::Dimensions::FontSizeButton));
+                                            .arg(K4Styles::Dimensions::FontSizeReadout));
         } else {
             m_statusBar->setRfkitStatus(QStringLiteral("RFKit"), QString("color: %1; font-size: %2px;")
-                                                                     .arg(K4Styles::Colors::InactiveGray)
-                                                                     .arg(K4Styles::Dimensions::FontSizeButton));
+                                                                     .arg(K4Styles::Colors::TextDisabled)
+                                                                     .arg(K4Styles::Dimensions::FontSizeReadout));
         }
     }
 

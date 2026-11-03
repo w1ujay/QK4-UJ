@@ -1,4 +1,5 @@
 #include "rfkitclient.h"
+#include "logging/logcategories.h"
 #include <QDebug>
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -126,17 +127,17 @@ void RFKitClient::setOperateMode(bool operate) {
     body["operate_mode"] = operate ? "OPERATE" : "STANDBY";
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
-    qDebug() << "RFKit: Sending PUT /operate-mode:" << data;
+    qCDebug(lcRfkit) << "RFKit: Sending PUT /operate-mode:" << data;
     track(m_networkManager->put(request, data), Command, [operate, this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
-            qDebug() << "RFKit: operate-mode response:" << reply->readAll();
+            qCDebug(lcRfkit) << "RFKit: operate-mode response:" << reply->readAll();
             OperatingState newState = operate ? StateOperate : StateStandby;
             if (m_operatingState != newState) {
                 m_operatingState = newState;
                 emit operatingStateChanged(newState);
             }
         } else {
-            qWarning() << "RFKit: Failed to set operate mode:" << reply->error() << reply->errorString();
+            qCWarning(lcRfkit) << "RFKit: Failed to set operate mode:" << reply->error() << reply->errorString();
         }
     });
 }
@@ -157,13 +158,13 @@ void RFKitClient::setAntenna(int antennaNumber) {
     }
     QByteArray data = QJsonDocument(body).toJson(QJsonDocument::Compact);
 
-    qDebug() << "RFKit: Sending PUT /antennas/active:" << data;
+    qCDebug(lcRfkit) << "RFKit: Sending PUT /antennas/active:" << data;
     track(m_networkManager->put(request, data), Command, [this](QNetworkReply *reply) {
         if (reply->error() == QNetworkReply::NoError) {
             // Refresh active antenna on next poll
             pollActiveAntenna();
         } else {
-            qWarning() << "RFKit: Failed to set antenna:" << reply->error() << reply->errorString();
+            qCWarning(lcRfkit) << "RFKit: Failed to set antenna:" << reply->error() << reply->errorString();
         }
     });
 }
@@ -171,10 +172,10 @@ void RFKitClient::setAntenna(int antennaNumber) {
 void RFKitClient::resetError() {
     QNetworkRequest request = makeRequest("/error/reset");
 
-    qDebug() << "RFKit: Sending POST /error/reset";
+    qCDebug(lcRfkit) << "RFKit: Sending POST /error/reset";
     track(m_networkManager->post(request, QByteArray()), Command, [this](QNetworkReply *reply) {
         if (reply->error() != QNetworkReply::NoError) {
-            qWarning() << "RFKit: Failed to reset error:" << reply->error() << reply->errorString();
+            qCWarning(lcRfkit) << "RFKit: Failed to reset error:" << reply->error() << reply->errorString();
         }
     });
 }
@@ -208,7 +209,7 @@ void RFKitClient::pollPower() {
         } else {
             m_consecutiveErrors++;
             if (m_consecutiveErrors >= MAX_CONSECUTIVE_ERRORS && m_state == Connected) {
-                qWarning() << "RFKit: Lost connection after" << m_consecutiveErrors << "errors";
+                qCWarning(lcRfkit) << "RFKit: Lost connection after" << m_consecutiveErrors << "errors";
                 emit errorOccurred(reply->errorString());
                 disconnectFromHost();
             }
@@ -259,7 +260,7 @@ void RFKitClient::pollInfo() {
                 pollAntennas();
             }
         } else {
-            qWarning() << "RFKit: Connection failed:" << reply->errorString();
+            qCWarning(lcRfkit) << "RFKit: Connection failed:" << reply->errorString();
             emit errorOccurred(reply->errorString());
             if (m_state == Connecting) {
                 setState(Disconnected);

@@ -1,4 +1,5 @@
 #include "update/windowsinstaller.h"
+#include "logging/logcategories.h"
 #include "settings/interfacescale.h"
 #include "update/updatepolicy.h"
 #include "update/updateversion.h"
@@ -70,19 +71,19 @@ bool runTar(const QString &program, const QStringList &arguments, const QString 
     QElapsedTimer timer;
     timer.start();
     if (!tar.waitForStarted()) {
-        qWarning() << "Update: could not start" << program << tar.errorString();
+        qCWarning(lcUpdate) << "Update: could not start" << program << tar.errorString();
         return false;
     }
     while (!tar.waitForFinished(TAR_POLL_MS) && tar.state() != QProcess::NotRunning) {
         if (timer.elapsed() >= timeoutMs || QThread::currentThread()->isInterruptionRequested()) {
-            qWarning() << "Update: stopped tar after" << timer.elapsed() << "ms";
+            qCWarning(lcUpdate) << "Update: stopped tar after" << timer.elapsed() << "ms";
             tar.kill();
             tar.waitForFinished();
             return false;
         }
     }
     if (tar.exitStatus() != QProcess::NormalExit || tar.exitCode() != 0) {
-        qWarning() << "Update: tar failed with exit code" << tar.exitCode() << tar.readAllStandardError();
+        qCWarning(lcUpdate) << "Update: tar failed with exit code" << tar.exitCode() << tar.readAllStandardError();
         return false;
     }
     if (output)
@@ -124,7 +125,7 @@ bool extractPackageWithTar(const QString &tarProgram, const QString &packagePath
     if (!runTar(tarProgram, {QStringLiteral("-tf"), package}, incomingPath, TAR_LIST_TIMEOUT_MS, &listing))
         return false;
     if (!validateZipEntries(parseTarListing(listing), version)) {
-        qWarning() << "Update: the package does not have the expected layout for" << version;
+        qCWarning(lcUpdate) << "Update: the package does not have the expected layout for" << version;
         return false;
     }
     return runTar(tarProgram,
@@ -170,14 +171,14 @@ void WindowsInstaller::prepare() {
     m_outcome = prepareVersionFolder();
     for (const QString &path : {m_zipPath, m_packagePath}) {
         if (!path.isEmpty() && !removeFile(path, m_hooks.retryWindowMs))
-            qWarning() << "Update: could not delete" << path;
+            qCWarning(lcUpdate) << "Update: could not delete" << path;
     }
 }
 
 WindowsInstaller::Outcome WindowsInstaller::prepareVersionFolder() {
     const std::optional<int> offered = UpdateVersion::parseUjNumber(m_version);
     if (!offered || !isSafeVersionName(m_version)) {
-        qWarning() << "Update: refusing version name" << m_version;
+        qCWarning(lcUpdate) << "Update: refusing version name" << m_version;
         m_failure = tr("The update has an invalid version name, so nothing was installed.");
         return Outcome::Failed;
     }
@@ -217,7 +218,7 @@ WindowsInstaller::Outcome WindowsInstaller::prepareVersionFolder() {
     });
     const bool discarded = removeFolder(incoming, m_hooks.retryWindowMs);
     if (!discarded)
-        qWarning() << "Update: could not delete" << incoming; // cleanup retries a day later
+        qCWarning(lcUpdate) << "Update: could not delete" << incoming; // cleanup retries a day later
     if (!placed) {
         m_failure = tr("The new version could not be put in place because a file was in use. "
                        "Your current version has not been changed.");
@@ -243,7 +244,7 @@ void WindowsInstaller::onPreparationFinished() {
     arguments += QCoreApplication::arguments().mid(1);
     const QString launcher = m_install.root + QStringLiteral("/QK4.exe");
     if (!m_hooks.startLauncher(launcher, arguments, InterfaceScale::childEnvironment())) {
-        qWarning() << "Update: could not start" << launcher;
+        qCWarning(lcUpdate) << "Update: could not start" << launcher;
         emit failed(tr("The update launcher could not be started. QK4 will carry on running the current version."));
         return;
     }

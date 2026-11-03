@@ -21,7 +21,7 @@ void RFKitPanel::setupUi() {
 
     m_modeBtn = new QPushButton("STANDBY", this);
     m_modeBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
-    m_modeBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
+    m_modeBtn->setStyleSheet(K4Styles::controlButton());
     connect(m_modeBtn, &QPushButton::clicked, this, [this]() {
         if (m_sleeping) {
             emit wakeUpRequested();
@@ -32,7 +32,7 @@ void RFKitPanel::setupUi() {
 
     m_antBtn = new QPushButton("ANT", this);
     m_antBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
-    m_antBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
+    m_antBtn->setStyleSheet(K4Styles::controlButton());
     connect(m_antBtn, &QPushButton::clicked, this, [this]() {
         int nextAnt = (m_antennaNumber % m_antennaCount) + 1;
         emit antennaChanged(nextAnt);
@@ -40,13 +40,13 @@ void RFKitPanel::setupUi() {
 
     m_tuneBtn = new QPushButton("TUNE", this);
     m_tuneBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
-    m_tuneBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
+    m_tuneBtn->setStyleSheet(K4Styles::controlButton());
     m_tuneBtn->setEnabled(false);
     m_tuneBtn->setToolTip("Waiting for RF-Kit to implement this endpoint \xF0\x9F\x99\x84");
 
     m_clrBtn = new QPushButton("CLR", this);
     m_clrBtn->setFixedHeight(K4Styles::Dimensions::ButtonHeightSmall);
-    m_clrBtn->setStyleSheet(K4Styles::panelButtonWithDisabled());
+    m_clrBtn->setStyleSheet(K4Styles::controlButton());
     connect(m_clrBtn, &QPushButton::clicked, this, &RFKitPanel::errorResetRequested);
 
     buttonLayout->addWidget(m_modeBtn);
@@ -305,7 +305,7 @@ void RFKitPanel::paintEvent(QPaintEvent *event) {
     const int headerHeight = 16;
 
     QFont titleFont = font();
-    titleFont.setPixelSize(K4Styles::Dimensions::FontSizeMedium);
+    titleFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     titleFont.setBold(true);
     painter.setFont(titleFont);
     painter.setPen(QColor(K4Styles::Colors::AccentAmber));
@@ -372,7 +372,7 @@ void RFKitPanel::drawStatusLabels(QPainter &painter, int y, int height) {
     int w = width();
 
     QFont labelFont = font();
-    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeNormal);
+    labelFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     labelFont.setBold(true);
     painter.setFont(labelFont);
 
@@ -381,7 +381,7 @@ void RFKitPanel::drawStatusLabels(QPainter &painter, int y, int height) {
     QColor modeColor = m_sleeping        ? QColor(K4Styles::Colors::AccentAmber)
                        : m_operateLocked ? QColor(K4Styles::Colors::MeterRed)
                        : m_operate       ? QColor(K4Styles::Colors::StatusGreen)
-                                         : QColor(K4Styles::Colors::InactiveGray);
+                                         : QColor(K4Styles::Colors::TextDisabled);
     painter.setPen(modeColor);
     painter.drawText(100, y, 60, height, Qt::AlignLeft | Qt::AlignVCenter, modeText);
 
@@ -390,7 +390,7 @@ void RFKitPanel::drawStatusLabels(QPainter &painter, int y, int height) {
         painter.setPen(QColor(K4Styles::Colors::MeterRed));
         painter.drawText(w - 50, y, 45, height, Qt::AlignRight | Qt::AlignVCenter, "FAULT");
     } else if (!m_antennaName.isEmpty()) {
-        painter.setPen(QColor(K4Styles::Colors::TextGray));
+        painter.setPen(QColor(K4Styles::Colors::TextSecondary));
         QString antText = m_antennaName;
         if (antText.length() > 8) {
             antText = antText.left(7) + "\u2026";
@@ -404,20 +404,20 @@ void RFKitPanel::drawInfoRow(QPainter &painter, int y) {
     const int margin = 8;
 
     QFont infoFont = font();
-    infoFont.setPixelSize(K4Styles::Dimensions::FontSizeNormal);
+    infoFont.setPixelSize(K4Styles::Dimensions::FontSizeCaption);
     painter.setFont(infoFont);
 
     // Voltage
-    painter.setPen(QColor(K4Styles::Colors::TextGray));
+    painter.setPen(QColor(K4Styles::Colors::TextSecondary));
     painter.drawText(margin, y, 30, 14, Qt::AlignLeft | Qt::AlignVCenter, "VDC");
-    painter.setPen(QColor(K4Styles::Colors::TextWhite));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
     painter.drawText(margin + 32, y, 60, 14, Qt::AlignLeft | Qt::AlignVCenter,
                      QString("%1V").arg(m_voltage, 0, 'f', 1));
 
     // Current
-    painter.setPen(QColor(K4Styles::Colors::TextGray));
+    painter.setPen(QColor(K4Styles::Colors::TextSecondary));
     painter.drawText(w / 2 + 10, y, 30, 14, Qt::AlignLeft | Qt::AlignVCenter, "IDC");
-    painter.setPen(QColor(K4Styles::Colors::TextWhite));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
     painter.drawText(w / 2 + 42, y, 60, 14, Qt::AlignLeft | Qt::AlignVCenter, QString("%1A").arg(m_current, 0, 'f', 1));
 }
 
@@ -435,7 +435,7 @@ void RFKitPanel::drawMeter(QPainter &painter, int y, const QString &label, const
     labelFont.setPixelSize(fontSize);
     labelFont.setBold(true);
     painter.setFont(labelFont);
-    painter.setPen(QColor(K4Styles::Colors::TextWhite));
+    painter.setPen(QColor(K4Styles::Colors::TextPrimary));
     painter.drawText(margin, y, labelWidth, barHeight, Qt::AlignLeft | Qt::AlignVCenter, label);
 
     QFont valueFont = font();
@@ -451,7 +451,7 @@ void RFKitPanel::drawMeter(QPainter &painter, int y, const QString &label, const
 
     QRect trackRect(barX, barY, barWidth, barHeight);
     painter.fillRect(trackRect, QColor(K4Styles::Colors::DarkBackground));
-    painter.setPen(QColor("#2a2a2a"));
+    painter.setPen(QColor(K4Styles::Colors::GradientBottom));
     painter.drawRect(trackRect);
 
     if (displayRatio > 0.001f) {
@@ -465,9 +465,9 @@ void RFKitPanel::drawMeter(QPainter &painter, int y, const QString &label, const
     }
 
     QFont scaleFont = font();
-    scaleFont.setPixelSize(K4Styles::Dimensions::FontSizeSmall);
+    scaleFont.setPixelSize(K4Styles::Dimensions::FontSizeFloor);
     painter.setFont(scaleFont);
-    painter.setPen(QColor(K4Styles::Colors::TextGray));
+    painter.setPen(QColor(K4Styles::Colors::TextSecondary));
 
     int scaleY = barY + barHeight + 2;
     int numLabels = scaleLabels.size();
@@ -482,7 +482,7 @@ void RFKitPanel::drawMeter(QPainter &painter, int y, const QString &label, const
         painter.drawText(labelX, scaleY, labelW, 10, Qt::AlignCenter, scaleLabels[i]);
     }
 
-    painter.setPen(QColor(K4Styles::Colors::InactiveGray));
+    painter.setPen(QColor(K4Styles::Colors::TextDisabled));
     for (int i = 0; i < numLabels; i++) {
         int x = barX + (barWidth * i) / (numLabels - 1);
         painter.drawLine(x, barY, x, barY + 2);
@@ -492,6 +492,6 @@ void RFKitPanel::drawMeter(QPainter &painter, int y, const QString &label, const
 void RFKitPanel::drawPeakMarker(QPainter &painter, int barX, int barY, int barWidth, int barHeight, float peakRatio) {
     int peakX = barX + static_cast<int>(barWidth * qMin(peakRatio, 1.0f));
     peakX = qBound(barX + 1, peakX, barX + barWidth - 2);
-    painter.setPen(QPen(QColor(K4Styles::Colors::TextWhite), 2));
+    painter.setPen(QPen(QColor(K4Styles::Colors::TextPrimary), 2));
     painter.drawLine(peakX, barY + 1, peakX, barY + barHeight - 1);
 }

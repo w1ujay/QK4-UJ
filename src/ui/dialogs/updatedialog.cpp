@@ -70,9 +70,9 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
     changelog->setStyleSheet(
         QString("QPlainTextEdit { background-color: %1; color: %2; border: %6px solid %3; "
                 "border-radius: %7px; padding: %4px; font-size: %5px; }")
-            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextWhite, K4Styles::Colors::DialogBorder)
+            .arg(K4Styles::Colors::DarkBackground, K4Styles::Colors::TextPrimary, K4Styles::Colors::DialogBorder)
             .arg(K4Styles::Dimensions::PaddingSmall)
-            .arg(K4Styles::Dimensions::FontSizeLarge)
+            .arg(K4Styles::Dimensions::FontSizeBody)
             .arg(K4Styles::Dimensions::HairlineWidth)
             .arg(K4Styles::Dimensions::BorderRadius));
     layout->addWidget(changelog, 1);
@@ -112,7 +112,8 @@ UpdateDialog::UpdateDialog(QString currentVersion, QString newVersion, QList<Upd
     }
     // The emphasised button: the selected popup look. Later is the default, so Enter never installs: the popup opens
     // by itself shortly after launch and Install now closes the app.
-    m_install->setStyleSheet(K4Styles::popupButtonSelected());
+    m_install->setStyleSheet(K4Styles::popupButton());
+    K4Styles::setSelected(m_install, true);
     m_later->setAutoDefault(true);
     m_later->setDefault(true);
 
@@ -180,14 +181,13 @@ void UpdateDialog::showProgress(qint64 done, qint64 total) {
 void UpdateDialog::showInstalling() {
     m_progress->setRange(0, 0); // busy bar
     m_status->setStyleSheet(
-        K4Styles::Dialog::labelText(K4Styles::Colors::TextWhite, K4Styles::Dimensions::FontSizeLarge));
+        K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeBody));
     m_status->setText("Installing...");
     setState(State::Installing);
 }
 
 void UpdateDialog::showError(const QString &message) {
-    m_status->setStyleSheet(
-        K4Styles::Dialog::labelText(K4Styles::Colors::ErrorRed, K4Styles::Dimensions::FontSizeLarge));
+    m_status->setStyleSheet(K4Styles::Dialog::labelText(K4Styles::Colors::TextRed, K4Styles::Dimensions::FontSizeBody));
     m_status->setText(message);
     setState(State::Error);
 }
@@ -195,7 +195,7 @@ void UpdateDialog::showError(const QString &message) {
 void UpdateDialog::showManualSteps(const QString &text, const QString &copyText) {
     m_copyText = copyText;
     m_status->setStyleSheet(
-        K4Styles::Dialog::labelText(K4Styles::Colors::TextWhite, K4Styles::Dimensions::FontSizeLarge));
+        K4Styles::Dialog::labelText(K4Styles::Colors::TextPrimary, K4Styles::Dimensions::FontSizeBody));
     m_status->setText(text);
     setState(State::Manual);
 }

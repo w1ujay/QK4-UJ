@@ -1,4 +1,5 @@
 #include "miniviewwindow.h"
+#include "logging/logcategories.h"
 #include "dsp/minipan_rhi.h"
 #include "settings/radiosettings.h"
 #include "ui/styling/k4styles.h"
@@ -15,20 +16,18 @@
 #include <QWheelEvent>
 #include <QWindow>
 
-Q_LOGGING_CATEGORY(uiMiniView, "ui.miniview")
-
 namespace {
 // Diagnostics for the blank Mini View pan: adding the first QRhiWidget to this already-shown window
 // can make Qt recreate it for GPU composition, which changes its native handle and surface type.
 void logWindowSurface(const QWidget *window, const char *when) {
     const QWindow *handle = window->windowHandle();
     if (!handle) {
-        qCDebug(uiMiniView) << "Mini View window" << when << "- no native window";
+        qCDebug(lcUiMiniView) << "Mini View window" << when << "- no native window";
         return;
     }
-    qCDebug(uiMiniView) << "Mini View window" << when << "- winId" << handle->winId() << "surface"
-                        << handle->surfaceType() << "widget pos" << window->pos() << "frame" << window->frameGeometry()
-                        << "native pos" << handle->position();
+    qCDebug(lcUiMiniView) << "Mini View window" << when << "- winId" << handle->winId() << "surface"
+                          << handle->surfaceType() << "widget pos" << window->pos() << "frame"
+                          << window->frameGeometry() << "native pos" << handle->position();
 }
 
 const int StripHeight = 52;
@@ -77,7 +76,7 @@ void MiniViewWindow::setupUi() {
                                    .arg(K4Styles::Colors::VfoBGreen)
                                    .arg(FreqFontSize);
     const QString modeStyle = QString("color: %1; font-size: %2px; background: transparent;")
-                                  .arg(K4Styles::Colors::TextGray)
+                                  .arg(K4Styles::Colors::TextSecondary)
                                   .arg(ModeFontSize);
 
     // VFO A section
@@ -185,7 +184,7 @@ void MiniViewWindow::setupUi() {
     // Spots section
     m_spotLabel = new QLabel("No spots", m_stripWidget);
     m_spotLabel->setStyleSheet(QString("color: %1; font-size: %2px; background: transparent;")
-                                   .arg(K4Styles::Colors::TextGray)
+                                   .arg(K4Styles::Colors::TextSecondary)
                                    .arg(SpotFontSize));
     m_spotLabel->setAlignment(Qt::AlignLeft | Qt::AlignVCenter);
     layout->addWidget(m_spotLabel, 1);
@@ -200,14 +199,15 @@ void MiniViewWindow::setupUi() {
                                           "  background-color: transparent; "
                                           "  color: %1; "
                                           "  border: none; "
-                                          "  font-size: 10px; "
+                                          "  font-size: %3px; "
                                           "} "
                                           "QPushButton:hover { "
                                           "  background-color: %2; "
                                           "  border-radius: 3px; "
                                           "}")
-                                      .arg(K4Styles::Colors::TextGray)
-                                      .arg(K4Styles::Colors::BorderNormal));
+                                      .arg(K4Styles::Colors::TextSecondary)
+                                      .arg(K4Styles::Colors::BorderNormal)
+                                      .arg(K4Styles::Dimensions::FontSizeCaption));
     connect(m_panToggleBtn, &QPushButton::clicked, this, &MiniViewWindow::togglePanadapter);
     layout->addWidget(m_panToggleBtn);
     layout->addSpacing(4);
@@ -222,15 +222,16 @@ void MiniViewWindow::setupUi() {
                                         "  background-color: transparent; "
                                         "  color: %1; "
                                         "  border: none; "
-                                        "  font-size: 14px; "
+                                        "  font-size: %3px; "
                                         "  font-weight: bold; "
                                         "} "
                                         "QPushButton:hover { "
                                         "  background-color: %2; "
                                         "  border-radius: 3px; "
                                         "}")
-                                    .arg(K4Styles::Colors::TextGray)
-                                    .arg(K4Styles::Colors::BorderNormal));
+                                    .arg(K4Styles::Colors::TextSecondary)
+                                    .arg(K4Styles::Colors::BorderNormal)
+                                    .arg(K4Styles::Dimensions::FontSizeHeading));
     connect(m_restoreBtn, &QPushButton::clicked, this, &MiniViewWindow::restoreRequested);
     layout->addWidget(m_restoreBtn);
 
@@ -296,7 +297,7 @@ void MiniViewWindow::togglePanadapter() {
             m_miniPan = new MiniPanRhiWidget(nullptr);
             m_miniPan->setObjectName("MiniView");
             connect(m_miniPan, &QRhiWidget::renderFailed, this,
-                    []() { qCWarning(uiMiniView) << "Mini View pan renderFailed() - QRhi could not be obtained"; });
+                    []() { qCWarning(lcUiMiniView) << "Mini View pan renderFailed() - QRhi could not be obtained"; });
             QTimer::singleShot(500, this, [this]() { logWindowSurface(this, "500 ms after pan created"); });
             m_miniPan->setMinimumWidth(StripWidth - 4);
             m_miniPan->setMaximumWidth(StripWidth - 4);
@@ -331,9 +332,9 @@ void MiniViewWindow::togglePanadapter() {
     emit panadapterVisibilityChanged(m_panVisible);
 }
 
-void MiniViewWindow::updateSpectrum(const QByteArray &data) {
+void MiniViewWindow::updateSpectrum(const QByteArray &bins, qint64 centerHz, int spanHz) {
     if (m_miniPan && m_panVisible)
-        m_miniPan->updateSpectrum(data);
+        m_miniPan->updateSpectrum(bins, centerHz, spanHz);
 }
 
 void MiniViewWindow::setPanMode(const QString &mode) {
@@ -351,9 +352,9 @@ void MiniViewWindow::setPanIfShift(int shift) {
         m_miniPan->setIfShift(shift);
 }
 
-void MiniViewWindow::setPanCwPitch(int pitchHz) {
+void MiniViewWindow::setPanTunedFrequency(qint64 freqHz) {
     if (m_miniPan)
-        m_miniPan->setCwPitch(pitchHz);
+        m_miniPan->setTunedFrequency(freqHz);
 }
 
 void MiniViewWindow::setPanNotchFilter(bool enabled, int pitchHz) {

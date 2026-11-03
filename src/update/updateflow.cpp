@@ -1,4 +1,5 @@
 #include "update/updateflow.h"
+#include "logging/logcategories.h"
 #include "ui/dialogs/updatedialog.h"
 #include "update/updatechecker.h"
 #include "update/updatedownloader.h"
@@ -130,13 +131,13 @@ void UpdateFlow::writeReadinessFile() {
     qunsetenv(ATTEMPT_ENV);
 
     if (!isSafeVersionName(attempt)) {
-        qWarning() << "Update: ignoring attempt name" << attempt;
+        qCWarning(lcUpdate) << "Update: ignoring attempt name" << attempt;
         return;
     }
     // A failed write is not fatal: the launcher falls back to looking for a visible window.
     QFile marker(QFileInfo(exePath()).absoluteDir().filePath(QStringLiteral(".ready-") + attempt));
     if (!marker.open(QIODevice::WriteOnly))
-        qWarning() << "Update: could not write" << marker.fileName() << marker.errorString();
+        qCWarning(lcUpdate) << "Update: could not write" << marker.fileName() << marker.errorString();
 }
 
 void UpdateFlow::consumeFailureNotes() {
@@ -149,7 +150,7 @@ void UpdateFlow::consumeFailureNotes() {
     const QString text = QString::fromUtf8(file.read(FAILURE_NOTE_MAX_BYTES));
     file.close();
     if (!QFile::remove(path))
-        qWarning() << "Update: could not delete" << path;
+        qCWarning(lcUpdate) << "Update: could not delete" << path;
 
     // WHY compared with current.txt and the running version: the launcher can leave a note for a version that another
     // attempt then committed, or that is running now while current.txt still names the one before it.
@@ -198,7 +199,7 @@ void UpdateFlow::startCleanup() {
     const bool started = m_hooks.startDetached ? m_hooks.startDetached(launcher, arguments)
                                                : QProcess::startDetached(launcher, arguments);
     if (!started)
-        qWarning() << "Update: could not start cleanup through" << launcher;
+        qCWarning(lcUpdate) << "Update: could not start cleanup through" << launcher;
 }
 
 void UpdateFlow::onCheckFinished(const std::optional<UpdateManifest> &manifest) {
@@ -207,21 +208,22 @@ void UpdateFlow::onCheckFinished(const std::optional<UpdateManifest> &manifest) 
 
     bool found = false;
     if (!manifest) {
-        qInfo() << "Update: no update information (network failure, bad file or timeout)";
+        qCInfo(lcUpdate) << "Update: no update information (network failure, bad file or timeout)";
     } else if (manifestIsUsable(*manifest)) {
         found = shouldOffer(*m_runningUj, m_install ? readCurrentTxtUj(m_install->root) : std::nullopt, manifest->uj,
                             QSettings().value(SKIPPED_KEY, 0).toInt(), failedVersions());
         if (found)
             m_offer = manifest;
         else
-            qInfo() << "Update: nothing to offer, latest is" << manifest->version;
+            qCInfo(lcUpdate) << "Update: nothing to offer, latest is" << manifest->version;
     }
     apply(m_gate.onCheckDone(found));
 }
 
 bool UpdateFlow::manifestIsUsable(const UpdateManifest &manifest) const {
     if (UpdateVersion::parseUjNumber(manifest.version) != manifest.uj || !isSafeVersionName(manifest.version)) {
-        qInfo() << "Update: ignoring update.json, its version" << manifest.version << "is not uj" << manifest.uj;
+        qCInfo(lcUpdate) << "Update: ignoring update.json, its version" << manifest.version << "is not uj"
+                         << manifest.uj;
         return false;
     }
     const QString key = assetKeyFor(m_platform);
@@ -230,12 +232,13 @@ bool UpdateFlow::manifestIsUsable(const UpdateManifest &manifest) const {
 
     const auto asset = manifest.assets.constFind(key);
     if (asset == manifest.assets.constEnd()) {
-        qInfo() << "Update: ignoring update.json, it has no" << key << "asset";
+        qCInfo(lcUpdate) << "Update: ignoring update.json, it has no" << key << "asset";
         return false;
     }
     const bool allowed = m_hooks.allowedUrl ? m_hooks.allowedUrl(asset->url) : isAllowedDownloadUrl(asset->url);
     if (!allowed || !isSafeVersionName(asset->name)) {
-        qInfo() << "Update: ignoring update.json, asset" << asset->name << "at" << asset->url << "is not allowed";
+        qCInfo(lcUpdate) << "Update: ignoring update.json, asset" << asset->name << "at" << asset->url
+                         << "is not allowed";
         return false;
     }
     return true;
@@ -252,7 +255,7 @@ void UpdateFlow::apply(UpdateGate::Action action) {
         showPopup();
         return;
     case UpdateGate::Action::Finish:
-        qInfo() << "Update: a manual connection ended the startup check for this session";
+        qCInfo(lcUpdate) << "Update: a manual connection ended the startup check for this session";
         return;
     }
 }

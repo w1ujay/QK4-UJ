@@ -5,7 +5,6 @@
 #include <QListWidget>
 #include <QStackedWidget>
 #include <QShowEvent>
-#include <QHideEvent>
 #include <QMediaDevices>
 
 class RadioState;
@@ -16,6 +15,7 @@ class TciController;
 class KPA1500Client;
 class RFKitClient;
 class DxClusterController;
+class CwController;
 class AboutPage;
 class StationPage;
 class DisplayPage;
@@ -29,11 +29,12 @@ class UlanziPage;
 class Kpa1500Page;
 class RfkitPage;
 class DxClusterPage;
+class DiagnosticsPage;
 
 /**
  * @brief Tabbed Options dialog. Left QListWidget drives a QStackedWidget holding the option
- *        pages (About, Station, Display, Audio Input/Output, Rig Control, TCI Server, CW Keyer,
- *        KPOD, KPA1500, DX Cluster).
+ *        pages (About, Station, Display, Audio Input/Output, Rig Control, TCI Server, HaliKey,
+ *        K-Pod, KPA1500, DX Cluster, Diagnostics).
  *        Pages are lazy-constructed on first tab activation via @c ensurePageCreated.
  */
 class OptionsDialog : public QDialog {
@@ -54,13 +55,15 @@ public:
         PageKpa1500,
         PageRfkit,
         PageDxCluster,
+        PageDiagnostics,
         PageCount
     };
 
     explicit OptionsDialog(RadioState *radioState, AudioController *audioController,
                            HardwareController *hardwareController, CatServer *catServer, TciController *tciController,
                            KPA1500Client *kpa1500Client, RFKitClient *rfkitClient,
-                           DxClusterController *dxClusterController, QWidget *parent = nullptr);
+                           DxClusterController *dxClusterController, CwController *cwController,
+                           QWidget *parent = nullptr);
     ~OptionsDialog();
 
     // Open the dialog with one page selected, for callers that know where the user needs to land
@@ -69,7 +72,6 @@ public:
 
 protected:
     void showEvent(QShowEvent *event) override;
-    void hideEvent(QHideEvent *event) override;
 
 private:
     void setupUi();
@@ -84,12 +86,12 @@ private:
     KPA1500Client *m_kpa1500Client;
     RFKitClient *m_rfkitClient;
     DxClusterController *m_dxClusterController;
+    CwController *m_cwController;
     QListWidget *m_tabList;
     QStackedWidget *m_pageStack;
     QMediaDevices *m_mediaDevices;
     bool m_pageCreated[PageCount] = {};
 
-    // Page widgets
     AboutPage *m_aboutPage = nullptr;
     StationPage *m_stationPage = nullptr;
     DisplayPage *m_displayPage = nullptr;
@@ -103,6 +105,7 @@ private:
     Kpa1500Page *m_kpa1500Page = nullptr;
     RfkitPage *m_rfkitPage = nullptr;
     DxClusterPage *m_dxClusterPage = nullptr;
+    DiagnosticsPage *m_diagnosticsPage = nullptr;
 };
 
 #endif // OPTIONSDIALOG_H
