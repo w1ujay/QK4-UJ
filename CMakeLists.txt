@@ -99,6 +99,16 @@ set(SOURCES
     src/mainwindow.cpp
     src/utils/radioutils.cpp
     src/utils/bandplan.cpp
+    src/update/updateversion.cpp
+    src/update/updatemanifest.cpp
+    src/update/updatepolicy.cpp
+    src/update/updatechecker.cpp
+    src/update/updatedownloader.cpp
+    src/update/managedinstall.cpp
+    src/update/windowsinstaller.cpp
+    src/update/updategate.cpp
+    src/update/updateflow.cpp
+    src/update/windowsappid.cpp
     src/controllers/connectioncontroller.cpp
     src/controllers/hardwarecontroller.cpp
     src/controllers/audiocontroller.cpp
@@ -180,6 +190,7 @@ set(SOURCES
     src/models/radiostate/xvtrbandstate.cpp
     src/models/menumodel.cpp
     src/ui/dialogs/radiomanagerdialog.cpp
+    src/ui/dialogs/updatedialog.cpp
     src/ui/widgets/dualcontrolbutton.cpp
     src/ui/widgets/sidecontrolpanel.cpp
     src/ui/widgets/bottommenubar.cpp
@@ -264,6 +275,16 @@ set(HEADERS
     src/mainwindow.h
     src/utils/radioutils.h
     src/utils/bandplan.h
+    src/update/updateversion.h
+    src/update/updatemanifest.h
+    src/update/updatepolicy.h
+    src/update/updatechecker.h
+    src/update/updatedownloader.h
+    src/update/managedinstall.h
+    src/update/windowsinstaller.h
+    src/update/updategate.h
+    src/update/updateflow.h
+    src/update/windowsappid.h
     src/controllers/connectioncontroller.h
     src/controllers/hardwarecontroller.h
     src/controllers/audiocontroller.h
@@ -327,6 +348,7 @@ set(HEADERS
     src/models/menumodel.h
     src/utils/macroids.h
     src/ui/dialogs/radiomanagerdialog.h
+    src/ui/dialogs/updatedialog.h
     src/ui/widgets/dualcontrolbutton.h
     src/ui/widgets/sidecontrolpanel.h
     src/ui/widgets/bottommenubar.h
@@ -495,7 +517,7 @@ if(APPLE)
     )
 elseif(WIN32)
     target_compile_definitions(${PROJECT_NAME} PRIVATE __WINDOWS_MM__)
-    target_link_libraries(${PROJECT_NAME} PRIVATE winmm)
+    target_link_libraries(${PROJECT_NAME} PRIVATE winmm version ole32 shell32)
 else()
     target_compile_definitions(${PROJECT_NAME} PRIVATE __LINUX_ALSA__)
     target_link_libraries(${PROJECT_NAME} PRIVATE asound)

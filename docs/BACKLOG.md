@@ -19,6 +19,8 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | N4 | Right-click a mini-pan to tune VFO B | New | S | Keep — done, on-air test pending |
 | N5 | HaliKey connect indicator in the status bar | New | S | Keep — done, HaliKey test pending |
 | N6 | Click the VFO "NR+" label to reset the noise estimate | New | S | Keep |
+| N7 | Merge upstream before release testing | Task | M | |
+| N8 | Detect other running copies of QK4 | New | M | |
 | P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | Keep — tuning done; Esc/KY0 dropped |
 | P2 | MON button double-toggle fix | Port gap | S | |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
@@ -182,6 +184,20 @@ and a tooltip only while the label reads NR+; in LMS mode it stays inert.
 **Notes:** Requested 2026-10-20 after the on-air test — the reset made a weak CW signal at 14.053 copyable in
 noise. Keep it separate from the upstream PR for the RESET button. The radio gives no readback of the estimate
 (no query exists), so a brief notification-bar confirmation is the only feedback possible.
+
+### N7. Merge upstream before release testing
+Upstream `development` is 179 commits ahead; a trial merge on 2026-10-31 conflicted in 22 files, including
+`src/mainwindow.cpp`, `CMakeLists.txt` and `tests/CMakeLists.txt`. Do it after the fork update check is built and
+before release testing, so `uj.14` and `uj.15` are tested on the merged result.
+
+**Notes:** Separate task from the update check. Push to `ujay` only.
+
+### N8. Detect other running copies of QK4
+There is no single-instance guard, and `--connect` lets one install have a shortcut per K4, so several copies run
+at once. The updater copes by design, but it cannot tell the user that other copies are open. Detect them and say so
+in the update popup before Install now.
+
+**Notes:** Follow-up to the update check. Not needed for `uj.14`.
 
 ---
 

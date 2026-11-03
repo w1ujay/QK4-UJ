@@ -105,4 +105,12 @@ bool relaunch() {
     return started;
 }
 
+QProcessEnvironment childEnvironment() {
+    QProcessEnvironment env = QProcessEnvironment::systemEnvironment();
+    if (g_weSetScaleEnv)
+        env.remove(kScaleEnv);
+    env.remove(kRelaunchedEnv);
+    return env;
+}
+
 } // namespace InterfaceScale

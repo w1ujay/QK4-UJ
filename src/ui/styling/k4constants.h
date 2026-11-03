@@ -142,6 +142,7 @@ namespace Dimensions {
 constexpr int BorderWidth = 2;
 constexpr int BorderRadius = 6;
 constexpr int BorderRadiusLarge = 8;
+constexpr int HairlineWidth = 1; // Thin frame around read-only panels and bars
 
 // =============================================================================
 // Shadow (for popup widgets)
@@ -263,6 +264,8 @@ constexpr int CheckboxSize = 18;           // Checkbox indicator dimensions
 constexpr int PaddingSmall = 6;            // Small padding (inputs)
 constexpr int PaddingMedium = 10;          // Medium padding (buttons)
 constexpr int PaddingLarge = 15;           // Large padding (list items)
+constexpr int UpdateDialogMinWidth = 480;  // Update popup minimum size
+constexpr int UpdateDialogMinHeight = 380;
 } // namespace Dimensions
 
 } // namespace K4Styles

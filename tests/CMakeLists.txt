@@ -605,6 +605,113 @@ target_include_directories(test_micrate PRIVATE ${CMAKE_SOURCE_DIR}/src)
 target_link_libraries(test_micrate Qt6::Core Qt6::Test)
 add_test(NAME MicRateTests COMMAND test_micrate)
 
+# Fork update check: version strings and update.json parsing — pure functions.
+add_executable(test_updatemanifest test_updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+)
+target_include_directories(test_updatemanifest PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatemanifest Qt6::Core Qt6::Test)
+add_test(NAME UpdateManifestTests COMMAND test_updatemanifest)
+
+# Fork update check: offer rules, asset choice, URL and zip checks — pure functions.
+add_executable(test_updatepolicy test_updatepolicy.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatepolicy.cpp
+)
+target_include_directories(test_updatepolicy PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatepolicy Qt6::Core Qt6::Test)
+add_test(NAME UpdatePolicyTests COMMAND test_updatepolicy)
+
+# Fork update check: Windows launcher decision logic (plain C++17, no Qt in the production files).
+add_executable(test_updatelayout test_updatelayout.cpp
+    ${CMAKE_SOURCE_DIR}/tools/windows-launcher/updatelayout.cpp
+)
+target_link_libraries(test_updatelayout Qt6::Core Qt6::Test)
+add_test(NAME UpdateLayoutTests COMMAND test_updatelayout)
+
+# Fork update check: update.json check and verified download against a local QTcpServer.
+add_executable(test_updatenetwork test_updatenetwork.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatechecker.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatedownloader.cpp
+)
+target_include_directories(test_updatenetwork PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatenetwork Qt6::Core Qt6::Network Qt6::Test)
+add_test(NAME UpdateNetworkTests COMMAND test_updatenetwork)
+
+# Fork update check: Windows install preparation. The Win32 identity check is reached through a seam here.
+add_executable(test_managedinstall test_managedinstall.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/managedinstall.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/windowsinstaller.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatepolicy.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/interfacescale.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+)
+target_include_directories(test_managedinstall PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_compile_definitions(test_managedinstall PRIVATE QK4_SOURCE_DIR="${CMAKE_SOURCE_DIR}")
+target_link_libraries(test_managedinstall Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+if(WIN32)
+    target_link_libraries(test_managedinstall version)
+endif()
+add_test(NAME ManagedInstallTests COMMAND test_managedinstall)
+
+# Fork update check: the update popup, offscreen.
+add_executable(test_updatedialog test_updatedialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/dialogs/updatedialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+)
+target_include_directories(test_updatedialog PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updatedialog Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Test)
+add_test(NAME UpdateDialogTests COMMAND test_updatedialog)
+set_tests_properties(UpdateDialogTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen")
+
+# Fork update check: when the startup radio may connect. Pure state machine.
+add_executable(test_updategate test_updategate.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updategate.cpp
+)
+target_include_directories(test_updategate PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updategate Qt6::Core Qt6::Test)
+add_test(NAME UpdateGateTests COMMAND test_updategate)
+
+# Fork update check: the startup flow against a local server, offscreen.
+add_executable(test_updateflow test_updateflow.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateflow.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updategate.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/windowsappid.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatechecker.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatedownloader.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/managedinstall.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/windowsinstaller.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updateversion.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatemanifest.cpp
+    ${CMAKE_SOURCE_DIR}/src/update/updatepolicy.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/interfacescale.cpp
+    ${CMAKE_SOURCE_DIR}/src/settings/radiosettings.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/dialogs/updatedialog.cpp
+    ${CMAKE_SOURCE_DIR}/src/ui/styling/k4styles.cpp
+)
+target_include_directories(test_updateflow PRIVATE ${CMAKE_SOURCE_DIR}/src)
+target_link_libraries(test_updateflow Qt6::Core Qt6::Gui Qt6::Widgets Qt6::Network Qt6::Test)
+if(WIN32)
+    target_link_libraries(test_updateflow version ole32 shell32)
+endif()
+add_test(NAME UpdateFlowTests COMMAND test_updateflow)
+set_tests_properties(UpdateFlowTests PROPERTIES ENVIRONMENT "QT_QPA_PLATFORM=offscreen" TIMEOUT 120)
+
+# Fork release scripts. jq and zip are not on every machine, and ci-update-launcher.yml always runs this with them.
+if(UNIX)
+    find_program(QK4_BASH bash)
+    find_program(QK4_JQ jq)
+    find_program(QK4_ZIP zip)
+    if(QK4_BASH AND QK4_JQ AND QK4_ZIP)
+        add_test(NAME UjScriptTests COMMAND ${QK4_BASH} ${CMAKE_CURRENT_SOURCE_DIR}/scripts/test_uj_scripts.sh)
+    endif()
+endif()
+
 # Aggregate target: `cmake --build <dir> --target qk4_tests` builds every
 # test_* executable defined above. CI uses this so adding `add_executable(test_foo)`
 # automatically gets the new test built — no parallel maintenance of an explicit
