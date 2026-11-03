@@ -22,9 +22,7 @@ private:
         QVERIFY(w.isEditing());
     }
 
-    static qint64 lastDelta(const QSignalSpy &spy) {
-        return spy.isEmpty() ? 0 : spy.last().at(0).value<qint64>();
-    }
+    static qint64 lastDelta(const QSignalSpy &spy) { return spy.isEmpty() ? 0 : spy.last().at(0).value<qint64>(); }
 
     static void press(FrequencyDisplayWidget &w, Qt::Key key, int times = 1) {
         for (int i = 0; i < times; ++i)

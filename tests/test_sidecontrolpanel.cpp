@@ -627,7 +627,7 @@ private slots:
         QCOMPARE(spy.count(), 1);
         QCOMPARE(spy.at(0).at(0).toString(), QString("SW128;"));
 
-        QTest::qWait(300); // past the click-away reopen guard, as a person's next click would be
+        QTest::qWait(300);                      // past the click-away reopen guard, as a person's next click would be
         QTest::mouseClick(mon, Qt::LeftButton); // opens again
         QCOMPARE(spy.count(), 2);
     }
