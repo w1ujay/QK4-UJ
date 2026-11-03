@@ -18,6 +18,10 @@
  * - beginEntry() (the FREQ ENT button) opens an empty entry in the edit color (VFO theme: cyan for
  *   A, green for B). Digits fill in from the right as typed, grouped with dots; Backspace removes
  *   the last; Enter sends; Escape or a click outside cancels.
+ * - Digit tuning (fork): in an entry with nothing typed yet, the arrow keys work on the current
+ *   frequency. Left/Right pick a digit (starting on the tuning-rate digit, or kHz), Up/Down emit
+ *   digitTuneRequested with its place value, and the display follows the radio's replies. Typing a
+ *   digit switches to type-in; Enter with nothing typed sends nothing.
  *
  * Usage:
  *   auto *freq = new FrequencyDisplayWidget(parent);
@@ -79,7 +83,8 @@ signals:
     // Emitted when user scrolls mouse wheel over frequency (not in edit mode)
     void frequencyScrolled(int steps);
 
-    // Emitted on Up/Down in edit mode: tune by the cursor digit's place value (e.g. +1000 on the kHz digit)
+    // Emitted on Up/Down while digit tuning: tune by the selected digit's place value (e.g. +1000 on
+    // the kHz digit). The widget changes nothing itself; the radio's reply updates the display.
     void digitTuneRequested(qint64 deltaHz);
 
     // Emitted when user clicks a digit that can be a tuning rate (not in edit mode).
@@ -104,9 +109,14 @@ private:
     // tuning rate (a dot, past the end, or while editing).
     int tuningDigitAtX(int x) const;
 
-    // Index of the first m_digits position shown: leading zeros beyond the 8-digit window are
-    // hidden, plus one more below 10 MHz.
+    // Index of the first position shown of the digits on screen (m_digits, or the radio's while
+    // digit tuning): leading zeros beyond the 8-digit window are hidden, plus one more below 10 MHz.
     int displayStartIndex() const;
+    static int startIndexFor(const QString &digits);
+
+    // Digit tuning: pick the starting digit on the first arrow press, keep the cursor on a shown digit.
+    void ensureDigitCursor();
+    bool isDigitTuning() const { return m_editing && m_digitCursor >= 0; }
 
     // Digits grouped in threes from the right with dots ("14074000" -> "14.074.000")
     static QString groupWithDots(const QString &digits);
@@ -123,6 +133,7 @@ private:
     QString m_radioDigits; // Latest radio value while editing; restored on cancel
     QString m_typed;       // Digits typed so far while editing
     bool m_editing = false;
+    int m_digitCursor = -1; // Digit tuning: index into m_radioDigits, -1 when not digit tuning
 
     QColor m_normalColor; // White - normal display color
     QColor m_editColor;   // Cyan/Green - edit mode color

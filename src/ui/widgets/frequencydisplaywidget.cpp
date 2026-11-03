@@ -44,6 +44,11 @@ void FrequencyDisplayWidget::setFrequency(const QString &frequency) {
     // instead of overwriting the entry; Escape/click-outside then shows the radio's current value.
     if (m_editing) {
         m_radioDigits = normalizeDigits(frequency);
+        if (isDigitTuning()) {
+            // Digit tuning shows the radio's frequency; a band change can hide or reveal digits.
+            m_digitCursor = qMax(m_digitCursor, startIndexFor(m_radioDigits));
+            update();
+        }
         return;
     }
     m_digits = normalizeDigits(frequency);
@@ -55,6 +60,8 @@ QString FrequencyDisplayWidget::frequency() const {
 }
 
 QString FrequencyDisplayWidget::displayText() const {
+    if (isDigitTuning())
+        return groupWithDots(m_radioDigits.mid(displayStartIndex()));
     if (m_editing)
         return groupWithDots(m_typed);
     return groupWithDots(m_digits.mid(displayStartIndex()));
@@ -88,6 +95,7 @@ void FrequencyDisplayWidget::beginEntry() {
         return;
     m_radioDigits = m_digits;
     m_typed.clear();
+    m_digitCursor = -1;
     m_editing = true;
     setFocus();
     grabMouse(); // Capture all mouse events to detect clicks outside
@@ -119,6 +127,20 @@ QString FrequencyDisplayWidget::normalizeDigits(const QString &freq) {
 }
 
 int FrequencyDisplayWidget::displayStartIndex() const {
+    return startIndexFor(isDigitTuning() ? m_radioDigits : m_digits);
+}
+
+void FrequencyDisplayWidget::ensureDigitCursor() {
+    const int start = startIndexFor(m_radioDigits);
+    if (m_digitCursor < 0) {
+        // Start where the operator already tunes: the tuning-rate digit, else the kHz digit.
+        const int fromRight = m_tuningRateDigit >= 0 ? m_tuningRateDigit : 3;
+        m_digitCursor = kMaxDigitIndex - fromRight;
+    }
+    m_digitCursor = qBound(start, m_digitCursor, kMaxDigitIndex);
+}
+
+int FrequencyDisplayWidget::startIndexFor(const QString &digits) {
     // Default to showing the rightmost 8 digits (HF defaults to "0.000.000" with one
     // suppressed leading zero, 14 MHz reads "14.074.000", 7 MHz reads "7.024.980").
     // For higher frequencies, additional leading digits are revealed automatically:
@@ -126,11 +148,11 @@ int FrequencyDisplayWidget::displayStartIndex() const {
     constexpr int kBaseVisible = 8;
     constexpr int kBaseStart = kDigits - kBaseVisible; // index of the 8-digit-wide window
     int start = 0;
-    while (start < kBaseStart && m_digits[start] == '0')
+    while (start < kBaseStart && digits[start] == '0')
         ++start;
     // Below 10 MHz strip the one remaining leading zero so 7 MHz
     // renders as "7.024.980" not "07.024.980".
-    if (start == kBaseStart && m_digits[start] == '0')
+    if (start == kBaseStart && digits[start] == '0')
         ++start;
     return start;
 }
@@ -151,7 +173,7 @@ qreal FrequencyDisplayWidget::pitchFor(const QString &text) const {
     int natural = kPadding;
     for (qsizetype i = 0; i < text.size(); ++i)
         natural += text.at(i).unicode() == u'.' ? m_dotWidth : m_charWidth;
-    if (m_editing)
+    if (m_editing && !isDigitTuning())
         natural += m_charWidth; // the caret after the last digit
     if (natural <= width() || natural <= 0)
         return 1.0;
@@ -189,6 +211,7 @@ void FrequencyDisplayWidget::exitEditMode(bool send) {
 
     releaseMouse();
     m_editing = false;
+    m_digitCursor = -1;
     if (send && !m_typed.isEmpty()) {
         m_digits = normalizeDigits(m_typed); // shown until the radio reports the new frequency
         emit frequencyEntered(m_digits);
@@ -232,6 +255,9 @@ void FrequencyDisplayWidget::paintEvent(QPaintEvent *) {
         // The glyph keeps its own width, centred on its (possibly narrower) cell.
         p.drawText(QRectF(x, 0, charW, height()), Qt::AlignCenter, QString(QChar(c)));
 
+        if (isDigitTuning() && c != u'.' && digitIdx == m_digitCursor)
+            p.fillRect(QRectF(x + kUnderlineInset, underlineY, charW - 2 * kUnderlineInset, kUnderlineHeight),
+                       m_editColor);
         if (!m_editing && c != u'.' && m_tuningRateDigit >= 0 && (kMaxDigitIndex - digitIdx) == m_tuningRateDigit)
             p.fillRect(QRectF(x + kUnderlineInset, underlineY, charW - 2 * kUnderlineInset, kUnderlineHeight),
                        m_normalColor);
@@ -242,7 +268,7 @@ void FrequencyDisplayWidget::paintEvent(QPaintEvent *) {
     }
 
     // Entry caret: where the next digit will go.
-    if (m_editing && m_typed.size() < kDigits) {
+    if (m_editing && !isDigitTuning() && m_typed.size() < kDigits) {
         const qreal caretW = m_charWidth * pitch;
         p.fillRect(QRectF(x + kUnderlineInset, underlineY, caretW - 2 * kUnderlineInset, kUnderlineHeight),
                    m_editColor);
@@ -279,7 +305,29 @@ void FrequencyDisplayWidget::keyPressEvent(QKeyEvent *event) {
     }
 
     const int key = event->key();
+    const bool arrow = key == Qt::Key_Left || key == Qt::Key_Right || key == Qt::Key_Up || key == Qt::Key_Down;
+    if (arrow) {
+        // Digit tuning works on the current frequency, so only until something has been typed. The
+        // arrows are taken either way: passed on, Up/Down would tune the VFO behind the entry.
+        if (m_typed.isEmpty()) {
+            ensureDigitCursor();
+            if (key == Qt::Key_Left) {
+                m_digitCursor = qMax(startIndexFor(m_radioDigits), m_digitCursor - 1);
+            } else if (key == Qt::Key_Right) {
+                m_digitCursor = qMin(kMaxDigitIndex, m_digitCursor + 1);
+            } else {
+                qint64 placeHz = 1;
+                for (int i = m_digitCursor; i < kMaxDigitIndex; ++i)
+                    placeHz *= 10;
+                emit digitTuneRequested(key == Qt::Key_Up ? placeHz : -placeHz);
+            }
+            update();
+        }
+        event->accept();
+        return;
+    }
     if (key >= Qt::Key_0 && key <= Qt::Key_9) {
+        m_digitCursor = -1; // typing switches digit tuning to type-in
         // A leading zero changes nothing, and the entry holds no more than the K4 takes.
         if ((key != Qt::Key_0 || !m_typed.isEmpty()) && m_typed.size() < kDigits) {
             m_typed.append(QChar('0' + (key - Qt::Key_0)));

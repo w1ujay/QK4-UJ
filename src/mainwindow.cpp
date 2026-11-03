@@ -1232,6 +1232,9 @@ void MainWindow::wireVfoWidget(VFOWidget *vfo, bool vfoB) {
 
     // Wheel tuning snaps to the step grid first, and respects connection state and VFO lock.
     connect(vfo, &VFOWidget::frequencyScrolled, this, [this, vfoB](int steps) { tuneVfoBySteps(vfoB, steps); });
+    // Digit tuning in the frequency entry (arrow keys before anything is typed): SET + query, the
+    // radio's reply updates the display. Also respects connection state and VFO lock.
+    connect(vfo, &VFOWidget::digitTuneRequested, this, [this, vfoB](qint64 deltaHz) { tuneVfoByHz(vfoB, deltaHz); });
 }
 
 // BLm±nn: the balance mode and offset, sent from both the BAL wheel and the sub-volume slider in
