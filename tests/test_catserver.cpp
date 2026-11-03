@@ -523,6 +523,37 @@ private slots:
         QCOMPARE(sendCommand(server, "IF;"), QString("IF00014074000     +005010 0012001001 ;"));
     }
 
+    // The d field carries the DATA sub-mode (DT: 0=DATA-A, 1=AFSK-A, 2=FSK-D, 3=PSK-D), which is how
+    // fldigi tells RTTY (FSK-D) from the other data modes.
+    void testIfResponseCarriesDataSubMode() {
+        RadioState rs;
+        rs.parseCATCommand("FA00014080000;");
+        rs.parseCATCommand("MD6;");
+        rs.parseCATCommand("DT2;");
+        for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+            rs.parseCATCommand(idle);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "IF;"), QString("IF00014080000     +000000 0006000021 ;"));
+    }
+
+    // Outside DATA / DATA-R the sub-mode means nothing, so d stays 0 even if DT was reported.
+    void testIfResponseIgnoresDataSubModeOutsideData() {
+        RadioState rs;
+        rs.parseCATCommand("FA00014080000;");
+        rs.parseCATCommand("DT3;");
+        rs.parseCATCommand("MD2;");
+        for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+            rs.parseCATCommand(idle);
+
+        CatServer server(&rs);
+        QVERIFY(server.start(0));
+
+        QCOMPARE(sendCommand(server, "IF;"), QString("IF00014080000     +000000 0002000001 ;"));
+    }
+
     // =========================================================================
     // MD$ — VFO B mode query (N1MM polls this every cycle)
     // =========================================================================

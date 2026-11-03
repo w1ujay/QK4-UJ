@@ -112,6 +112,10 @@ void CatPushBroadcaster::onDiversityChanged(bool on) {
 
 void CatPushBroadcaster::onDataSubModeChanged(int subMode) {
     broadcast(CatFrames::dataSubMode(subMode));
+    // IF carries the sub-mode in DATA / DATA-R, and fldigi reads it from there (as loggers read the mode).
+    const RadioState::Mode mode = m_radioState->mode();
+    if (mode == RadioState::DATA || mode == RadioState::DATA_R)
+        broadcast(CatFrames::ifFrame(*m_radioState));
 }
 
 void CatPushBroadcaster::onProcessingChanged() {

@@ -435,7 +435,11 @@ QByteArray ifFrame(const RadioState &state) {
     r += '0';
     r += (state.splitEnabled() ? '1' : '0');
     r += '0';
-    r += '0';
+    // d: the DATA sub-mode (DT 0-3), which fldigi reads to tell RTTY (FSK-D) from the rest. It means
+    // nothing outside DATA / DATA-R, and is 0 until the radio has reported DT.
+    const bool dataMode = state.mode() == RadioState::DATA || state.mode() == RadioState::DATA_R;
+    const int subMode = state.dataSubMode();
+    r += (dataMode && subMode >= 0 && subMode <= 3) ? QChar('0' + subMode) : QChar('0');
     r += "1 ;";
     return r.toUtf8();
 }

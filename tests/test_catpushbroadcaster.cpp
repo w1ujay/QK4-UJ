@@ -32,6 +32,7 @@ private slots:
     void testPushNoiseBlankerLevelChange();
     void testPushNoiseReductionLevelChange();
     void testPushVoxOnlyForTheCurrentMode();
+    void testDataSubModeChangePushesIf();
 
 private:
     struct SocketPair {
@@ -140,6 +141,25 @@ void TestCatPushBroadcaster::testRemoveClientDropsSubscription() {
     m_broadcaster->removeClient(pair.serverSide);
     QCOMPARE(m_broadcaster->subscriberCount(), 0);
     QCOMPARE(m_broadcaster->clientAiMode(pair.serverSide), 0);
+}
+
+// fldigi reads the DATA sub-mode from IF, so a DT change in DATA mode has to push a fresh IF as well.
+void TestCatPushBroadcaster::testDataSubModeChangePushesIf() {
+    m_radioState->parseCATCommand("FA00014080000;");
+    m_radioState->parseCATCommand("MD6;");
+    for (const char *idle : {"RT0;", "XT0;", "RO+0000;", "FT0;"})
+        m_radioState->parseCATCommand(idle);
+    QCoreApplication::processEvents();
+
+    auto pair = makeSocketPair();
+    m_broadcaster->addClient(pair.serverSide);
+    m_broadcaster->setClientAiMode(pair.serverSide, 2);
+
+    m_radioState->parseCATCommand("DT2;");
+    QCoreApplication::processEvents();
+
+    const QByteArray expected = QByteArray("DT2;") + "IF00014080000     +000000 0006000021 ;";
+    QCOMPARE(waitForBytes(pair.clientSide, expected.size()), expected);
 }
 
 void TestCatPushBroadcaster::testPushFrequencyOnRadioStateChange() {
