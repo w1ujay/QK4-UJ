@@ -295,6 +295,13 @@ QString agcLabel(int agcSpeed);
 /// True when the GT AGC speed is slow or fast, i.e. AGC is on.
 bool agcActive(int agcSpeed);
 
+/// RG RF gain (dB of attenuation below full gain, 0-60) for the VFO feature row: "RF" at full gain or
+/// before the radio reports it, "RF-12" when reduced.
+QString rfGainLabel(int rfGain);
+
+/// True when RF gain is reduced below full, i.e. the indicator should be lit.
+bool rfGainActive(int rfGain);
+
 /// ES TX bandwidth (100 Hz units) as a button label, e.g. 28 -> "2.8k".
 QString txBandwidthLabel(int bwHundredsHz);
 

@@ -33,6 +33,7 @@ public:
     void setAGC(const QString &label, bool active);
     void setPreamp(bool on, int level);
     void setAtt(bool on, int level);
+    void setRfGain(const QString &text, bool reduced); // RF / RF-n, lit while gain is reduced
     void setNB(bool on);
     void setNR(bool lmsOn, bool ssnrOn);
     void setNotch(bool autoEnabled, bool manualEnabled);
@@ -110,6 +111,7 @@ private:
     QLabel *m_agcLabel;
     QLabel *m_preampLabel;
     QLabel *m_attLabel;
+    QLabel *m_rfGainLabel;
     QLabel *m_nbLabel;
     QLabel *m_nrLabel;
     QLabel *m_ntchLabel;

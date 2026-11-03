@@ -419,6 +419,14 @@ bool agcActive(int agcSpeed) {
     return agcSpeed == 1 || agcSpeed == 2;
 }
 
+QString rfGainLabel(int rfGain) {
+    return rfGainActive(rfGain) ? QStringLiteral("RF-%1").arg(rfGain) : QStringLiteral("RF");
+}
+
+bool rfGainActive(int rfGain) {
+    return rfGain > 0;
+}
+
 QString txBandwidthLabel(int bwHundredsHz) {
     return QStringLiteral("%1k").arg(bwHundredsHz / 10.0, 0, 'f', 1);
 }

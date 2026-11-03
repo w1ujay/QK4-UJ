@@ -9,6 +9,11 @@ ProcessingDisplayController::ProcessingDisplayController(RadioState *radioState,
     : QObject(parent), m_radioState(radioState), m_vfoA(vfoA), m_vfoB(vfoB) {
     connect(m_radioState, &RadioState::processingChanged, this, &ProcessingDisplayController::refreshVfoA);
     connect(m_radioState, &RadioState::processingChangedB, this, &ProcessingDisplayController::refreshVfoB);
+    // RF gain is not part of processingChanged; RG / RG$ have their own signals.
+    connect(m_radioState, &RadioState::rfGainChanged, this,
+            [this](int gain) { m_vfoA->setRfGain(RadioUtils::rfGainLabel(gain), RadioUtils::rfGainActive(gain)); });
+    connect(m_radioState, &RadioState::rfGainBChanged, this,
+            [this](int gain) { m_vfoB->setRfGain(RadioUtils::rfGainLabel(gain), RadioUtils::rfGainActive(gain)); });
 }
 
 void ProcessingDisplayController::refreshVfoA() {

@@ -171,6 +171,17 @@ private slots:
         }
     }
 
+    // rfGainLabel / rfGainActive: RG is attenuation in dB below full gain, 0-60
+    void testRfGainLabel() {
+        QCOMPARE(RadioUtils::rfGainLabel(0), QString("RF"));
+        QCOMPARE(RadioUtils::rfGainLabel(12), QString("RF-12"));
+        QCOMPARE(RadioUtils::rfGainLabel(60), QString("RF-60"));
+        QCOMPARE(RadioUtils::rfGainLabel(-1), QString("RF")); // not yet reported
+        QVERIFY(!RadioUtils::rfGainActive(0));
+        QVERIFY(!RadioUtils::rfGainActive(-1));
+        QVERIFY(RadioUtils::rfGainActive(1));
+    }
+
     // agcLabel / agcActive
     void testAgcLabel() {
         QCOMPARE(RadioUtils::agcLabel(0), QString("AGC"));

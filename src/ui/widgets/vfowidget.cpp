@@ -98,6 +98,9 @@ void VFOWidget::setupUi() {
     m_attLabel = new QLabel("ATT", featuresContainer);
     m_attLabel->setStyleSheet(featureLabelStyle);
 
+    m_rfGainLabel = new QLabel("RF", featuresContainer);
+    m_rfGainLabel->setStyleSheet(featureLabelStyle);
+
     m_nbLabel = new QLabel("NB", featuresContainer);
     m_nbLabel->setStyleSheet(featureLabelStyle);
 
@@ -114,6 +117,7 @@ void VFOWidget::setupUi() {
     featuresRow->addWidget(m_agcLabel);
     featuresRow->addWidget(m_preampLabel);
     featuresRow->addWidget(m_attLabel);
+    featuresRow->addWidget(m_rfGainLabel);
     featuresRow->addWidget(m_nbLabel);
     featuresRow->addWidget(m_nrLabel);
     featuresRow->addWidget(m_ntchLabel);
@@ -213,6 +217,11 @@ void VFOWidget::setAtt(bool on, int level) {
         m_attLabel->setText("ATT");
     }
     K4Styles::setSelected(m_attLabel, on);
+}
+
+void VFOWidget::setRfGain(const QString &text, bool reduced) {
+    m_rfGainLabel->setText(text);
+    K4Styles::setSelected(m_rfGainLabel, reduced);
 }
 
 void VFOWidget::setNB(bool on) {
@@ -376,6 +385,7 @@ void VFOWidget::resetToDefaults() {
     setAGC(QStringLiteral("AGC"), false);
     setPreamp(false, 0);
     setAtt(false, 0);
+    setRfGain(QStringLiteral("RF"), false);
     setNB(false);
     setNR(false, false);
     setNotch(false, false);
