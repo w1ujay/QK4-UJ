@@ -305,7 +305,9 @@ Key additions in this fork, rebuilt on upstream v0.7 and kept merged with upstre
   - RIT (`RU`/`RD`/`RC`) and VFO step (`UP`/`DN`/`UPB`/`DNB`) pass-through
   - Keyer buffer (`KY;`, `TB;`), sub-receiver status (`SB;`), and `PB;`
   - `AG`/`AG$` mapped to QK4's local volume sliders
-- **Keyboard Tuning** — Up/Down tunes the active VFO by the tuning step (VFO B with B SET), respecting VFO lock
+- **Keyboard Tuning** — Up/Down tunes the active VFO by the tuning step (VFO B with B SET), respecting VFO lock. In a FREQ ENT entry, before typing, Left/Right pick a digit and Up/Down tune by its place value (up to 1 GHz)
+- **VFO Indicators** — RF gain shows as RF-n on the VFO feature row when reduced
+- **CAT `IF`** — reports the DATA sub-mode, so fldigi detects RTTY
 - **Mini-Pan Right-Click** — Right-click a VFO mini-pan or the Mini View pan to tune VFO B there, with CW pitch and RIT handled
 - **Tuning** — VFO and panadapter wheel tuning snap to the step grid and respect VFO lock
 - **Antenna** — RX ANT and SUB ANT buttons work over the network
