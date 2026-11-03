@@ -21,6 +21,7 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 | N6 | Click the VFO "NR+" label to reset the noise estimate | New | S | Keep |
 | N7 | Merge upstream before release testing | Task | M | |
 | N8 | Detect other running copies of QK4 | New | M | |
+| N9 | Standalone QK4 launcher that installs and updates QK4 | New (possible separate product) | L | After uj.14–uj.16 testing |
 | P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | Keep — tuning done; Esc/KY0 dropped |
 | P2 | MON button double-toggle fix | Port gap | S | Keep — done 2026-11-03, on-air check pending |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
@@ -199,6 +200,23 @@ in the update popup before Install now.
 
 **Notes:** Follow-up to the update check. Not needed for `uj.14`.
 
+
+### N9. Standalone QK4 launcher
+Idea from Jay, 2026-11-03: install a small launcher instead of QK4. On first run it downloads QK4; afterwards it
+checks for newer versions, downloads and switches to them. Could be its own product and serve upstream users too.
+
+Starting points:
+- Half of it exists: `tools/windows-launcher/` already keeps one folder per version, starts the one `current.txt`
+  names, falls back if a new version won't start, and serializes with a lock. It lacks its own check and download.
+- QK4 itself would need no update code, which makes it usable with upstream builds. Upstream's `release.yml`
+  already publishes `releases.json` on gh-pages; the launcher could read that (or GitHub releases) unchanged.
+  Channels: upstream releases, fork `uj.N`, or both.
+- Never delay the radio: start the current version at once, download in the background, switch on the next launch.
+
+Open questions: Windows only (Flatpak/Pi update themselves; macOS needs signing)? Unsigned downloader vs
+Defender/SmartScreen. Whether Mike wants it; any upstream approach is Jay's call, per the no-upstream rule.
+
+**Notes:** Do after the update check is proven on real Windows (uj.14–uj.16), since it reuses that launcher code.
 ---
 
 ## Port gaps (fork features not in v2)
