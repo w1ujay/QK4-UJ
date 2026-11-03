@@ -29,6 +29,10 @@ void SideControlOverlay::hideEvent(QHideEvent *event) {
     m_dismissal->stop();
 }
 
+bool SideControlOverlay::isVisibleOrJustHidden() const {
+    return m_dismissal->isVisibleOrJustHidden();
+}
+
 void SideControlOverlay::showOverGroup(QWidget *topWidget, QWidget *bottomWidget) {
     if (!topWidget || !bottomWidget || !parentWidget()) {
         return;

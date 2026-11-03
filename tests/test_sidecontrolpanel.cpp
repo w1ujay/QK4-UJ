@@ -28,6 +28,7 @@
 #include <QSettings>
 #include <QTemporaryDir>
 #include <climits>
+#include <QSignalSpy>
 #include <QTest>
 
 class SideControlPanelLayoutTests : public QObject {
@@ -602,6 +603,36 @@ private slots:
     }
 };
 
+// MON key: SW128 is the K4's MON tap. Sending it again when the overlay closes toggled the monitor a
+// second time, so the overlay opened with MON on and closed with it muted.
+class MonKeyTests : public QObject {
+    Q_OBJECT
+
+private slots:
+    void monSendsSw128OnlyWhenTheOverlayOpens() {
+        QWidget host;
+        auto *panel = new SideControlPanel(&host);
+        host.resize(panel->sizeHint());
+        host.show();
+        QVERIFY(QTest::qWaitForWindowExposed(&host));
+        QPushButton *mon = nullptr;
+        for (QPushButton *button : panel->findChildren<QPushButton *>())
+            if (button->text() == QLatin1String("MON"))
+                mon = button;
+        QVERIFY(mon);
+
+        QSignalSpy spy(panel, &SideControlPanel::swCommandRequested);
+        QTest::mouseClick(mon, Qt::LeftButton); // opens the overlay
+        QTest::mouseClick(mon, Qt::LeftButton); // closes it
+        QCOMPARE(spy.count(), 1);
+        QCOMPARE(spy.at(0).at(0).toString(), QString("SW128;"));
+
+        QTest::qWait(300); // past the click-away reopen guard, as a person's next click would be
+        QTest::mouseClick(mon, Qt::LeftButton); // opens again
+        QCOMPARE(spy.count(), 2);
+    }
+};
+
 int main(int argc, char **argv) {
     QApplication app(argc, argv);
     int status = 0;
@@ -616,6 +647,10 @@ int main(int argc, char **argv) {
     {
         KeyTextClearanceTests clearance;
         status |= QTest::qExec(&clearance, argc, argv);
+    }
+    {
+        MonKeyTests mon;
+        status |= QTest::qExec(&mon, argc, argv);
     }
     return status;
 }

@@ -157,12 +157,13 @@ void SideControlPanel::setupUi() {
     m_monOverlay = new MonOverlay(this);
     m_balOverlay = new BalOverlay(this);
 
-    // Connect MON button - toggles MON overlay
+    // Connect MON button - toggles MON overlay. SW128 is the K4's MON tap, sent only when opening:
+    // sending it on close as well toggled the monitor a second time and left it muted.
     connect(m_monBtn, &QPushButton::clicked, this, [this]() {
-        emit swCommandRequested("SW128;");
-        if (m_monOverlay->isVisible()) {
+        if (m_monOverlay->isVisibleOrJustHidden()) {
             m_monOverlay->hide();
         } else {
+            emit swCommandRequested("SW128;");
             m_balOverlay->hide(); // Close other overlay
             m_monOverlay->showOverGroup(m_wpmBtn, m_pwrBtn);
         }

@@ -36,6 +36,10 @@ public:
      */
     void showOverGroup(QWidget *topWidget, QWidget *bottomWidget);
 
+    // Shown, or closed by the press now in progress (the press on its own key closes it by click-away
+    // before the key's clicked() arrives). Same rule as the popups' isVisibleOrJustHidden().
+    bool isVisibleOrJustHidden() const;
+
     /**
      * @brief Get the context (color theme) of this overlay.
      */
