@@ -40,12 +40,12 @@ public:
     void clearSpots();
 
     // Panadapter
-    void updateSpectrum(const QByteArray &data);
+    void updateSpectrum(const QByteArray &bins, qint64 centerHz, int spanHz);
     void setPanMode(const QString &mode);
     void setPanDataSubMode(int subMode);
     void setPanFilterBandwidth(int bwHz);
     void setPanIfShift(int shift);
-    void setPanCwPitch(int pitchHz);
+    void setPanTunedFrequency(qint64 freqHz); // VFO A dial, RIT included
     void setPanNotchFilter(bool enabled, int pitchHz);
     void setPanAveraging(int level);
     void setPanWaterfallHeight(int percent);

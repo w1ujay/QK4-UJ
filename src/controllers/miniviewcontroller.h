@@ -41,7 +41,7 @@ public:
 
     // Feed main-receiver MiniPAN bins (packet header already stripped) to the embedded
     // mini panadapter. Cheap no-op unless the mini view is visible with its panadapter shown.
-    void onSpectrumData(int receiver, const QByteArray &bins);
+    void onSpectrumData(int receiver, const QByteArray &bins, qint64 centerHz, int spanHz);
 
     // Re-read the VFO frequency displays (e.g. after a RIT/XIT change shifts what they show).
     void refreshFrequencies();
@@ -60,6 +60,7 @@ signals:
     void miniPanRightClicked(int offsetHz);
 
 private:
+    qint64 tunedFrequencyA() const; // VFO A dial plus RIT, where the mini-pan centers its passband
     void refreshAll();
     void refreshPan();
     void refreshSpots();

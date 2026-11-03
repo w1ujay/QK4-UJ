@@ -1,0 +1,75 @@
+name: CI · Update launcher
+
+# The launcher is the one part of the update check that cannot be compiled or tested off Windows, and a fault in it can
+# leave someone without a working radio app. This builds it with MSVC and runs real processes against temporary install
+# roots. The uj-scripts job tests the fork release scripts, which need jq, zip and bsdtar.
+
+on:
+  push:
+    paths:
+      - 'tools/windows-launcher/**'
+      - '.github/workflows/ci-update-launcher.yml'
+      - '.github/workflows/release-uj.yml'
+      - 'scripts/uj-*.sh'
+      - 'tests/scripts/**'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: update-launcher-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  launcher:
+    name: Build and integration test
+    runs-on: windows-latest
+    timeout-minutes: 40
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      # WHY: .github/qt-version is the one Qt version every runner uses (scripts/check-qt-version.sh).
+      - name: Read Qt version
+        shell: bash
+        run: echo "QT_VERSION=$(tr -d '[:space:]' < .github/qt-version)" >> "$GITHUB_ENV"
+
+      # Only for qtrelaunchapp, which proves QProcess::startDetached stays inside the job. The launcher links no Qt.
+      - name: Install Qt
+        uses: jurplel/install-qt-action@a9c63c7c123f3069cff414e7e482d95dfa9d8125
+        with:
+          version: ${{ env.QT_VERSION }}
+          host: 'windows'
+          target: 'desktop'
+          arch: 'win64_msvc2022_64'
+          cache: true
+
+      - name: Build
+        shell: pwsh
+        run: |
+          cmake -S tools/windows-launcher -B build-launcher -A x64 -DQK4_LAUNCHER_BUILD_TESTS=ON
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          cmake --build build-launcher --config Release
+          exit $LASTEXITCODE
+
+      - name: Integration tests
+        shell: pwsh
+        run: tools/windows-launcher/tests/run_tests.ps1 -BinDir build-launcher/Release
+
+  uj-scripts:
+    name: Release scripts
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+
+      - name: Install tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y jq zip libarchive-tools
+
+      - name: Run the tests
+        env:
+          # This job is what proves the zip round trip off Windows, so it must not skip it.
+          UJ_REQUIRE_BSDTAR: '1'
+        run: bash tests/scripts/test_uj_scripts.sh

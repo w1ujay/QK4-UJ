@@ -1,4 +1,5 @@
 #include "ulanziserver.h"
+#include "logging/logcategories.h"
 
 #include <QJsonDocument>
 #include <QJsonObject>
@@ -10,8 +11,6 @@
 #include <QTimer>
 #include <cmath>
 #include <cstring>
-
-Q_LOGGING_CATEGORY(netUlanzi, "net.ulanzi")
 
 UlanziServer::UlanziServer(QObject *parent) : QObject(parent), m_server(new QTcpServer(this)) {
     connect(m_server, &QTcpServer::newConnection, this, &UlanziServer::onNewConnection);
@@ -39,12 +38,12 @@ bool UlanziServer::start(quint16 port) {
     }
     if (!m_server->listen(QHostAddress::LocalHost, port)) {
         m_lastError = QStringLiteral("Port %1 unavailable: %2").arg(port).arg(m_server->errorString());
-        qCWarning(netUlanzi) << m_lastError;
+        qCWarning(lcUlanzi) << m_lastError;
         emit errorOccurred(m_lastError);
         return false;
     }
     m_lastError.clear();
-    qCInfo(netUlanzi) << "Ulanzi server listening on port" << m_server->serverPort();
+    qCInfo(lcUlanzi) << "Ulanzi server listening on port" << m_server->serverPort();
     emit started(m_server->serverPort());
     return true;
 }
@@ -80,7 +79,7 @@ void UlanziServer::onNewConnection() {
     while (m_server->hasPendingConnections()) {
         QTcpSocket *next = m_server->nextPendingConnection();
         if (m_client) {
-            qCInfo(netUlanzi) << "A new Ulanzi client replaces the current one";
+            qCInfo(lcUlanzi) << "A new Ulanzi client replaces the current one";
             dropClient();
         }
         m_client = next;
@@ -92,7 +91,7 @@ void UlanziServer::onNewConnection() {
             if (m_client == next)
                 dropClient();
         });
-        qCInfo(netUlanzi) << "Ulanzi client connected from port" << next->peerPort();
+        qCInfo(lcUlanzi) << "Ulanzi client connected from port" << next->peerPort();
         emit clientConnectedChanged(true);
     }
 }
@@ -116,7 +115,7 @@ void UlanziServer::onReadyRead() {
             const char *newline = static_cast<const char *>(std::memchr(p, '\n', end - p));
             const qsizetype take = (newline ? newline : end) - p;
             if (m_buffer.size() + take > MAX_LINE_BYTES) {
-                qCWarning(netUlanzi) << "Ulanzi client sent a line over" << MAX_LINE_BYTES << "bytes - disconnecting";
+                qCWarning(lcUlanzi) << "Ulanzi client sent a line over" << MAX_LINE_BYTES << "bytes - disconnecting";
                 dropClient();
                 return;
             }
@@ -139,7 +138,7 @@ void UlanziServer::processLine(const QByteArray &rawLine) {
         return;
     const UlanziEvent event = parseLine(line);
     if (event.type == UlanziEvent::Type::Invalid) {
-        qCDebug(netUlanzi) << "Ignoring malformed line:" << line.left(120);
+        qCDebug(lcUlanzi) << "Ignoring malformed line:" << line.left(120);
         return;
     }
     handleEvent(event);

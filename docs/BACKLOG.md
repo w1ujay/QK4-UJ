@@ -12,23 +12,26 @@ section. Effort is rough: S = hours, M = a day or two, L = several days.
 |----|------|------|--------|----------|
 | B1 | Mini View pan blank + zero-padded frequencies | Bug (v2) | M | Keep — done, on-air test pending |
 | B2 | Audio-enable UI + gating (inherited-off risk) | Port gap / bug risk | S–M | Skip |
-| B3 | CAT `IF` data sub-mode (fldigi RTTY) | Port gap | S | |
-| N1 | Bundle BarnCat Sparks with the Windows distro | New | M | |
+| B3 | CAT `IF` data sub-mode (fldigi RTTY) | Port gap | S | Keep — done 2026-11-03 |
+| N1 | Bundle BarnCat Sparks with the Windows distro | New | M | Unblocked — Sparks is public (v0.3.2) |
 | N2 | "Launch Sparks" button in the GUI | New | S | |
 | N3 | Tune up/down in Mini View | New | S | Keep — done, on-air test pending |
 | N4 | Right-click a mini-pan to tune VFO B | New | S | Keep — done, on-air test pending |
 | N5 | HaliKey connect indicator in the status bar | New | S | Keep — done, HaliKey test pending |
 | N6 | Click the VFO "NR+" label to reset the noise estimate | New | S | Keep |
+| N7 | Merge upstream before release testing | Task | M | |
+| N8 | Detect other running copies of QK4 | New | M | |
+| N9 | Standalone QK4 launcher that installs and updates QK4 | New (possible separate product) | L | After uj.14–uj.16 testing |
 | P1 | Keyboard controls (arrow-key tuning, etc.) | Port gap | S–M | Keep — tuning done; Esc/KY0 dropped |
-| P2 | MON button double-toggle fix | Port gap | S | |
+| P2 | MON button double-toggle fix | Port gap | S | Keep — done 2026-11-03, on-air check pending |
 | P3 | PAN ON/OFF toggle in DISP popup | Port gap | M | |
-| P4 | RF gain "RF-n" indicator on VFO row | Port gap | S | |
+| P4 | RF gain "RF-n" indicator on VFO row | Port gap | S | Keep — done 2026-11-03 |
 | P5 | QK4-UJ window title + W1UJ attribution | Port gap | S | Keep — done |
 | P6 | Mini View settings page | Port gap | S | |
 | P7 | RX noise filter (3.5 kHz LPF) | Port gap | S–M | Skip |
 | P8 | DATA-mode mic gain scaling | Port gap (uncertain) | S | |
-| P9 | N1MM UDP spots + overlay | Port gap | L | |
-| P10 | Fork release CI (`uj.*` tags) | Port gap | M | |
+| P9 | N1MM UDP spots + overlay | Port gap | L | Keep — next major item after the update check |
+| P10 | Fork release CI (`uj.*` tags) | Port gap | M | Done — superseded by the update-check release workflow |
 | P11 | Null audio sink guard | Port gap | S | |
 | C1 | On-air: CW notch placement | Check | — | |
 | C2 | On-air: PTT keys radio for voice/data | Check | — | |
@@ -113,7 +116,7 @@ inherited-off risk above, or answer from RadioState once upstream tracks AG (Mik
 the field to a single digit, so the fork's patch (a84d190) doesn't apply as written. Also affects AI pushes
 (`catpushbroadcaster.cpp:63,72`). Add a test beside `testIfResponse*` in `tests/test_catserver.cpp`.
 
-**Notes:**
+**Notes:** Done 2026-11-03 on `merge/upstream-dev-2026-11-03`: IF carries DT in DATA/DATA-R, and a DT change pushes IF to AI subscribers.
 
 ---
 
@@ -133,7 +136,7 @@ Licensing is fine: Sparks is MIT, QK4 is GPLv3.
 Also: latest Sparks release is v0.2.1 (2026-02-26) with 57 commits since (incl. radio-abstraction merge).
 Cut a new release before bundling.
 
-**Notes:**
+**Notes:** 2026-11-03: `w1ujay/barncat-sparks` is now public, latest release v0.3.2, so option (a) is open.
 
 ### N2. "Launch Sparks" button
 Start `barncat-sparks.exe` via `QProcess::startDetached`, looking next to `QK4.exe` first, then a
@@ -183,6 +186,37 @@ and a tooltip only while the label reads NR+; in LMS mode it stays inert.
 noise. Keep it separate from the upstream PR for the RESET button. The radio gives no readback of the estimate
 (no query exists), so a brief notification-bar confirmation is the only feedback possible.
 
+### N7. Merge upstream before release testing
+Upstream `development` is 179 commits ahead; a trial merge on 2026-10-31 conflicted in 22 files, including
+`src/mainwindow.cpp`, `CMakeLists.txt` and `tests/CMakeLists.txt`. Do it after the fork update check is built and
+before release testing, so `uj.14` and `uj.15` are tested on the merged result.
+
+**Notes:** Separate task from the update check. Push to `ujay` only.
+
+### N8. Detect other running copies of QK4
+There is no single-instance guard, and `--connect` lets one install have a shortcut per K4, so several copies run
+at once. The updater copes by design, but it cannot tell the user that other copies are open. Detect them and say so
+in the update popup before Install now.
+
+**Notes:** Follow-up to the update check. Not needed for `uj.14`.
+
+
+### N9. Standalone QK4 launcher
+Idea from Jay, 2026-11-03: install a small launcher instead of QK4. On first run it downloads QK4; afterwards it
+checks for newer versions, downloads and switches to them. Could be its own product and serve upstream users too.
+
+Starting points:
+- Half of it exists: `tools/windows-launcher/` already keeps one folder per version, starts the one `current.txt`
+  names, falls back if a new version won't start, and serializes with a lock. It lacks its own check and download.
+- QK4 itself would need no update code, which makes it usable with upstream builds. Upstream's `release.yml`
+  already publishes `releases.json` on gh-pages; the launcher could read that (or GitHub releases) unchanged.
+  Channels: upstream releases, fork `uj.N`, or both.
+- Never delay the radio: start the current version at once, download in the background, switch on the next launch.
+
+Open questions: Windows only (Flatpak/Pi update themselves; macOS needs signing)? Unsigned downloader vs
+Defender/SmartScreen. Whether Mike wants it; any upstream approach is Jay's call, per the no-upstream rule.
+
+**Notes:** Do after the update check is proven on real Windows (uj.14–uj.16), since it reuses that launcher code.
 ---
 
 ## Port gaps (fork features not in v2)
@@ -208,6 +242,10 @@ adjust; an inactive button activates first, as with the wheel). No conflict with
 filter only intercepts `QAbstractButton`, and DualControlButton is a plain QWidget. Covered by
 `tests/test_dualcontrolbutton.cpp`. MonOverlay arrow keys still not ported.
 
+2026-11-03: upstream replaced frequency entry with FREQ ENT type-in, which dropped the cursor digit tuning.
+Rebuilt on the new entry: before anything is typed, Left/Right pick a digit (tuning-rate digit, else kHz) and
+Up/Down tune by its place value, up to 1 GHz; typing switches to type-in.
+
 **Review follow-ups 2026-09-15:**
 - Fixed: Enter in the frequency entry resent the displayed digits when nothing was typed, undoing an
   in-flight digit tune (`frequencydisplaywidget.cpp` `exitEditMode`). Covered by two new cases in
@@ -232,7 +270,7 @@ filter only intercepts `QAbstractButton`, and DualControlButton is a plain QWidg
 Fork 034642a: only send `SW128` when opening the MON overlay. At HEAD `sidecontrolpanel.cpp:166-174` sends
 it on both open and close. Verify SW128 behavior on air.
 
-**Notes:**
+**Notes:** Done 2026-11-03. SW128 only on open; the MON key also no longer reopens the overlay its own press just closed. Check on air that MON stays on.
 
 ### P3. PAN ON/OFF toggle in DISP popup
 Fork 95ea5df, 2bad812, 84fd63e: sends `#FPS00`/`#MP0`/`#MP$0`, hides spectrum, drops spectrum data, saves
@@ -247,7 +285,7 @@ Fork 69f9863: VFO feature-row label for RF gain attenuation. Wire in `Processing
 `setAtt` (`processingdisplaycontroller.cpp:38`). Use K4Styles (fork hardcoded `#FFFFFF`/`11px`); check row
 width.
 
-**Notes:**
+**Notes:** Done 2026-11-03 via `ProcessingDisplayController` and `RadioUtils::rfGainLabel()`. Check the row width at your interface scale.
 
 ### P5. QK4-UJ window title + W1UJ attribution
 Fork 69f9863, 74d6c87. Title at `mainwindow.cpp:482`. Don't edit LICENSE (verbatim GPL, breaks GitHub
@@ -285,14 +323,14 @@ Fork a4747d2, 68352c9, 18e6d87, 97f54d6, 2bad812, 2f6ed14, aa29417, 70cafd8, 7b9
 Upstream's DX cluster has no mult/dupe status, so it isn't a contest replacement. If revived, feed upstream's
 DX spot pipeline and `DxSpotOverlay` rather than a second overlay.
 
-**Notes:**
+**Notes:** 2026-11-03: the merged code has no mult/dupe/new coloring at all (the old fork had configurable mult red, dupe gray). Jay misses it; planned as the next major item after the update check and uj.14-uj.16 testing.
 
 ### P10. Fork release CI
 Fork fb5d770, d52a92a: `uj.*` tags → `0.4.0-UJ.N` prereleases, Linux tarball, no macOS. At HEAD only the
 on-demand `build-windows.yml` (1ad645a) exists; upstream `release.yml` triggers on `v*` and publishes
 `releases.json`, so use a separate fork-only workflow. Related to N1.
 
-**Notes:**
+**Notes:** Superseded 2026-11-03 by the update-check release workflow (`uj.N` tags, update.json).
 
 ### P11. Null audio sink guard
 Fork a84d190: also check `m_audioSink` in `feedAudioDevice` (`audioengine.cpp:255`). Probably unreachable now

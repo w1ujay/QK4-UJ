@@ -23,7 +23,8 @@ RfkitPage::RfkitPage(RFKitClient *rfkitClient, QWidget *parent) : QWidget(parent
     statusLabel->setStyleSheet(K4Styles::Dialog::formLabel());
     statusLabel->setFixedWidth(K4Styles::Dimensions::FormLabelWidth);
     m_statusLabel = new QLabel("Not Connected", this);
-    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+    m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabelByState());
+    K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
     statusLayout->addWidget(statusLabel);
     statusLayout->addWidget(m_statusLabel);
     statusLayout->addStretch();
@@ -253,11 +254,11 @@ void RfkitPage::updateRfkitStatus() {
         if (!version.isEmpty())
             statusText += QString(" (SW %1)").arg(version);
         m_statusLabel->setText(statusText);
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::StatusGreen));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, K4Styles::Dialog::StatusOk);
         m_connectBtn->setText("Disconnect");
     } else {
         m_statusLabel->setText("Not Connected");
-        m_statusLabel->setStyleSheet(K4Styles::Dialog::statusLabel(K4Styles::Colors::ErrorRed));
+        K4Styles::setStyleState(m_statusLabel, K4Styles::StateProperty, QString());
         if (m_connectBtn)
             m_connectBtn->setText("Connect");
     }

@@ -106,9 +106,14 @@ MiniViewController::MiniViewController(RadioState *radioState, ConnectionControl
         if (m_window->isVisible())
             m_window->setPanIfShift(shift);
     });
-    connect(m_radioState, &RadioState::cwPitchChanged, this, [this](int pitch) {
+    // The mini-pan places its passband from the receiver's dial with RIT, as VFO A's own mini-pan does
+    connect(m_radioState, &RadioState::frequencyChanged, this, [this]() {
         if (m_window->isVisible())
-            m_window->setPanCwPitch(pitch);
+            m_window->setPanTunedFrequency(tunedFrequencyA());
+    });
+    connect(m_radioState, &RadioState::ritXitChanged, this, [this]() {
+        if (m_window->isVisible())
+            m_window->setPanTunedFrequency(tunedFrequencyA());
     });
     connect(m_radioState, &RadioState::notchChanged, this, [this]() {
         if (m_window->isVisible())
@@ -145,10 +150,10 @@ void MiniViewController::showMiniView() {
     updateMiniPanStream();
 }
 
-void MiniViewController::onSpectrumData(int receiver, const QByteArray &bins) {
+void MiniViewController::onSpectrumData(int receiver, const QByteArray &bins, qint64 centerHz, int spanHz) {
     if (receiver != 0 || !m_window->isVisible() || !m_window->isPanadapterVisible())
         return;
-    m_window->updateSpectrum(bins);
+    m_window->updateSpectrum(bins, centerHz, spanHz);
 }
 
 void MiniViewController::refreshFrequencies() {
@@ -164,6 +169,13 @@ void MiniViewController::refreshAll() {
     refreshSpots();
 }
 
+qint64 MiniViewController::tunedFrequencyA() const {
+    // Same rule as SpectrumController::updatePanadapterPassbands(): VFO A's dial plus RIT when it is on
+    const qint64 dial = static_cast<qint64>(m_radioState->vfoA());
+    const qint64 adjusted = m_radioState->ritEnabled() ? dial + m_radioState->ritXitOffset() : dial;
+    return adjusted > 0 ? adjusted : dial;
+}
+
 void MiniViewController::refreshPan() {
     // WHY modeToString + data sub-mode: the mini-pan's span/passband branches expect the base
     // mode name ("DATA") plus setDataSubMode, the same way VFOWidget's mini-pan is fed.
@@ -171,7 +183,7 @@ void MiniViewController::refreshPan() {
     m_window->setPanDataSubMode(m_radioState->dataSubMode());
     m_window->setPanFilterBandwidth(m_radioState->filterBandwidth());
     m_window->setPanIfShift(m_radioState->ifShift());
-    m_window->setPanCwPitch(m_radioState->cwPitch());
+    m_window->setPanTunedFrequency(tunedFrequencyA());
     m_window->setPanNotchFilter(m_radioState->manualNotchEnabled(), m_radioState->manualNotchPitch());
     if (m_radioState->averaging() >= 1)
         m_window->setPanAveraging(m_radioState->averaging());

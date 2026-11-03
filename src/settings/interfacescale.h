@@ -1,12 +1,15 @@
 #ifndef INTERFACESCALE_H
 #define INTERFACESCALE_H
 
+#include <QProcessEnvironment>
+
 class QWidget;
 
 // Applies the operator's interface scale, and in Auto fits the interface to the screen.
 //
 // The layout is a fixed front panel and is never rearranged; on a screen too small for it the whole
-// interface is scaled uniformly instead. Qt's supported way to do that is QT_SCALE_FACTOR, which Qt
+// interface is scaled down uniformly instead, and on one with room for 125% Auto scales it up to
+// that. Qt's supported way to do that is QT_SCALE_FACTOR, which Qt
 // reads once, when QApplication is constructed - so the scale is applied before that, and changing
 // it means starting the app again.
 //
@@ -35,6 +38,10 @@ bool restartRequested();
 
 // Starts a new instance with the same arguments. Call only once this one has shut down.
 bool relaunch();
+
+// The environment for a process that should fit itself to the screen from scratch, such as a newly installed
+// version: QT_SCALE_FACTOR goes if QK4 set it, as in relaunch(), and QK4_SCALE_RELAUNCHED always goes.
+QProcessEnvironment childEnvironment();
 
 } // namespace InterfaceScale
 
